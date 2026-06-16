@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+.npm/
+
+# Build output
+dist/
+.dt-app/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local tooling / session state (do not publish)
+.claude/
+.remember/
+
+# Logs
+*.log
+npm-debug.log*

@@ -1,0 +1,19 @@
+{
+  "$schema": "./.dt-app/app.config.schema.json",
+  "environmentUrl": "https://YOUR_TENANT.apps.dynatrace.com/",
+  "app": {
+    "name": "DynatracePoweredSRE",
+    "version": "2.5.0",
+    "description": "Dynatrace-Powered SRE Maturity Assessment App",
+    "id": "my.dynatrace.sre.maturity.app",
+    "scopes": [
+      { "name": "storage:logs:read", "comment": "Read log data" },
+      { "name": "storage:buckets:read", "comment": "Read lookup tables" },
+      { "name": "storage:events:read", "comment": "Read events" },
+      { "name": "storage:bizevents:read", "comment": "Read business events" },
+      { "name": "storage:metrics:read", "comment": "Read metrics" },
+      { "name": "storage:entities:read", "comment": "Read entity data" },
+      { "name": "storage:system:read", "comment": "Read system tables" }
+    ]
+  }
+}
