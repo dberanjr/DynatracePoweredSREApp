@@ -2,7 +2,7 @@
   "name": "dynatrace-sre-maturity-app",
   "version": "1.0.0",
   "description": "Dynatrace SRE Maturity Assessment App",
-  "license": "SEE LICENSE IN LICENSE.txt",
+  "license": "Apache-2.0",
   "scripts": {
     "start": "dt-app dev",
     "build": "dt-app build",
