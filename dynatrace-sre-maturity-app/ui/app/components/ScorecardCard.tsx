@@ -1,9 +1,11 @@
 import React from "react";
+import ReactDOM from "react-dom";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { RefreshOverlay } from "./RefreshOverlay";
+import { CHECK_EXPLANATIONS } from "./checkExplanations";
 
 interface Props {
   title: string;
@@ -68,10 +70,88 @@ function ScoreRing({ current, total, color, size = 70 }: { current: number; tota
   );
 }
 
+// Small circled "i" that reveals an explanation on hover. The tooltip is
+// rendered via a portal to document.body so the card's overflow:hidden (and
+// the narrow grid columns) can't clip it.
+function InfoTooltip({ text, color }: { text: string; color: string }) {
+  const ref = React.useRef<HTMLSpanElement>(null);
+  const [coords, setCoords] = React.useState<{ x: number; y: number } | null>(null);
+
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    const half = 130;
+    const x = Math.max(half, Math.min(window.innerWidth - half, r.left + r.width / 2));
+    setCoords({ x, y: r.top });
+  };
+  const hide = () => setCoords(null);
+
+  return (
+    <>
+      <span
+        ref={ref}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        aria-label={text}
+        style={{
+          flexShrink: 0,
+          width: 12,
+          height: 12,
+          borderRadius: "50%",
+          border: `1px solid ${color}`,
+          color,
+          fontSize: 9,
+          fontWeight: 700,
+          fontStyle: "italic",
+          fontFamily: "Georgia, 'Times New Roman', serif",
+          lineHeight: "10px",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "help",
+          opacity: 0.7,
+          userSelect: "none",
+        }}
+      >
+        i
+      </span>
+      {coords &&
+        ReactDOM.createPortal(
+          <div
+            style={{
+              position: "fixed",
+              left: coords.x,
+              top: coords.y - 8,
+              transform: "translate(-50%, -100%)",
+              maxWidth: 250,
+              width: "max-content",
+              padding: "8px 10px",
+              borderRadius: 6,
+              background: "#1f2328",
+              color: "#fff",
+              fontSize: 10.5,
+              fontWeight: 400,
+              lineHeight: 1.45,
+              letterSpacing: 0,
+              textAlign: "left",
+              zIndex: 9999,
+              boxShadow: "0 4px 14px rgba(0,0,0,0.3)",
+              pointerEvents: "none",
+            }}
+          >
+            {text}
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
 function CheckItem({ label, value }: { label: string; value: string }) {
   const status = getStatus(value);
   const display = getStatusDisplay(value);
   const s = statusStyles[status];
+  const explanation = CHECK_EXPLANATIONS[label];
 
   return (
     <div style={{
@@ -85,8 +165,11 @@ function CheckItem({ label, value }: { label: string; value: string }) {
     }}>
       <span style={{ fontSize: 13, lineHeight: "16px", flexShrink: 0 }}>{s.icon}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: s.text, letterSpacing: 0.2, marginBottom: 1 }}>
-          {label}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 1 }}>
+          <span style={{ fontSize: 10, fontWeight: 600, color: s.text, letterSpacing: 0.2 }}>
+            {label}
+          </span>
+          {explanation && <InfoTooltip text={explanation} color={s.text} />}
         </div>
         <div style={{ fontSize: 11, color: "var(--sre-text-primary, #1f2328)", wordBreak: "break-word", lineHeight: 1.3 }}>
           {display || (status === "na" ? "N/A" : status === "fail" ? "Not detected" : "Active")}

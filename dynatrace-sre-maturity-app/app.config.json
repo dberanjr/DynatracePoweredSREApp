@@ -3,12 +3,13 @@
   "environmentUrl": "https://YOUR_TENANT.apps.dynatrace.com/",
   "app": {
     "name": "DynatracePoweredSRE",
-    "version": "2.6.0",
+    "version": "2.14.0",
     "description": "Dynatrace-Powered SRE Maturity Assessment App",
     "id": "my.dynatrace.sre.maturity.app",
     "scopes": [
       { "name": "storage:logs:read", "comment": "Read log data" },
-      { "name": "storage:buckets:read", "comment": "Read lookup tables" },
+      { "name": "storage:buckets:read", "comment": "Read Grail buckets" },
+      { "name": "storage:files:read", "comment": "Read lookup tables (/lookups/*)" },
       { "name": "storage:events:read", "comment": "Read events" },
       { "name": "storage:bizevents:read", "comment": "Read business events" },
       { "name": "storage:metrics:read", "comment": "Read metrics" },

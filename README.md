@@ -11,11 +11,43 @@ scored into an SRE maturity view.
 
 ## Features
 
-- **SRE Maturity Scorecards** — per-application maturity scoring and a portfolio leaderboard.
+- **SRE Maturity Scorecards (L1–L5)** — every application (keyed by `applicationci`) is scored
+  across five maturity levels, each a set of **data-driven checks** rendered as pass / warn / fail
+  cards with a completion ring, plus a portfolio leaderboard. Hover the **ⓘ** on any check to see
+  exactly how it is calculated.
 - **Golden Signals** — latency, traffic, errors, and saturation views.
 - **Problem Analytics** — Davis problem trends with deep links into the Problems app.
 - **Proactive / AIOps** — anomaly and predictive insights powered by Davis.
 - **Portfolio Overview** — overall score and reliability KPIs across applications.
+
+## SRE maturity model
+
+The Scorecards page evaluates each application across five levels, entirely from live Dynatrace
+data (Grail DQL, SLO/Settings/Documents APIs, and curated lookup tables):
+
+| Level | Theme | Representative checks |
+| ----- | ----- | --------------------- |
+| **L1** | Full Observability | OneAgent coverage, tracing, logs, Smartscape, K8s/cloud, RUM/Synthetics |
+| **L2** | Measured Reliability | Golden-signal SLIs, **SLOs created**, **Site Reliability Guardians**, **SLO dashboards**, SRE assessment (CMDB tier) |
+| **L3** | AI-Assisted Operations | Causal AI detection + event correlation, **CI/CD integration** (GitHub Actions deployments), ITSM routing, runbooks, alert-noise review, root-cause coverage, **DORA metrics** (deployment frequency & lead time) |
+| **L4** | Proactive Reliability | Resource saturation, dynamic scaling, K8s autoscaling, deployment events, cloud capacity |
+| **L5** | Autonomous Reliability | Workflow automation, incident auto-enrichment, end-to-end remediation |
+
+> DORA metrics are an interim view — a company-wide DORA standard (incl. change failure rate and
+> MTTR) is expected to refine these definitions.
+
+## Data sources & lookup tables
+
+Most checks run as Grail DQL via `useDqlWithCache`. A few signals are sourced from **Grail lookup
+tables** that are kept fresh by Dynatrace Workflows (the app only needs read access):
+
+- `/lookups/slo` — SLOs per AppCI
+- `/lookups/guardians` — Site Reliability Guardians per AppCI, refreshed daily from the guardian
+  Settings API (matched on the `applicationCI`/`appci` tag)
+- `/lookups/slo-dashboards` — SLO dashboards per AppCI, refreshed daily from the documents API
+  (dashboards whose name starts with a 3-letter AppCI token and contains `SLO`)
+
+CI/CD and DORA checks read GitHub Actions `CUSTOM_DEPLOYMENT` events directly from Grail.
 
 ## Tech stack
 
@@ -33,9 +65,9 @@ scored into an SRE maturity view.
 └── dynatrace-sre-maturity-app/   # primary app project
     ├── app.config.json           # app id, name, environmentUrl
     └── ui/app/
-        ├── components/           # KpiCard, ChartCard, MaturityLeaderboard, ...
+        ├── components/           # ScorecardCard, checkExplanations (tooltip text), MaturityLeaderboard, ...
         ├── pages/                # GoldenSignals, Scorecards, ProblemAnalytics, AiOps, Portfolio, ...
-        └── hooks/                # useDqlWithCache, useSloApi
+        └── hooks/                # useDqlWithCache
 ```
 
 ## Prerequisites
@@ -56,8 +88,9 @@ Set your Dynatrace environment URL — replace the `YOUR_TENANT` placeholder in:
 https://YOUR_TENANT.apps.dynatrace.com   →   https://<your-env>.apps.dynatrace.com
 ```
 
-The app requests read scopes for logs, events, business events, metrics, entities,
-Davis problems, and Smartscape topology (see `app.config.ts`).
+The app requests read scopes for logs, events, business events, metrics, entities, system tables,
+Davis problems, Smartscape topology, and lookup tables (`storage:files:read`, used by the SLO /
+guardian / SLO-dashboard checks). See `dynatrace-sre-maturity-app/app.config.json`.
 
 ## Getting started
 

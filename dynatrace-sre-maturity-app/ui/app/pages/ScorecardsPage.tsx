@@ -4,7 +4,6 @@ import { Heading } from "@dynatrace/strato-components/typography";
 import { ScorecardCard } from "../components/ScorecardCard";
 import { OverallScore } from "../components/OverallScore";
 import { AppContextBanner } from "../components/AppContextBanner";
-import { useSloApi } from "../hooks/useSloApi";
 
 interface Props {
   appCI: string;
@@ -12,7 +11,6 @@ interface Props {
 }
 
 export const ScorecardsPage = ({ appCI, timeframe }: Props) => {
-  const { sloCount } = useSloApi(appCI);
 
   const l1Query = `// L1 Full Observability - Maturity Scorecard
 data record(applicationci = lower("${appCI}"))
@@ -215,19 +213,28 @@ data record(applicationci = lower("${appCI}"))
   ], sourceField:applicationci, lookupField:applicationci, fields:{serviceCount}
 | fieldsRename goldenSignalServices = serviceCount
 
-// Signal 2: SLO dashboards published
+// Signal 2: SLOs created (from the /lookups/slo table; AppCI = first 3 chars of the SLO name)
 | lookup [
-    fetch bizevents, from:now()-24h
-    | filter event.type == "workflow.summary.dashboard"
-    | fieldsAdd dashAppci = lower(splitString(name, " :")[0])
-    | filter isNotNull(dashAppci)
-    | filter stringLength(dashAppci) <= 4
-    | summarize dashboardCount = count(), by:{dashAppci}
-    | fieldsRename applicationci = dashAppci
-  ], sourceField:applicationci, lookupField:applicationci, fields:{dashboardCount}
+    load "/lookups/slo"
+    | fieldsAdd appci = lower(substring(slo, from:0, to:3))
+    | summarize sloCount = count(), by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{sloCount}
+
+// Signal 3: Site Reliability Guardian exists (from /lookups/guardians; appci -> guardianCount, refreshed by workflow)
+| lookup [
+    load "/lookups/guardians"
+    | fieldsAdd appci = lower(appci)
+  ], sourceField:applicationci, lookupField:appci, fields:{guardianCount}
+
+// Signal 4: SLO dashboards published (from /lookups/slo-dashboards; refreshed by workflow)
+//   counts dashboards whose name starts with a 3-letter AppCI token and contains "SLO"
+| lookup [
+    load "/lookups/slo-dashboards"
+    | fieldsAdd appci = lower(appci)
+  ], sourceField:applicationci, lookupField:appci, fields:{dashboardCount}
 | fieldsRename dashboards = dashboardCount
 
-// Signal 3: SRE assessment (CMDB tier assigned)
+// Signal 5: SRE assessment (CMDB tier assigned)
 | lookup [
     fetch bizevents, from:now()-24h
     | filter event.type == "workflow.import.servicenow.appci"
@@ -240,7 +247,9 @@ data record(applicationci = lower("${appCI}"))
 // Null-safe defaults
 | fieldsAdd
     goldenSignalServices = if(isNull(goldenSignalServices), 0, else: goldenSignalServices),
-    dashboards = if(isNull(dashboards), 0, else: dashboards),
+    sloCount = if(isNull(sloCount), 0, else: sloCount),
+    guardianCount = if(isNull(guardianCount), 0, else: toLong(guardianCount)),
+    dashboards = if(isNull(dashboards), 0, else: toLong(dashboards)),
     sreAssessment = if(isNull(sreAssessment), 0, else: sreAssessment)
 
 // Compute status
@@ -248,10 +257,12 @@ data record(applicationci = lower("${appCI}"))
     \`1. Golden Signal SLIs\` = if(goldenSignalServices > 0,
         concat("pass ", toString(goldenSignalServices), " services with metrics"),
         else: "fail No services"),
-    \`2. SLOs Created\` = if(${sloCount} > 0,
-        concat("pass ", toString(${sloCount}), " SLOs configured"),
+    \`2. SLOs Created\` = if(sloCount > 0,
+        concat("pass ", toString(sloCount), " SLOs configured"),
         else: "fail No SLOs detected"),
-    \`3. Error Budget Tracking\` = "fail Not detected",
+    \`3. Site Reliability Guardians Created\` = if(guardianCount > 0,
+        concat("pass ", toString(guardianCount), " guardian(s)"),
+        else: "fail None found"),
     \`4. SLO Dashboards Published\` = if(dashboards > 0,
         concat("pass ", toString(dashboards), " dashboards"),
         else: "fail No AppCI dashboards"),
@@ -261,8 +272,8 @@ data record(applicationci = lower("${appCI}"))
 
 | fieldsAdd passCount =
     if(goldenSignalServices > 0, 1, else: 0)
-    + if(${sloCount} > 0, 1, else: 0)
-    + 0
+    + if(sloCount > 0, 1, else: 0)
+    + if(guardianCount > 0, 1, else: 0)
     + if(dashboards > 0, 1, else: 0)
     + if(sreAssessment > 0, 1, else: 0)
 | fieldsAdd \`L2 Score\` = concat(toString(passCount), " / 5")
@@ -271,111 +282,144 @@ data record(applicationci = lower("${appCI}"))
     \`L2 Score\`,
     \`1. Golden Signal SLIs\`,
     \`2. SLOs Created\`,
-    \`3. Error Budget Tracking\`,
+    \`3. Site Reliability Guardians Created\`,
     \`4. SLO Dashboards Published\`,
     \`5. SRE Assessment in ARD\``;
 
   const l3Query = `// L3 AI-Assisted Operations - Maturity Scorecard
 data record(applicationci = lower("${appCI}"))
 
-// All problem signals in one lookup
+// Event correlation signal (default timeframe)
 | lookup [
     fetch dt.davis.problems
     | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
     | filter isNotNull(appci)
     | filter dt.davis.is_duplicate == false
     | fieldsAdd isCorrelated = arraySize(affected_entities) > 1
-    | fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"
-        and isNotNull(labels.alerting_profile)
-    | summarize
-        totalProblems = count(),
-        correlatedProblems = countIf(isCorrelated == true),
-        customAlerts = countIf(event.category == "CUSTOM_ALERT"),
-        itsmRouted = countIf(hasItsmProfile == true),
-        avgDuration = avg(toDouble(resolved_problem_duration) / 60000000000.0),
-        by:{appci}
+    | summarize correlatedProblems = countIf(isCorrelated == true), by:{appci}
     | fieldsRename applicationci = appci
-  ], sourceField:applicationci, lookupField:applicationci, fields:{totalProblems, correlatedProblems, customAlerts, itsmRouted, avgDuration}
-| fieldsRename
-    problems = totalProblems,
-    correlated = correlatedProblems,
-    noise = customAlerts,
-    itsm = itsmRouted,
-    duration = avgDuration
+  ], sourceField:applicationci, lookupField:applicationci, fields:{correlatedProblems}
+| fieldsRename correlated = correlatedProblems
 
-// Signal 6: Davis Intelligence root cause coverage (uses selected timeframe)
+// Problem signals (causal vs noise), last 7 days
+//   causal = real problems: ERROR/SLOWDOWN categories with event count > 1
+//   noise  = event count == 1 in AVAILABILITY/RESOURCE_CONTENTION/CUSTOM_ALERT/MONITORING_UNAVAILABLE
 | lookup [
-    fetch dt.davis.problems, from:${timeframe.from}, to:${timeframe.to}
+    fetch dt.davis.problems, from:now()-7d
+    | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
     | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
     | filter isNotNull(appci)
-    | filter dt.davis.is_duplicate == false
+    | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
+    | fieldsAdd isCausal = matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
+    | fieldsAdd isNoise = eventCount == 1 and matchesValue(event.category, array("AVAILABILITY", "RESOURCE_CONTENTION", "CUSTOM_ALERT", "MONITORING_UNAVAILABLE"))
     | fieldsAdd hasRootCause = isNotNull(root_cause_entity_id)
     | summarize
-        rcTotal = count(),
-        rcWithCause = countIf(hasRootCause == true),
+        total7d = count(),
+        causalActive = countIf(isCausal and lower(event.status) == "active"),
+        causalClosed = countIf(isCausal and lower(event.status) == "closed"),
+        causalTotal = countIf(isCausal),
+        causalWithCause = countIf(isCausal and hasRootCause == true),
+        noiseTotal = countIf(isNoise),
         by:{appci}
     | fieldsRename applicationci = appci
-  ], sourceField:applicationci, lookupField:applicationci, fields:{rcTotal, rcWithCause}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{total7d, causalActive, causalClosed, causalTotal, causalWithCause, noiseTotal}
+
+// ITSM Integration: a workflow named "<AppCI> Production Dynatrace Alerts" exists (last 30 days)
+| lookup [
+    fetch dt.system.events, from:now()-30d
+    | filter event.provider == "AUTOMATION_ENGINE"
+    | filter event.kind == "WORKFLOW_EVENT"
+    | filter event.type == "WORKFLOW_EXECUTION"
+    | filter matchesValue(\`dt.automation_engine.workflow.title\`, "* Production Dynatrace Alerts")
+    | fieldsAdd wfAppci = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+    | summarize itsmWorkflows = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppci}
+  ], sourceField:applicationci, lookupField:wfAppci, fields:{itsmWorkflows}
+
+// CI/CD + DORA: GitHub Actions deployments (last 30 days), per AppCI
+//   source: dashboard "GitHub Actions DORA Metrics" (CUSTOM_DEPLOYMENT / cdk deploy events)
+| lookup [
+    fetch events, from:now()-30d
+    | filter event.type == "CUSTOM_DEPLOYMENT"
+    | filter \`cdk-command\` == "deploy"
+    | filter isNotNull(application_ci)
+    | fieldsAdd leadMs = if(\`new-deployment\` == "true" and isNotNull(\`avg-release-age\`), toLong(\`avg-release-age\`), else: null)
+    | summarize
+        deployTotal = count(),
+        deploySuccess = countIf(\`workflow-outcome\` == "success"),
+        avgLeadMs = avg(leadMs),
+        by:{appci = lower(application_ci)}
+  ], sourceField:applicationci, lookupField:appci, fields:{deployTotal, deploySuccess, avgLeadMs}
 
 // Null-safe defaults
 | fieldsAdd
-    problems = if(isNull(problems), 0, else: problems),
     correlated = if(isNull(correlated), 0, else: correlated),
-    noise = if(isNull(noise), 0, else: noise),
-    itsm = if(isNull(itsm), 0, else: itsm),
-    duration = if(isNull(duration), 0.0, else: duration),
-    rcTotal = if(isNull(rcTotal), 0, else: rcTotal),
-    rcWithCause = if(isNull(rcWithCause), 0, else: rcWithCause)
+    itsmWorkflows = if(isNull(itsmWorkflows), 0, else: itsmWorkflows),
+    total7d = if(isNull(total7d), 0, else: total7d),
+    causalActive = if(isNull(causalActive), 0, else: causalActive),
+    causalClosed = if(isNull(causalClosed), 0, else: causalClosed),
+    causalTotal = if(isNull(causalTotal), 0, else: causalTotal),
+    causalWithCause = if(isNull(causalWithCause), 0, else: causalWithCause),
+    noiseTotal = if(isNull(noiseTotal), 0, else: noiseTotal),
+    deployTotal = if(isNull(deployTotal), 0, else: deployTotal),
+    deploySuccess = if(isNull(deploySuccess), 0, else: deploySuccess),
+    avgLeadMs = if(isNull(avgLeadMs), 0.0, else: avgLeadMs)
 
-| fieldsAdd noiseRatio = if(problems > 0,
-    round(toDouble(noise) * 100.0 / toDouble(problems), decimals:0),
+| fieldsAdd avgLeadDays = round(avgLeadMs / 86400000.0, decimals:1)
+| fieldsAdd noisePct = if(total7d > 0,
+    round(toDouble(noiseTotal) * 100.0 / toDouble(total7d), decimals:0),
     else: 0.0)
-| fieldsAdd rootCausePct = if(rcTotal > 0,
-    round(toDouble(rcWithCause) * 100.0 / toDouble(rcTotal), decimals:0),
+| fieldsAdd rootCausePct = if(causalTotal > 0,
+    round(toDouble(causalWithCause) * 100.0 / toDouble(causalTotal), decimals:0),
     else: 0.0)
 
 // Compute status
 | fieldsAdd
-    \`1. Davis AI Detection\` = if(problems > 0,
-        concat("pass ", toString(problems), " problems (",
-            toString(round(duration, decimals:1)), " min avg)"),
-        else: "fail No problems detected"),
-    \`2. Event Correlation\` = if(correlated > 0,
-        concat("pass ", toString(correlated), " correlated"),
-        else: "fail No correlation observed"),
-    \`3. ITSM Integration\` = if(itsm > 0,
-        concat("pass ", toString(itsm), " routed via alerting profile"),
-        else: "fail Default profile only"),
+    \`1. Causal AI Detection + Event Correlation\` = if(causalTotal > 0,
+        concat("pass ", toString(causalTotal), " problems (",
+            toString(causalActive), " active, ", toString(causalClosed), " closed), ",
+            toString(correlated), " correlated"),
+        else: "fail No causal problems in last 7 days"),
+    \`2. CI/CD Integration\` = if(deployTotal > 0,
+        concat("pass ", toString(deploySuccess), "/", toString(deployTotal), " successful deploys (30d)"),
+        else: "fail No deployments detected"),
+    \`3. ITSM Integration\` = if(itsmWorkflows > 0,
+        concat("pass ", toString(itsmWorkflows), " alert routing workflow(s)"),
+        else: "fail No 'Production Dynatrace Alerts' workflow"),
     \`4. Runbooks Linked\` = "fail Not detected",
-    \`5. Alert Noise Review\` = if(problems > 0,
-        concat(if(noiseRatio > 50, "warn ", else: "pass "),
-            toString(noise), "/", toString(problems),
-            " custom alerts (", toString(noiseRatio), "%)"),
-        else: "n/a No data"),
-    \`6. Dynatrace Intelligence Root Cause Coverage\` = if(rcTotal > 0,
+    \`5. Alert Noise Review\` = if(total7d > 0,
+        concat(if(noisePct > 50, "warn ", else: "pass "),
+            toString(noiseTotal), " noise / ", toString(total7d),
+            " problems (", toString(noisePct), "%)"),
+        else: "n/a No problems in last 7 days"),
+    \`6. Problems with Root Cause\` = if(causalTotal > 0,
         concat(
             if(rootCausePct >= 40, "pass ", else: if(rootCausePct >= 30, "warn ", else: "fail ")),
-            toString(rcWithCause), "/", toString(rcTotal),
+            toString(causalWithCause), "/", toString(causalTotal),
             " w/ root cause (", toString(rootCausePct), "%)"),
-        else: "n/a No problems in timeframe")
+        else: "n/a No problems in last 7 days"),
+    \`7. DORA Metrics\` = if(deployTotal > 0,
+        concat("pass ", toString(deployTotal), " deploys, ", toString(avgLeadDays), "d avg lead time"),
+        else: "fail No deployment data")
 
 | fieldsAdd passCount =
-    if(problems > 0, 1, else: 0)
-    + if(correlated > 0, 1, else: 0)
-    + if(itsm > 0, 1, else: 0)
+    if(causalTotal > 0, 1, else: 0)
+    + if(deployTotal > 0, 1, else: 0)
+    + if(itsmWorkflows > 0, 1, else: 0)
     + 0
-    + if(problems > 0 and noiseRatio <= 50, 1, else: 0)
-    + if(rcTotal > 0 and rootCausePct >= 40, 1, else: 0)
-| fieldsAdd \`L3 Score\` = concat(toString(passCount), " / 6")
+    + if(total7d > 0 and noisePct <= 50, 1, else: 0)
+    + if(causalTotal > 0 and rootCausePct >= 40, 1, else: 0)
+    + if(deployTotal > 0, 1, else: 0)
+| fieldsAdd \`L3 Score\` = concat(toString(passCount), " / 7")
 
 | fields
     \`L3 Score\`,
-    \`1. Davis AI Detection\`,
-    \`2. Event Correlation\`,
+    \`1. Causal AI Detection + Event Correlation\`,
+    \`2. CI/CD Integration\`,
     \`3. ITSM Integration\`,
     \`4. Runbooks Linked\`,
     \`5. Alert Noise Review\`,
-    \`6. Dynatrace Intelligence Root Cause Coverage\``;
+    \`6. Problems with Root Cause\`,
+    \`7. DORA Metrics\``;
 
   const l4Query = `// L4 Proactive Reliability - Maturity Scorecard
 data record(applicationci = lower("${appCI}"))
