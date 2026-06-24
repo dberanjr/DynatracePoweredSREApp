@@ -3,7 +3,7 @@
   "environmentUrl": "https://YOUR_TENANT.apps.dynatrace.com/",
   "app": {
     "name": "DynatracePoweredSRE",
-    "version": "2.5.0",
+    "version": "2.6.0",
     "description": "Dynatrace-Powered SRE Maturity Assessment App",
     "id": "my.dynatrace.sre.maturity.app",
     "scopes": [

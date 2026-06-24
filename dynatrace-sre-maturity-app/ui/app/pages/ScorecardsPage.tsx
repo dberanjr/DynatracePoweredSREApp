@@ -303,16 +303,35 @@ data record(applicationci = lower("${appCI}"))
     itsm = itsmRouted,
     duration = avgDuration
 
+// Signal 6: Davis Intelligence root cause coverage (uses selected timeframe)
+| lookup [
+    fetch dt.davis.problems, from:${timeframe.from}, to:${timeframe.to}
+    | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+    | filter isNotNull(appci)
+    | filter dt.davis.is_duplicate == false
+    | fieldsAdd hasRootCause = isNotNull(root_cause_entity_id)
+    | summarize
+        rcTotal = count(),
+        rcWithCause = countIf(hasRootCause == true),
+        by:{appci}
+    | fieldsRename applicationci = appci
+  ], sourceField:applicationci, lookupField:applicationci, fields:{rcTotal, rcWithCause}
+
 // Null-safe defaults
 | fieldsAdd
     problems = if(isNull(problems), 0, else: problems),
     correlated = if(isNull(correlated), 0, else: correlated),
     noise = if(isNull(noise), 0, else: noise),
     itsm = if(isNull(itsm), 0, else: itsm),
-    duration = if(isNull(duration), 0.0, else: duration)
+    duration = if(isNull(duration), 0.0, else: duration),
+    rcTotal = if(isNull(rcTotal), 0, else: rcTotal),
+    rcWithCause = if(isNull(rcWithCause), 0, else: rcWithCause)
 
 | fieldsAdd noiseRatio = if(problems > 0,
     round(toDouble(noise) * 100.0 / toDouble(problems), decimals:0),
+    else: 0.0)
+| fieldsAdd rootCausePct = if(rcTotal > 0,
+    round(toDouble(rcWithCause) * 100.0 / toDouble(rcTotal), decimals:0),
     else: 0.0)
 
 // Compute status
@@ -332,7 +351,13 @@ data record(applicationci = lower("${appCI}"))
         concat(if(noiseRatio > 50, "warn ", else: "pass "),
             toString(noise), "/", toString(problems),
             " custom alerts (", toString(noiseRatio), "%)"),
-        else: "n/a No data")
+        else: "n/a No data"),
+    \`6. Dynatrace Intelligence Root Cause Coverage\` = if(rcTotal > 0,
+        concat(
+            if(rootCausePct >= 40, "pass ", else: if(rootCausePct >= 30, "warn ", else: "fail ")),
+            toString(rcWithCause), "/", toString(rcTotal),
+            " w/ root cause (", toString(rootCausePct), "%)"),
+        else: "n/a No problems in timeframe")
 
 | fieldsAdd passCount =
     if(problems > 0, 1, else: 0)
@@ -340,7 +365,8 @@ data record(applicationci = lower("${appCI}"))
     + if(itsm > 0, 1, else: 0)
     + 0
     + if(problems > 0 and noiseRatio <= 50, 1, else: 0)
-| fieldsAdd \`L3 Score\` = concat(toString(passCount), " / 5")
+    + if(rcTotal > 0 and rootCausePct >= 40, 1, else: 0)
+| fieldsAdd \`L3 Score\` = concat(toString(passCount), " / 6")
 
 | fields
     \`L3 Score\`,
@@ -348,7 +374,8 @@ data record(applicationci = lower("${appCI}"))
     \`2. Event Correlation\`,
     \`3. ITSM Integration\`,
     \`4. Runbooks Linked\`,
-    \`5. Alert Noise Review\``;
+    \`5. Alert Noise Review\`,
+    \`6. Dynatrace Intelligence Root Cause Coverage\``;
 
   const l4Query = `// L4 Proactive Reliability - Maturity Scorecard
 data record(applicationci = lower("${appCI}"))
