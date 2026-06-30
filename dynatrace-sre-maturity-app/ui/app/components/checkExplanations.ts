@@ -38,7 +38,7 @@ export const CHECK_EXPLANATIONS: Record<string, string> = {
   "3. ITSM Integration":
     "Looks for an Automation Engine workflow whose name follows the pattern '<AppCI> Production Dynatrace Alerts' that has run in the last 30 days. Matches on the workflow title's leading AppCI token. Pass = at least one such workflow exists.",
   "4. Runbooks Linked":
-    "Not yet measured automatically - reported as fail until notebook / runbook attachment detection is added.",
+    "Counts runbooks for this AppCI from the /lookups/runbooks table - notebooks whose name starts with a 3-letter AppCI token and contains the word 'Runbook' (any case). The table is refreshed daily by a workflow reading the documents API. Pass = at least one runbook.",
   "5. Alert Noise Review":
     "The inverse of Causal AI Detection: of all this AppCI's Davis problems in the last 7 days, the share that are noise. NOISE = problems with an event count of 1 in the AVAILABILITY, RESOURCE_CONTENTION, CUSTOM_ALERT, or MONITORING_UNAVAILABLE categories. Shows noise/total and the noise %. Warn when noise exceeds 50%.",
   "6. Problems with Root Cause":

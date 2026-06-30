@@ -350,6 +350,14 @@ data record(applicationci = lower("${appCI}"))
         by:{appci = lower(application_ci)}
   ], sourceField:applicationci, lookupField:appci, fields:{deployTotal, deploySuccess, avgLeadMs}
 
+// Runbooks Linked: notebooks acting as runbooks (from /lookups/runbooks; refreshed daily by workflow)
+//   counts notebooks whose name starts with a 3-letter AppCI token and contains "Runbook" (any case)
+| lookup [
+    load "/lookups/runbooks"
+    | fieldsAdd appci = lower(appci)
+  ], sourceField:applicationci, lookupField:appci, fields:{runbookCount}
+| fieldsRename runbooks = runbookCount
+
 // Null-safe defaults
 | fieldsAdd
     correlated = if(isNull(correlated), 0, else: correlated),
@@ -362,7 +370,8 @@ data record(applicationci = lower("${appCI}"))
     noiseTotal = if(isNull(noiseTotal), 0, else: noiseTotal),
     deployTotal = if(isNull(deployTotal), 0, else: deployTotal),
     deploySuccess = if(isNull(deploySuccess), 0, else: deploySuccess),
-    avgLeadMs = if(isNull(avgLeadMs), 0.0, else: avgLeadMs)
+    avgLeadMs = if(isNull(avgLeadMs), 0.0, else: avgLeadMs),
+    runbooks = if(isNull(runbooks), 0, else: toLong(runbooks))
 
 | fieldsAdd avgLeadDays = round(avgLeadMs / 86400000.0, decimals:1)
 | fieldsAdd noisePct = if(total7d > 0,
@@ -385,7 +394,9 @@ data record(applicationci = lower("${appCI}"))
     \`3. ITSM Integration\` = if(itsmWorkflows > 0,
         concat("pass ", toString(itsmWorkflows), " alert routing workflow(s)"),
         else: "fail No 'Production Dynatrace Alerts' workflow"),
-    \`4. Runbooks Linked\` = "fail Not detected",
+    \`4. Runbooks Linked\` = if(runbooks > 0,
+        concat("pass ", toString(runbooks), " runbook(s)"),
+        else: "fail No AppCI runbooks"),
     \`5. Alert Noise Review\` = if(total7d > 0,
         concat(if(noisePct > 50, "warn ", else: "pass "),
             toString(noiseTotal), " noise / ", toString(total7d),
@@ -405,7 +416,7 @@ data record(applicationci = lower("${appCI}"))
     if(causalTotal > 0, 1, else: 0)
     + if(deployTotal > 0, 1, else: 0)
     + if(itsmWorkflows > 0, 1, else: 0)
-    + 0
+    + if(runbooks > 0, 1, else: 0)
     + if(total7d > 0 and noisePct <= 50, 1, else: 0)
     + if(causalTotal > 0 and rootCausePct >= 40, 1, else: 0)
     + if(deployTotal > 0, 1, else: 0)

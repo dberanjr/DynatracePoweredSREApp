@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
+import { APP_VERSION } from "../version";
 
 // Dynatrace brand palette from POTX template
 const brand = {
@@ -585,7 +586,7 @@ export const LandingPage = () => {
           background: `linear-gradient(90deg, ${brand.accent1}, ${brand.accent2}, ${brand.accent3}, ${brand.accent4}, ${brand.accent5}, ${brand.accent6})`,
         }} />
         <Paragraph style={{ color: "rgba(255,255,255,0.35)", fontSize: 12 }}>
-          DynatracePoweredSRE — Built by David Beran with Dynatrace App Toolkit (version 2.5.0)
+          DynatracePoweredSRE — Built by David Beran with Dynatrace App Toolkit (version {APP_VERSION})
         </Paragraph>
       </div>
     </Flex>
