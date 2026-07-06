@@ -10,7 +10,7 @@ import {
 import { useDqlQuery } from "../hooks/useDqlQuery";
 
 interface Props {
-  appCI: string;
+  utan: string;
 }
 
 function StatCard({ label, query }: { label: string; query: string }) {
@@ -54,10 +54,10 @@ function QuerySection({ title, query }: { title: string; query: string }) {
   );
 }
 
-export const AiOpsPage: React.FC<Props> = ({ appCI }) => {
+export const AiOpsPage: React.FC<Props> = ({ utan }) => {
   const problemFilter = `fetch dt.davis.problems
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
-| filter lower(appci) == lower("${appCI}")
+| fieldsAdd utan = splitString(splitString(toString(entity_tags), "utan:")[1], "\\"")[0]
+| filter lower(utan) == lower("${utan}")
 | filter dt.davis.is_duplicate == false`;
 
   const problemsByCategoryQuery = `${problemFilter}
@@ -78,8 +78,8 @@ export const AiOpsPage: React.FC<Props> = ({ appCI }) => {
 | fieldsAdd dt.entity.service = if(startsWith(affected_entity_ids[0],"SERVICE"), affected_entity_ids[0])
 | fieldsAdd Service = entityName(dt.entity.service)
 | filter isNotNull(Service)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
-| filter lower(appci) == lower("${appCI}")
+| fieldsAdd utan = splitString(splitString(toString(entity_tags), "utan:")[1], "\\"")[0]
+| filter lower(utan) == lower("${utan}")
 | fieldsAdd usersAreAffected = if(isNotNull(dt.davis.affected_users_count),"YES", else: "NO")
 | summarize Problems = count(), by:{Service, dt.entity.service}
 | sort Problems desc`;

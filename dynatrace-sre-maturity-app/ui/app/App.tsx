@@ -25,50 +25,47 @@ export interface Timeframe {
 }
 
 // Try loading from lookup table first
-const APPCI_LOOKUP_QUERY = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
-| filter operational_status != "Retired"
-| filter isNotNull(applicationci)
-| filter stringLength(applicationci) <= 3
-| dedup applicationci
-| sort applicationci asc
-| fields applicationci
+const UTAN_LOOKUP_QUERY = `load "/lookups/utan_data"
+| filter isNotNull(utan)
+| dedup utan
+| sort utan asc
+| fields utan
 | limit 10000`;
 
-// Fallback: derive AppCI values from entity tags
-const APPCI_FALLBACK_QUERY = `fetch dt.entity.service
+// Fallback: derive UTAN values from entity tags
+const UTAN_FALLBACK_QUERY = `fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter isNotNull(appci)
-| fieldsAdd appci = upper(appci)
-| filter stringLength(appci) <= 3
-| dedup appci
-| sort appci asc
-| fields applicationci = appci
+| parse tags, "'utan:' LD:utan"
+| filter isNotNull(utan)
+| fieldsAdd utan = upper(utan)
+| dedup utan
+| sort utan asc
+| fields utan = utan
 | limit 10000`;
 
 export const App = () => {
-  const [selectedAppCI, setSelectedAppCI] = useState<string | null>("ADH");
+  const [selectedUtan, setSelectedUtan] = useState<string | null>("48263");
   const [timeframe, setTimeframe] = useState<Timeframe>({ from: "now()-24h", to: "now()" });
 
   // Try lookup table first
   const { data: lookupData, error: lookupError, isLoading: lookupLoading } = useDql({
-    query: APPCI_LOOKUP_QUERY,
+    query: UTAN_LOOKUP_QUERY,
   });
 
   // Fallback to entity tags if lookup fails
   const { data: fallbackData, isLoading: fallbackLoading } = useDql({
-    query: lookupError ? APPCI_FALLBACK_QUERY : "data record(skip = true) | limit 0",
+    query: lookupError ? UTAN_FALLBACK_QUERY : "data record(skip = true) | limit 0",
   });
 
-  const appciData = lookupError ? fallbackData : lookupData;
-  const appciLoading = lookupError ? fallbackLoading : lookupLoading;
+  const utanData = lookupError ? fallbackData : lookupData;
+  const utanLoading = lookupError ? fallbackLoading : lookupLoading;
 
-  const appciOptions = useMemo(() => {
-    if (!appciData?.records) return [];
-    return appciData.records.map((r: Record<string, unknown>) => String(r.applicationci));
-  }, [appciData]);
+  const utanOptions = useMemo(() => {
+    if (!utanData?.records) return [];
+    return utanData.records.map((r: Record<string, unknown>) => String(r.utan));
+  }, [utanData]);
 
-  const appCI = selectedAppCI || "ADH";
+  const utan = selectedUtan || "48263";
 
   return (
     <Page>
@@ -89,16 +86,16 @@ export const App = () => {
                 }
               }}
             />
-            <Heading level={6}>ApplicationCI:</Heading>
+            <Heading level={6}>UTAN:</Heading>
             <Select
-              name="appci-selector"
-              value={selectedAppCI}
-              onChange={(val) => setSelectedAppCI(val as string | null)}
+              name="utan-selector"
+              value={selectedUtan}
+              onChange={(val) => setSelectedUtan(val as string | null)}
             >
-              <SelectTrigger placeholder={appciLoading ? "Loading..." : "Select AppCI"} style={{ minWidth: 180 }} />
+              <SelectTrigger placeholder={utanLoading ? "Loading..." : "Select UTAN"} style={{ minWidth: 180 }} />
               <SelectContent>
                 <SelectFilter />
-                {appciOptions.map((opt: string) => (
+                {utanOptions.map((opt: string) => (
                   <SelectOption key={opt} value={opt}>
                     {opt}
                   </SelectOption>
@@ -112,12 +109,12 @@ export const App = () => {
         <ErrorBoundary>
           <Routes>
             <Route path="/" element={<ErrorBoundary><LandingPage /></ErrorBoundary>} />
-            <Route path="/overview" element={<ErrorBoundary><Home appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/golden-signals" element={<ErrorBoundary><GoldenSignalsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/ai-ops" element={<ErrorBoundary><AiOpsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/proactive" element={<ErrorBoundary><ProactivePage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/problem-analytics" element={<ErrorBoundary><ProblemAnalyticsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/scorecards" element={<ErrorBoundary><ScorecardsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/overview" element={<ErrorBoundary><Home utan={utan} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/golden-signals" element={<ErrorBoundary><GoldenSignalsPage utan={utan} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/ai-ops" element={<ErrorBoundary><AiOpsPage utan={utan} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/proactive" element={<ErrorBoundary><ProactivePage utan={utan} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/problem-analytics" element={<ErrorBoundary><ProblemAnalyticsPage utan={utan} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/scorecards" element={<ErrorBoundary><ScorecardsPage utan={utan} timeframe={timeframe} /></ErrorBoundary>} />
             <Route path="/portfolio" element={<ErrorBoundary><PortfolioPage /></ErrorBoundary>} />
             <Route path="/data" element={<ErrorBoundary><Data /></ErrorBoundary>} />
           </Routes>

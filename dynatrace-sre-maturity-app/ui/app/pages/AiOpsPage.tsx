@@ -6,17 +6,17 @@ import { ChartCard } from "../components/ChartCard";
 import { TableCard } from "../components/TableCard";
 
 interface Props {
-  appCI: string;
+  utan: string;
   timeframe: { from: string; to: string };
 }
 
-export const AiOpsPage = ({ appCI, timeframe }: Props) => {
+export const AiOpsPage = ({ utan, timeframe }: Props) => {
   const tf = `from:${timeframe.from}, to:${timeframe.to}`;
 
-  // Strategy: join events with entity IDs for this AppCI
+  // Strategy: join events with entity IDs for this UTAN
   // Step 1 in each query: get events
-  // Step 2: lookup against service entities tagged with this AppCI
-  // If affected_entity_ids matches a service for this AppCI, it's relevant
+  // Step 2: lookup against service entities tagged with this UTAN
+  // If affected_entity_ids matches a service for this UTAN, it's relevant
 
   const eventFilter = `fetch events, ${tf}
 | filter event.kind == "DAVIS_EVENT"
@@ -25,8 +25,8 @@ export const AiOpsPage = ({ appCI, timeframe }: Props) => {
 | lookup [
     fetch dt.entity.service
     | expand tags
-    | parse tags, "'applicationci:' LD:appci"
-    | filter lower(appci) == lower("${appCI}")
+    | parse tags, "'utan:' LD:utan"
+    | filter lower(utan) == lower("${utan}")
     | dedup id
     | fieldsAdd idStr = toString(id)
     | fields idStr

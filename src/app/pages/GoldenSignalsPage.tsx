@@ -9,7 +9,7 @@ import {
 import { useDqlQuery } from "../hooks/useDqlQuery";
 
 interface Props {
-  appCI: string;
+  utan: string;
 }
 
 function QueryTable({ title, query }: { title: string; query: string }) {
@@ -33,13 +33,13 @@ function QueryTable({ title, query }: { title: string; query: string }) {
   );
 }
 
-export const GoldenSignalsPage: React.FC<Props> = ({ appCI }) => {
+export const GoldenSignalsPage: React.FC<Props> = ({ utan }) => {
   const svcLookup = `| fieldsAdd svcIdStr = toString(dt.smartscape.service)
 | lookup [
     fetch dt.entity.service
     | expand tags
-    | parse tags, "'applicationci:' LD:appci"
-    | filter lower(appci) == lower("${appCI}")
+    | parse tags, "'utan:' LD:utan"
+    | filter lower(utan) == lower("${utan}")
     | dedup id
     | fieldsAdd idStr = toString(id)
     | fields idStr

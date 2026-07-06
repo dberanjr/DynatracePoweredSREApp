@@ -163,28 +163,27 @@ function PortfolioSummary({
 export const PortfolioPage = () => {
   const appInventoryQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter isNotNull(appci)
-| fieldsAdd appci = upper(appci)
-| filter stringLength(appci) <= 3
-| dedup appci, id
+| parse tags, "'utan:' LD:utan"
+| filter isNotNull(utan)
+| fieldsAdd utan = upper(utan)
+| dedup utan, id
 | summarize serviceCount = count(),
-    by:{appci}
+    by:{utan}
 | lookup [
     fetch bizevents, from:now()-48h
-    | filter event.type == "workflow.import.servicenow.appci"
-    | fieldsAdd applicationci = upper(applicationci)
+    | filter event.type == "workflow.import.servicenow.utan"
+    | fieldsAdd utan = upper(utan)
     | sort timestamp desc
-    | dedup applicationci
-    | fields applicationci, ciname, tier, app_owner_name
-  ], sourceField:appci, lookupField:applicationci, prefix:"cmdb."
+    | dedup utan
+    | fields utan, ciname, tier, app_owner_name
+  ], sourceField:utan, lookupField:utan, prefix:"cmdb."
 | fields
-    AppCI = appci,
+    UTAN = utan,
     Name = \`cmdb.ciname\`,
     Tier = \`cmdb.tier\`,
     Owner = \`cmdb.app_owner_name\`,
     Services = serviceCount
-| sort AppCI asc`;
+| sort Services desc`;
 
 
   const { data: inventoryData, isLoading: invLoading } = useDqlWithCache({ query: appInventoryQuery });
@@ -284,7 +283,7 @@ export const PortfolioPage = () => {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr>
-                  {["AppCI", "Name", "Tier", "Owner", "Services"].map((col) => (
+                  {["UTAN", "Name", "Tier", "Owner", "Services"].map((col) => (
                     <th key={col} style={{
                       textAlign: "left",
                       padding: "10px 14px",
@@ -308,7 +307,7 @@ export const PortfolioPage = () => {
                 {invRecords.map((row, i) => (
                   <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : "var(--sre-table-stripe)" }}>
                     <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--sre-table-border)", fontWeight: 700, color: "#1414D3" }}>
-                      {String(row.AppCI || "—")}
+                      {String(row.UTAN || "—")}
                     </td>
                     <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--sre-table-border)", fontWeight: 600, color: "#1414D3" }}>
                       {String(row.Name || "—")}

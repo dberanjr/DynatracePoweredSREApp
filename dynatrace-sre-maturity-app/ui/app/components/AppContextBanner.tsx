@@ -6,7 +6,7 @@ import { useDql } from "@dynatrace-sdk/react-hooks";
 import { RefreshOverlay } from "./RefreshOverlay";
 
 interface Props {
-  appCI: string;
+  utan: string;
 }
 
 function getCriticalityColor(criticality: string): string {
@@ -62,32 +62,31 @@ function Chip({ label, value, valueColor }: { label: string; value: string; valu
   );
 }
 
-const PROFILE_LOOKUP = (appCI: string) =>
-  `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
-| filter lower(applicationci) == lower("${appCI}")
+const PROFILE_LOOKUP = (utan: string) =>
+  `load "/lookups/utan_data"
+| filter lower(utan) == lower("${utan}")
 | fields
-    name,
-    applicationci,
-    business_criticality,
-    operational_status,
-    \`managed_by.u_managing_director\`,
-    owned_by,
-    support_group`;
+    name = SNOW_app_name,
+    utan,
+    business_criticality = top_tier,
+    managed_by,
+    owned_by = ownership_by,
+    support_group = maintained_by`;
 
-const PROFILE_FALLBACK = (appCI: string) =>
+const PROFILE_FALLBACK = (utan: string) =>
   `fetch bizevents, from:now()-48h
-| filter event.type == "workflow.import.servicenow.appci"
-| filter lower(applicationci) == lower("${appCI}")
+| filter event.type == "workflow.import.servicenow.utan"
+| filter lower(utan) == lower("${utan}")
 | sort timestamp desc
 | limit 1`;
 
-export const AppContextBanner = ({ appCI }: Props) => {
+export const AppContextBanner = ({ utan }: Props) => {
   const { data: lookupData, isLoading: lookupLoading, error: lookupError } = useDql({
-    query: PROFILE_LOOKUP(appCI),
+    query: PROFILE_LOOKUP(utan),
   });
 
   const { data: fallbackData, isLoading: fallbackLoading } = useDql({
-    query: lookupError ? PROFILE_FALLBACK(appCI) : "data record(skip = true) | limit 0",
+    query: lookupError ? PROFILE_FALLBACK(utan) : "data record(skip = true) | limit 0",
   });
 
   const data = lookupError ? fallbackData : lookupData;
@@ -119,10 +118,9 @@ export const AppContextBanner = ({ appCI }: Props) => {
 
   const r = (currentRecord || cacheRef.current) as Record<string, unknown>;
   const name = String(r.name || r.ciname || "");
-  const appci = String(r.applicationci || appCI);
   const criticality = String(r.business_criticality || r.tier || "\u2014");
   const status = String(r.operational_status || r.install_status || r.u_operational_status || "In Production");
-  const director = String(r["managed_by.u_managing_director"] || r.app_owner_name || "\u2014");
+  const director = String(r["managed_by.u_managing_director"] || r.managed_by || r.app_owner_name || "\u2014");
   const owner = String(r.owned_by || r.app_owner_name || "\u2014");
   const supportGroup = String(r.support_group || r.assignment_group || r.u_support_group || "\u2014");
 
@@ -145,7 +143,7 @@ export const AppContextBanner = ({ appCI }: Props) => {
         }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: 0.5, textTransform: "uppercase" }}>Application</div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", lineHeight: 1.3, marginTop: 3 }}>
-            {name || appci.toUpperCase()}
+            {name || utan.toUpperCase()}
           </div>
         </div>
         <div style={{
@@ -154,9 +152,9 @@ export const AppContextBanner = ({ appCI }: Props) => {
           borderRadius: 8,
           border: "3px solid #1A2440",
         }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: 0.5, textTransform: "uppercase" }}>AppCI</div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: 0.5, textTransform: "uppercase" }}>UTAN</div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", lineHeight: 1.3, marginTop: 3 }}>
-            {appci.toUpperCase()}
+            {utan.toUpperCase()}
           </div>
         </div>
       </div>

@@ -43,7 +43,7 @@ const pillars = [
       "Golden signal SLIs defined (latency, errors, traffic, saturation)",
       "Service-level SLOs created with targets",
       "Error budget and burn rate tracking enabled",
-      "SLO dashboards published by AppCI / business capability",
+      "SLO dashboards published by UTAN / business capability",
       "SRE assessment scores available in ARD",
     ],
     dynatrace: "SLO Management, Error Budget Tracking, Dashboards, Service Metrics",
@@ -320,7 +320,7 @@ function EnterpriseBadge() {
               @keyframes dotPulse3 { 0%, 80%, 100% { opacity: 0.15; } 60% { opacity: 0.8; } }
             `}</style>
             <div style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.35)", letterSpacing: 1, marginBottom: 12, lineHeight: 1.5, animation: "shimmer 2s ease-in-out infinite" }}>
-              Computing United Airlines<br />SRE Maturity Score...
+              Computing Northwestern Mutual<br />SRE Maturity Score...
             </div>
             <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
               {[1, 2, 3].map((n) => (
@@ -336,7 +336,7 @@ function EnterpriseBadge() {
         ) : (
           <>
             <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: 1.5, marginBottom: 6 }}>
-              UNITED AIRLINES ENTERPRISE MATURITY
+              NORTHWESTERN MUTUAL ENTERPRISE MATURITY
             </div>
             <div style={{
               fontSize: 72, fontWeight: 900, color, lineHeight: 1,
@@ -409,9 +409,9 @@ export const LandingPage = () => {
 
         </div>
 
-        {/* United globe — blended directly into the dark background */}
+        {/* Northwestern Mutual logo — blended directly into the dark background */}
         <img
-          src="./assets/united-globe-white.png"
+          src="./assets/northwestern-mutual-logo-png-transparent.png"
           alt=""
           style={{
             position: "absolute",

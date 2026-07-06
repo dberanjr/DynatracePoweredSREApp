@@ -8,30 +8,30 @@ import { InfographicList } from "../components/InfographicList";
 import { SparklineCard } from "../components/SparklineCard";
 
 interface Props {
-  appCI: string;
+  utan: string;
   timeframe: { from: string; to: string };
 }
 
-export const ProblemAnalyticsPage = ({ appCI, timeframe }: Props) => {
+export const ProblemAnalyticsPage = ({ utan, timeframe }: Props) => {
   const tf = `from:${timeframe.from}, to:${timeframe.to}`;
 
-  // Link to the new Davis Problems app filtered to this AppCI
-  const problemsAppBase = "https://YOUR_TENANT.apps.dynatrace.com/ui/apps/dynatrace.davis.problems/";
-  const tagFilter = encodeURIComponent(`"Entity tags" = "applicationci:${appCI.toLowerCase()}"`);
+  // Link to the new Davis Problems app filtered to this UTAN
+  const problemsAppBase = "https://ckx93277.apps.dynatrace.com/ui/apps/dynatrace.davis.problems/";
+  const tagFilter = encodeURIComponent(`"Entity tags" = "utan:${utan.toLowerCase()}"`);
   const fromParam = encodeURIComponent(timeframe.from);
   const toParam = encodeURIComponent(timeframe.to);
   const allProblemsUrl = `${problemsAppBase}?from=${fromParam}&to=${toParam}&filters=${tagFilter}`;
   const activeProblemsUrl = `${problemsAppBase}?from=${fromParam}&to=${toParam}&filters=${tagFilter}+AND+${encodeURIComponent('"Status" = "Active"')}`;
   const closedProblemsUrl = `${problemsAppBase}?from=${fromParam}&to=${toParam}&filters=${tagFilter}+AND+${encodeURIComponent('"Status" = "Closed"')}`;
-  // User-impacting link uses AppCI + Active status filter
+  // User-impacting link uses UTAN + Active status filter
   // The tile count is derived from the DQL query which filters by isNotNull(dt.davis.affected_users_count)
   const userImpactingUrl = `${problemsAppBase}?from=${fromParam}&to=${toParam}&filters=${tagFilter}+AND+${encodeURIComponent('"Status" = "Active"')}`;
 
-  // Common filter — joins davis problems with the AppCI tag
+  // Common filter — joins davis problems with the UTAN tag
   const problemBase = `fetch dt.davis.problems, ${tf}
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+| fieldsAdd utan = splitString(splitString(toString(entity_tags), "utan:")[1], "\\"")[0]
 | filter event.kind == "DAVIS_PROBLEM" and dt.davis.is_duplicate == false
-| filter lower(appci) == lower("${appCI}")`;
+| filter lower(utan) == lower("${utan}")`;
 
   // ── KPI queries ──
   const totalProblemsQuery = `${problemBase}
@@ -100,8 +100,8 @@ export const ProblemAnalyticsPage = ({ appCI, timeframe }: Props) => {
 | fieldsAdd dt.entity.service = if(startsWith(affected_entity_ids[0],"SERVICE"), affected_entity_ids[0])
 | fieldsAdd Service = entityName(dt.entity.service)
 | filter isNotNull(Service)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
-| filter lower(appci) == lower("${appCI}")
+| fieldsAdd utan = splitString(splitString(toString(entity_tags), "utan:")[1], "\\"")[0]
+| filter lower(utan) == lower("${utan}")
 | summarize Problems = count(), by:{Service}
 | sort Problems desc
 | limit 15`;

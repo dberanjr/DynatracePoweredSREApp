@@ -10,7 +10,7 @@ import {
 import { useDqlQuery } from "../hooks/useDqlQuery";
 
 interface Props {
-  appCI: string;
+  utan: string;
 }
 
 function StatCard({ title, label, query }: { title: string; label: string; query: string }) {
@@ -33,17 +33,16 @@ function StatCard({ title, label, query }: { title: string; label: string; query
   );
 }
 
-export const OverviewPage: React.FC<Props> = ({ appCI }) => {
-  const profileQuery = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
-| filter lower(applicationci) == lower("${appCI}")
+export const OverviewPage: React.FC<Props> = ({ utan }) => {
+  const profileQuery = `load "/lookups/utan_data"
+| filter lower(utan) == lower("${utan}")
 | fields
-    name,
-    applicationci,
-    business_criticality,
-    operational_status,
-    \`managed_by.u_managing_director\`,
-    owned_by,
-    support_group`;
+    name = SNOW_app_name,
+    utan,
+    business_criticality = top_tier,
+    managed_by,
+    owned_by = ownership_by,
+    support_group = maintained_by`;
 
   const { records: profileRecords, loading: profileLoading } = useDqlQuery(profileQuery);
 
@@ -52,8 +51,8 @@ export const OverviewPage: React.FC<Props> = ({ appCI }) => {
       label: "SERVICES",
       query: `fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'utan:' LD:utan"
+| filter lower(utan) == lower("${utan}")
 | dedup id
 | summarize Services = count()`,
     },
@@ -61,8 +60,8 @@ export const OverviewPage: React.FC<Props> = ({ appCI }) => {
       label: "HOSTS",
       query: `fetch dt.entity.host
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'utan:' LD:utan"
+| filter lower(utan) == lower("${utan}")
 | dedup id
 | summarize Hosts = count()`,
     },
@@ -70,10 +69,10 @@ export const OverviewPage: React.FC<Props> = ({ appCI }) => {
       label: "K8S WORKLOADS",
       query: `fetch dt.entity.cloud_application
 | expand tags
-| filter contains(lower(tags), "applicationci")
+| filter contains(lower(tags), "utan")
 | parse tags, "LD:key ':' LD:value"
-| filter contains(lower(key), "applicationci")
-| filter lower(value) == lower("${appCI}")
+| filter contains(lower(key), "utan")
+| filter lower(value) == lower("${utan}")
 | dedup id
 | summarize Workloads = count()`,
     },
@@ -84,8 +83,8 @@ export const OverviewPage: React.FC<Props> = ({ appCI }) => {
 | lookup [
     fetch dt.entity.service
     | expand tags
-    | parse tags, "'applicationci:' LD:appci"
-    | filter lower(appci) == lower("${appCI}")
+    | parse tags, "'utan:' LD:utan"
+    | filter lower(utan) == lower("${utan}")
     | dedup id
     | fieldsAdd idStr = toString(id)
     | fields idStr
@@ -102,8 +101,8 @@ export const OverviewPage: React.FC<Props> = ({ appCI }) => {
 | lookup [
     fetch dt.entity.service
     | expand tags
-    | parse tags, "'applicationci:' LD:appci"
-    | filter lower(appci) == lower("${appCI}")
+    | parse tags, "'utan:' LD:utan"
+    | filter lower(utan) == lower("${utan}")
     | dedup id
     | fieldsAdd idStr = toString(id)
     | fields idStr
@@ -119,9 +118,9 @@ export const OverviewPage: React.FC<Props> = ({ appCI }) => {
 | filter event.kind == "DAVIS_EVENT"
 | filter event.type == "CUSTOM_DEPLOYMENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'applicationci:' LD:appci"
-| filter isNotNull(appci)
-| filter lower(appci) == lower("${appCI}")
+| parse affected_entity_tags, "'utan:' LD:utan"
+| filter isNotNull(utan)
+| filter lower(utan) == lower("${utan}")
 | summarize Deploys = count()`,
     },
   ];

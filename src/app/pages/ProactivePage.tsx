@@ -10,7 +10,7 @@ import {
 import { useDqlQuery } from "../hooks/useDqlQuery";
 
 interface Props {
-  appCI: string;
+  utan: string;
 }
 
 function QuerySection({ title, query }: { title: string; query: string }) {
@@ -34,19 +34,19 @@ function QuerySection({ title, query }: { title: string; query: string }) {
   );
 }
 
-export const ProactivePage: React.FC<Props> = ({ appCI }) => {
+export const ProactivePage: React.FC<Props> = ({ utan }) => {
   const problemFilter = `fetch dt.davis.problems
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
-| filter lower(appci) == lower("${appCI}")
+| fieldsAdd utan = splitString(splitString(toString(entity_tags), "utan:")[1], "\\"")[0]
+| filter lower(utan) == lower("${utan}")
 | filter dt.davis.is_duplicate == false`;
 
   const deploymentTrendQuery = `fetch events, from:now()-7d
 | filter event.kind == "DAVIS_EVENT"
 | filter event.type == "CUSTOM_DEPLOYMENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'applicationci:' LD:appci"
-| filter isNotNull(appci)
-| filter lower(appci) == lower("${appCI}")
+| parse affected_entity_tags, "'utan:' LD:utan"
+| filter isNotNull(utan)
+| filter lower(utan) == lower("${utan}")
 | makeTimeseries Deployments = count()`;
 
   const resourceContentionQuery = `${problemFilter}
@@ -59,8 +59,8 @@ export const ProactivePage: React.FC<Props> = ({ appCI }) => {
 
   const serviceListQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'utan:' LD:utan"
+| filter lower(utan) == lower("${utan}")
 | dedup entity.name
 | fields entity.name
 | sort entity.name asc

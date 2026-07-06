@@ -17,21 +17,20 @@ import { ProactivePage } from "./pages/ProactivePage";
 import { ScorecardsPage } from "./pages/ScorecardsPage";
 import { PortfolioPage } from "./pages/PortfolioPage";
 
-const APPCI_QUERY = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
-| filter operational_status != "Retired"
-| sort applicationci asc
-| fields applicationci`;
+const UTAN_QUERY = `load "/lookups/utan_data"
+| sort utan asc
+| fields utan`;
 
 export const App: React.FC = () => {
-  const [selectedAppCI, setSelectedAppCI] = useState<string>("ADH");
+  const [selectedUtan, setSelectedUtan] = useState<string>("48263");
   const [activeTab, setActiveTab] = useState(0);
 
-  const { records: appciRecords, loading: appciLoading } = useDqlQuery(APPCI_QUERY);
+  const { records: utanRecords, loading: utanLoading } = useDqlQuery(UTAN_QUERY);
 
-  const appciOptions = useMemo(() => {
-    if (!appciRecords) return [];
-    return appciRecords.map((r) => String(r.applicationci));
-  }, [appciRecords]);
+  const utanOptions = useMemo(() => {
+    if (!utanRecords) return [];
+    return utanRecords.map((r) => String(r.utan));
+  }, [utanRecords]);
 
   return (
     <Page>
@@ -41,14 +40,14 @@ export const App: React.FC = () => {
             Dynatrace SRE Maturity
           </Text>
           <Select
-            name="appci-selector"
-            value={selectedAppCI}
-            onChange={(value) => setSelectedAppCI(value as string)}
-            loading={appciLoading}
+            name="utan-selector"
+            value={selectedUtan}
+            onChange={(value) => setSelectedUtan(value as string)}
+            loading={utanLoading}
           >
-            {appciOptions.map((appci) => (
-              <SelectOption key={appci} value={appci}>
-                {appci}
+            {utanOptions.map((utan) => (
+              <SelectOption key={utan} value={utan}>
+                {utan}
               </SelectOption>
             ))}
           </Select>
@@ -57,19 +56,19 @@ export const App: React.FC = () => {
       <Page.Main>
         <Tabs selectedIndex={activeTab} onChange={setActiveTab}>
           <Tab title="Overview">
-            <OverviewPage appCI={selectedAppCI} />
+            <OverviewPage utan={selectedUtan} />
           </Tab>
           <Tab title="Golden Signals">
-            <GoldenSignalsPage appCI={selectedAppCI} />
+            <GoldenSignalsPage utan={selectedUtan} />
           </Tab>
           <Tab title="AI Ops">
-            <AiOpsPage appCI={selectedAppCI} />
+            <AiOpsPage utan={selectedUtan} />
           </Tab>
           <Tab title="Proactive">
-            <ProactivePage appCI={selectedAppCI} />
+            <ProactivePage utan={selectedUtan} />
           </Tab>
           <Tab title="Scorecards">
-            <ScorecardsPage appCI={selectedAppCI} />
+            <ScorecardsPage utan={selectedUtan} />
           </Tab>
           <Tab title="Portfolio">
             <PortfolioPage />

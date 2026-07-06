@@ -32,7 +32,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               {this.state.error?.message || "An unexpected error occurred."}
             </Paragraph>
             <Paragraph>
-              Try selecting a different ApplicationCI or timeframe, or reload the page.
+              Try selecting a different UTAN or timeframe, or reload the page.
             </Paragraph>
           </Flex>
         </Surface>

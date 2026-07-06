@@ -8,7 +8,7 @@ import { AppContextBanner } from "../components/AppContextBanner";
 import { SimpleTable } from "../components/SimpleTable";
 
 interface Props {
-  appCI: string;
+  utan: string;
   timeframe: { from: string; to: string };
 }
 
@@ -139,51 +139,54 @@ function QueryTable({
   );
 }
 
-export const Home = ({ appCI, timeframe }: Props) => {
+export const Home = ({ utan, timeframe }: Props) => {
   const tf = `from:${timeframe.from}, to:${timeframe.to}`;
 
   // ── Signal queries ──
   const servicesQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'utan:' LD:utan"
+| filter lower(utan) == lower("${utan}")
 | dedup id
 | summarize Count = count()`;
 
-  const hostsQuery = `fetch dt.entity.host
+  const hostsQuery = `
+  fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'utan:' LD:utan"
+| filter lower(utan) == lower("${utan}")
 | dedup id
+| fieldsAdd runs_on_hosts = runs_on[dt.entity.host]
+| expand runs_on_hosts
+| lookup [fetch dt.entity.host | fields id, entity.name, monitoringMode], sourceField: runs_on_hosts, lookupField: id
+| fields Host = lookup.entity.name, lookup.monitoringMode
+| dedup Host
 | summarize Count = count()`;
 
   const processGroupsQuery = `fetch dt.entity.process_group
-| fieldsAdd applicationci=splitString(arrayRemoveNulls(iCollectArray(if(matchesValue(tags[], "*applicationci*"), lower(tags[]))))[0], ":")[1]
-| filter in(applicationci, {lower("${appCI}")})
+| fieldsAdd utan=splitString(arrayRemoveNulls(iCollectArray(if(matchesValue(tags[], "*utan*"), lower(tags[]))))[0], ":")[1]
+| filter in(utan, {lower("${utan}")})
 | dedup id
 | summarize Count = count()`;
 
   const k8sQuery = `fetch dt.entity.cloud_application
-| expand tags
-| filter contains(lower(tags), "applicationci")
-| parse tags, "LD:key ':' LD:value"
-| filter contains(lower(key), "applicationci")
-| filter lower(value) == lower("${appCI}")
+| fieldsAdd utan = lower(cloudApplicationLabels[\`nm.kubernetes/utan\`])
+| filter utan == lower("${utan}")
 | dedup id
 | summarize Count = count()`;
 
   const logsQuery = `fetch logs, samplingRatio:100
-| filter applicationci == lower("${appCI}")
+| filter utan == lower("${utan}")
 | limit 1
 | summarize Count = count()`;
 
   const rumQuery = `fetch dt.entity.application, from:now()-1000d
-| fieldsAdd applicationci=splitString(arrayRemoveNulls(iCollectArray(if(matchesValue(tags[], "*applicationci*"), lower(tags[]))))[0], ":")[1]
-| filter in(applicationci, {lower("${appCI}")})
+| fieldsAdd utan=splitString(arrayRemoveNulls(iCollectArray(if(matchesValue(tags[], "*utan*"), lower(tags[]))))[0], ":")[1]
+| filter in(utan, {lower("${utan}")})
 | summarize Count = count()`;
 
   const awsQuery = `fetch bizevents, from:now()-24h
-| filter event.type=="workflow.summary.cloud.aws" and lower(applicationci)==lower("${appCI}")
+| filter event.type=="workflow.summary.cloud.aws" and lower(utan)==lower("${utan}")
 | filter type != "RUM_APPLICATION"
 | summarize Count = count()`;
 
@@ -191,36 +194,37 @@ export const Home = ({ appCI, timeframe }: Props) => {
 | filter event.kind == "DAVIS_EVENT"
 | filter event.type == "CUSTOM_DEPLOYMENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'applicationci:' LD:appci"
-| filter isNotNull(appci)
-| filter lower(appci) == lower("${appCI}")
+| parse affected_entity_tags, "'utan:' LD:utan"
+| filter isNotNull(utan)
+| filter lower(utan) == lower("${utan}")
 | summarize Count = count()`;
 
   // ── Detail table queries ──
   const serviceListQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'utan:' LD:utan"
+| filter lower(utan) == lower("${utan}")
 | dedup id
 | fields Service = entity.name
 | sort Service asc
 | limit 25`;
 
-  const hostListQuery = `fetch dt.entity.host
+  const hostListQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'utan:' LD:utan"
+| filter lower(utan) == lower("${utan}")
 | dedup id
-| fields Host = entity.name, monitoringMode
+| fieldsAdd runs_on_hosts = runs_on[dt.entity.host]
+| expand runs_on_hosts
+| lookup [fetch dt.entity.host | fields id, entity.name, monitoringMode], sourceField: runs_on_hosts, lookupField: id
+| fields Host = lookup.entity.name, lookup.monitoringMode
+| dedup Host
 | sort Host asc
 | limit 25`;
 
   const k8sListQuery = `fetch dt.entity.cloud_application
-| expand tags
-| filter contains(lower(tags), "applicationci")
-| parse tags, "LD:key ':' LD:value"
-| filter contains(lower(key), "applicationci")
-| filter lower(value) == lower("${appCI}")
+| fieldsAdd utan = lower(cloudApplicationLabels[\`nm.kubernetes/utan\`])
+| filter utan == lower("${utan}")
 | dedup id
 | fields Workload = entity.name
 | sort Workload asc
@@ -229,7 +233,7 @@ export const Home = ({ appCI, timeframe }: Props) => {
   return (
     <Flex flexDirection="column" gap={20} padding={16}>
       {/* App context banner */}
-      <AppContextBanner appCI={appCI} />
+      <AppContextBanner utan={utan} />
 
       {/* Observability signals overview */}
       <div style={{
@@ -267,7 +271,7 @@ export const Home = ({ appCI, timeframe }: Props) => {
             query={hostListQuery}
             columns={[
               { name: "Host", label: "Host Name" },
-              { name: "monitoringMode", label: "Mode" },
+              { name: "lookup.monitoringMode", label: "Mode" },
             ]}
             maxHeight={300}
           />

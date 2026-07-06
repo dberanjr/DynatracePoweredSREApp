@@ -9,7 +9,7 @@ import {
 import { useDqlQuery } from "../hooks/useDqlQuery";
 
 interface Props {
-  appCI: string;
+  utan: string;
 }
 
 function ScorecardSection({ title, query }: { title: string; query: string }) {
@@ -33,132 +33,132 @@ function ScorecardSection({ title, query }: { title: string; query: string }) {
   );
 }
 
-export const ScorecardsPage: React.FC<Props> = ({ appCI }) => {
+export const ScorecardsPage: React.FC<Props> = ({ utan }) => {
   const l1Query = `// L1 Full Observability - Maturity Scorecard
-data record(applicationci = lower("${appCI}"))
+data record(utan = lower("${utan}"))
 
 // Signal 1: OneAgent / Metrics
 | lookup [
     fetch dt.entity.host
     | limit 100000
     | filter lifetime[end] > asTimestamp(now()-2h)
-    | fieldsAdd applicationci = arrayDistinct(
+    | fieldsAdd utan = arrayDistinct(
         iCollectArray(
           splitString(
             arrayRemoveNulls(
               iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
               )
             )[], ":"
           )[1]
         )
       )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
+    | fieldsAdd utan = arrayDistinct(
+        iCollectArray(splitString(utan[], ",")[0])
       )
-    | expand applicationci
+    | expand utan
     | summarize
         hostCount = count(),
         fullStackCount = countIf(monitoringMode == "FULL_STACK"),
-        by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{hostCount, fullStackCount}
+        by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{hostCount, fullStackCount}
 | fieldsRename hosts = hostCount, fullStack = fullStackCount
 
 // Signal 2: Services / Traces
 | lookup [
     fetch dt.entity.service
-    | fieldsAdd applicationci = arrayDistinct(
+    | fieldsAdd utan = arrayDistinct(
         iCollectArray(
           splitString(
             arrayRemoveNulls(
               iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
               )
             )[], ":"
           )[1]
         )
       )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
+    | fieldsAdd utan = arrayDistinct(
+        iCollectArray(splitString(utan[], ",")[0])
       )
-    | expand applicationci
-    | summarize serviceCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{serviceCount}
+    | expand utan
+    | summarize serviceCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{serviceCount}
 | fieldsRename services = serviceCount
 
 // Signal 3: Logs
 | lookup [
     fetch logs, samplingRatio:1000
-    | filter isNotNull(applicationci)
-    | summarize logCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{logCount}
+    | filter isNotNull(utan)
+    | summarize logCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{logCount}
 | fieldsRename logs = logCount
 
 // Signal 4: K8s / Cloud workloads
 | lookup [
     fetch dt.entity.cloud_application
-    | fieldsAdd applicationci = arrayDistinct(
+    | fieldsAdd utan = arrayDistinct(
         iCollectArray(
           splitString(
             arrayRemoveNulls(
               iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
               )
             )[], ":"
           )[1]
         )
       )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
+    | fieldsAdd utan = arrayDistinct(
+        iCollectArray(splitString(utan[], ",")[0])
       )
-    | expand applicationci
-    | summarize k8sCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sCount}
+    | expand utan
+    | summarize k8sCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{k8sCount}
 | fieldsRename k8sWorkloads = k8sCount
 
 // Signal 5: RUM
 | lookup [
     fetch dt.entity.application, from:now()-1000d
-    | fieldsAdd applicationci = arrayDistinct(
+    | fieldsAdd utan = arrayDistinct(
         iCollectArray(
           splitString(
             arrayRemoveNulls(
               iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
               )
             )[], ":"
           )[1]
         )
       )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
+    | fieldsAdd utan = arrayDistinct(
+        iCollectArray(splitString(utan[], ",")[0])
       )
-    | expand applicationci
+    | expand utan
     | fieldsAdd rumActive = if(lifetime[end] > now()-7d, true, else: false)
-    | summarize rumCount = countIf(rumActive == true), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{rumCount}
+    | summarize rumCount = countIf(rumActive == true), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{rumCount}
 | fieldsRename rumApps = rumCount
 
 // Signal 6: Synthetics
 | lookup [
     fetch dt.entity.synthetic_test
-    | fieldsAdd applicationci = arrayDistinct(
+    | fieldsAdd utan = arrayDistinct(
         iCollectArray(
           splitString(
             arrayRemoveNulls(
               iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
               )
             )[], ":"
           )[1]
         )
       )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
+    | fieldsAdd utan = arrayDistinct(
+        iCollectArray(splitString(utan[], ",")[0])
       )
-    | expand applicationci
-    | summarize synCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{synCount}
+    | expand utan
+    | summarize synCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{synCount}
 | fieldsRename synthetics = synCount
 
 // Null-safe defaults
@@ -211,50 +211,50 @@ data record(applicationci = lower("${appCI}"))
     \`6. RUM / Synthetics\``;
 
   const l2Query = `// L2 Measured Reliability - Maturity Scorecard
-data record(applicationci = lower("${appCI}"))
+data record(utan = lower("${utan}"))
 
 // Signal 1: Golden signal metrics
 | lookup [
     fetch dt.entity.service
-    | fieldsAdd applicationci = arrayDistinct(
+    | fieldsAdd utan = arrayDistinct(
         iCollectArray(
           splitString(
             arrayRemoveNulls(
               iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
               )
             )[], ":"
           )[1]
         )
       )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
+    | fieldsAdd utan = arrayDistinct(
+        iCollectArray(splitString(utan[], ",")[0])
       )
-    | expand applicationci
-    | summarize serviceCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{serviceCount}
+    | expand utan
+    | summarize serviceCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{serviceCount}
 | fieldsRename goldenSignalServices = serviceCount
 
 // Signal 2: SLO dashboards published
 | lookup [
     fetch bizevents, from:now()-24h
     | filter event.type == "workflow.summary.dashboard"
-    | fieldsAdd dashAppci = lower(splitString(name, " :")[0])
-    | filter isNotNull(dashAppci)
-    | filter stringLength(dashAppci) <= 4
-    | summarize dashboardCount = count(), by:{dashAppci}
-    | fieldsRename applicationci = dashAppci
-  ], sourceField:applicationci, lookupField:applicationci, fields:{dashboardCount}
+    | fieldsAdd dashUtan = lower(splitString(name, " :")[0])
+    | filter isNotNull(dashUtan)
+    | filter stringLength(dashUtan) <= 4
+    | summarize dashboardCount = count(), by:{dashUtan}
+    | fieldsRename utan = dashUtan
+  ], sourceField:utan, lookupField:utan, fields:{dashboardCount}
 | fieldsRename dashboards = dashboardCount
 
 // Signal 3: SRE assessment (CMDB tier assigned)
 | lookup [
     fetch bizevents, from:now()-24h
-    | filter event.type == "workflow.import.servicenow.appci"
-    | fieldsAdd applicationci = lower(applicationci)
+    | filter event.type == "workflow.import.servicenow.utan"
+    | fieldsAdd utan = lower(utan)
     | filter isNotNull(tier)
-    | summarize hasTier = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{hasTier}
+    | summarize hasTier = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{hasTier}
 | fieldsRename sreAssessment = hasTier
 
 // Null-safe defaults
@@ -272,7 +272,7 @@ data record(applicationci = lower("${appCI}"))
     \`3. Error Budget Tracking\` = "fail Not detected",
     \`4. SLO Dashboards Published\` = if(dashboards > 0,
         concat("pass ", toString(dashboards), " dashboards"),
-        else: "fail No AppCI dashboards"),
+        else: "fail No UTAN dashboards"),
     \`5. SRE Assessment in ARD\` = if(sreAssessment > 0,
         "pass CMDB tier assigned",
         else: "fail No tier data")
@@ -293,13 +293,13 @@ data record(applicationci = lower("${appCI}"))
     \`5. SRE Assessment in ARD\``;
 
   const l3Query = `// L3 AI-Assisted Operations - Maturity Scorecard
-data record(applicationci = lower("${appCI}"))
+data record(utan = lower("${utan}"))
 
 // All problem signals in one lookup
 | lookup [
     fetch dt.davis.problems
-    | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
-    | filter isNotNull(appci)
+    | fieldsAdd utan = splitString(splitString(toString(entity_tags), "utan:")[1], "\\"")[0]
+    | filter isNotNull(utan)
     | filter dt.davis.is_duplicate == false
     | fieldsAdd isCorrelated = arraySize(affected_entities) > 1
     | fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"
@@ -310,9 +310,9 @@ data record(applicationci = lower("${appCI}"))
         customAlerts = countIf(event.category == "CUSTOM_ALERT"),
         itsmRouted = countIf(hasItsmProfile == true),
         avgDuration = avg(toDouble(resolved_problem_duration) / 60000000000.0),
-        by:{appci}
-    | fieldsRename applicationci = appci
-  ], sourceField:applicationci, lookupField:applicationci, fields:{totalProblems, correlatedProblems, customAlerts, itsmRouted, avgDuration}
+        by:{utan}
+    | fieldsRename utan = utan
+  ], sourceField:utan, lookupField:utan, fields:{totalProblems, correlatedProblems, customAlerts, itsmRouted, avgDuration}
 | fieldsRename
     problems = totalProblems,
     correlated = correlatedProblems,
@@ -368,41 +368,41 @@ data record(applicationci = lower("${appCI}"))
     \`5. Alert Noise Review\``;
 
   const l4Query = `// L4 Proactive Reliability - Maturity Scorecard
-data record(applicationci = lower("${appCI}"))
+data record(utan = lower("${utan}"))
 
 // Signal 1: Resource saturation problems
 | lookup [
     fetch dt.davis.problems
-    | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
-    | filter isNotNull(appci)
+    | fieldsAdd utan = splitString(splitString(toString(entity_tags), "utan:")[1], "\\"")[0]
+    | filter isNotNull(utan)
     | filter dt.davis.is_duplicate == false
     | summarize
         resourceProblems = countIf(event.category == "RESOURCE_CONTENTION"),
-        by:{appci}
-    | fieldsRename applicationci = appci
-  ], sourceField:applicationci, lookupField:applicationci, fields:{resourceProblems}
+        by:{utan}
+    | fieldsRename utan = utan
+  ], sourceField:utan, lookupField:utan, fields:{resourceProblems}
 | fieldsRename resourceAlerts = resourceProblems
 
 // Signal 2: K8s workloads
 | lookup [
     fetch dt.entity.cloud_application
-    | fieldsAdd applicationci = arrayDistinct(
+    | fieldsAdd utan = arrayDistinct(
         iCollectArray(
           splitString(
             arrayRemoveNulls(
               iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
               )
             )[], ":"
           )[1]
         )
       )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
+    | fieldsAdd utan = arrayDistinct(
+        iCollectArray(splitString(utan[], ",")[0])
       )
-    | expand applicationci
-    | summarize k8sCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sCount}
+    | expand utan
+    | summarize k8sCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{k8sCount}
 | fieldsRename k8sWorkloads = k8sCount
 
 // Signal 3: Deployment events
@@ -411,11 +411,11 @@ data record(applicationci = lower("${appCI}"))
     | filter event.kind == "DAVIS_EVENT"
     | filter event.type == "CUSTOM_DEPLOYMENT"
     | expand affected_entity_tags
-    | parse affected_entity_tags, "'applicationci:' LD:appci"
-    | filter isNotNull(appci)
-    | fieldsAdd applicationci = lower(appci)
-    | summarize deployCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{deployCount}
+    | parse affected_entity_tags, "'utan:' LD:utan"
+    | filter isNotNull(utan)
+    | fieldsAdd utan = lower(utan)
+    | summarize deployCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{deployCount}
 | fieldsRename deployments = deployCount
 
 // Signal 4: AWS cloud inventory
@@ -426,8 +426,8 @@ data record(applicationci = lower("${appCI}"))
         awsTotal = count(),
         eksCount = countIf(contains(type, "eks")),
         ecsCount = countIf(contains(type, "ecs")),
-        by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{awsTotal, eksCount, ecsCount}
+        by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{awsTotal, eksCount, ecsCount}
 | fieldsRename aws = awsTotal, eks = eksCount, ecs = ecsCount
 
 // Null-safe defaults
@@ -482,31 +482,31 @@ data record(applicationci = lower("${appCI}"))
     \`9. Error Budget Gating\``;
 
   const l5Query = `// L5 Autonomous Reliability - Maturity Scorecard
-data record(applicationci = lower("${appCI}"))
+data record(utan = lower("${utan}"))
 
 // Signal 1: Workflow automations
 | lookup [
     fetch bizevents, from:now()-7d
     | filter contains(event.type, "workflow")
-    | filter isNotNull(applicationci)
-    | summarize workflowCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{workflowCount}
+    | filter isNotNull(utan)
+    | summarize workflowCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{workflowCount}
 | fieldsRename workflows = workflowCount
 
 // Signal 2: Problem auto-enrichment
 | lookup [
     fetch dt.davis.problems
-    | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
-    | filter isNotNull(appci)
+    | fieldsAdd utan = splitString(splitString(toString(entity_tags), "utan:")[1], "\\"")[0]
+    | filter isNotNull(utan)
     | filter dt.davis.is_duplicate == false
     | fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"
         and isNotNull(labels.alerting_profile)
     | summarize
         totalProblems = count(),
         enrichedProblems = countIf(hasItsmProfile == true),
-        by:{appci}
-    | fieldsRename applicationci = appci
-  ], sourceField:applicationci, lookupField:applicationci, fields:{totalProblems, enrichedProblems}
+        by:{utan}
+    | fieldsRename utan = utan
+  ], sourceField:utan, lookupField:utan, fields:{totalProblems, enrichedProblems}
 | fieldsRename total = totalProblems, enriched = enrichedProblems
 
 // Null-safe defaults

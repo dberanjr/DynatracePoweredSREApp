@@ -14,14 +14,14 @@ interface UseSloApiResult {
   error: Error | null;
 }
 
-export const useSloApi = (appCI: string): UseSloApiResult => {
+export const useSloApi = (utan: string): UseSloApiResult => {
   const [sloCount, setSloCount] = useState(0);
   const [slos, setSlos] = useState<SloItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!appCI) {
+    if (!utan) {
       setIsLoading(false);
       return;
     }
@@ -33,7 +33,7 @@ export const useSloApi = (appCI: string): UseSloApiResult => {
       setError(null);
       try {
         const params = new URLSearchParams({
-          name: appCI,
+          name: utan,
           pageSize: "500",
           enabledSlos: "all",
           fields: "name,status,evaluationWindow,target",
@@ -60,7 +60,7 @@ export const useSloApi = (appCI: string): UseSloApiResult => {
 
     fetchSlos();
     return () => controller.abort();
-  }, [appCI]);
+  }, [utan]);
 
   return { sloCount, slos, isLoading, error };
 };

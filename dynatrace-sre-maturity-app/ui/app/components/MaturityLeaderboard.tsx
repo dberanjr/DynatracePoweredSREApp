@@ -8,71 +8,70 @@ import { useDqlWithCache } from "../hooks/useDqlWithCache";
 // ── Bulk L1 query: per-app observability signals (matches scorecard L1 logic) ──
 // Checks: hosts, services, logs, smartscape(=services), k8s, rum/synthetics → 6 max
 const BULK_L1_QUERY = `fetch dt.entity.service
-| fieldsAdd applicationci = arrayDistinct(
+| fieldsAdd utan = arrayDistinct(
     iCollectArray(
       splitString(
         arrayRemoveNulls(
           iCollectArray(
-            if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+            if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
           )
         )[], ":"
       )[1]
     )
   )
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(splitString(applicationci[], ",")[0])
+| fieldsAdd utan = arrayDistinct(
+    iCollectArray(splitString(utan[], ",")[0])
   )
-| expand applicationci
-| filter stringLength(applicationci) <= 3
-| summarize serviceCount = count(), by:{applicationci}
+| expand utan
+| summarize serviceCount = count(), by:{utan}
 | lookup [
     fetch dt.entity.host
     | limit 100000
     | filter lifetime[end] > asTimestamp(now()-2h)
-    | fieldsAdd applicationci = arrayDistinct(
+    | fieldsAdd utan = arrayDistinct(
         iCollectArray(
           splitString(
             arrayRemoveNulls(
               iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
               )
             )[], ":"
           )[1]
         )
       )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
+    | fieldsAdd utan = arrayDistinct(
+        iCollectArray(splitString(utan[], ",")[0])
       )
-    | expand applicationci
+    | expand utan
     | summarize
         hostCount = count(),
         fullStackCount = countIf(monitoringMode == "FULL_STACK"),
-        by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{hostCount, fullStackCount}
+        by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{hostCount, fullStackCount}
 | lookup [
     fetch dt.entity.cloud_application
-    | fieldsAdd applicationci = arrayDistinct(
+    | fieldsAdd utan = arrayDistinct(
         iCollectArray(
           splitString(
             arrayRemoveNulls(
               iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
               )
             )[], ":"
           )[1]
         )
       )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
+    | fieldsAdd utan = arrayDistinct(
+        iCollectArray(splitString(utan[], ",")[0])
       )
-    | expand applicationci
-    | summarize k8sCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sCount}
+    | expand utan
+    | summarize k8sCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{k8sCount}
 | lookup [
     fetch logs, samplingRatio:1000
-    | filter isNotNull(applicationci)
-    | summarize logCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{logCount}
+    | filter isNotNull(utan)
+    | summarize logCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{logCount}
 | fieldsAdd
     hostCount = if(isNull(hostCount), 0, else: hostCount),
     serviceCount = if(isNull(serviceCount), 0, else: serviceCount),
@@ -85,44 +84,43 @@ const BULK_L1_QUERY = `fetch dt.entity.service
     + if(serviceCount > 0, 1, else: 0)
     + if(k8sCount > 0, 1, else: 0)
     + 0
-| fields applicationci, l1Score, serviceCount, hostCount, k8sCount, logCount`;
+| fields utan, l1Score, serviceCount, hostCount, k8sCount, logCount`;
 
 // ── Bulk L2: per-app measured reliability signals ──
 // Checks: golden signals(=services>0), SLOs(0), error budget(0), dashboards, SRE assessment → 5 max
 const BULK_L2_QUERY = `fetch dt.entity.service
-| fieldsAdd applicationci = arrayDistinct(
+| fieldsAdd utan = arrayDistinct(
     iCollectArray(
       splitString(
         arrayRemoveNulls(
           iCollectArray(
-            if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+            if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
           )
         )[], ":"
       )[1]
     )
   )
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(splitString(applicationci[], ",")[0])
+| fieldsAdd utan = arrayDistinct(
+    iCollectArray(splitString(utan[], ",")[0])
   )
-| expand applicationci
-| filter stringLength(applicationci) <= 3
-| summarize serviceCount = count(), by:{applicationci}
+| expand utan
+| summarize serviceCount = count(), by:{utan}
 | lookup [
     fetch bizevents, from:now()-24h
     | filter event.type == "workflow.summary.dashboard"
-    | fieldsAdd dashAppci = lower(splitString(name, " :")[0])
-    | filter isNotNull(dashAppci)
-    | filter stringLength(dashAppci) <= 3
-    | summarize dashboardCount = count(), by:{dashAppci}
-    | fieldsRename applicationci = dashAppci
-  ], sourceField:applicationci, lookupField:applicationci, fields:{dashboardCount}
+    | fieldsAdd dashUtan = lower(splitString(name, " :")[0])
+    | filter isNotNull(dashUtan)
+    | filter stringLength(dashUtan) <= 3
+    | summarize dashboardCount = count(), by:{dashUtan}
+    | fieldsRename utan = dashUtan
+  ], sourceField:utan, lookupField:utan, fields:{dashboardCount}
 | lookup [
     fetch bizevents, from:now()-24h
-    | filter event.type == "workflow.import.servicenow.appci"
-    | fieldsAdd applicationci = lower(applicationci)
+    | filter event.type == "workflow.import.servicenow.utan"
+    | fieldsAdd utan = lower(utan)
     | filter isNotNull(tier)
-    | summarize hasTier = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{hasTier}
+    | summarize hasTier = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{hasTier}
 | fieldsAdd
     dashboardCount = if(isNull(dashboardCount), 0, else: dashboardCount),
     hasTier = if(isNull(hasTier), 0, else: hasTier)
@@ -131,73 +129,71 @@ const BULK_L2_QUERY = `fetch dt.entity.service
     + 0 + 0
     + if(dashboardCount > 0, 1, else: 0)
     + if(hasTier > 0, 1, else: 0)
-| fields applicationci, l2Score`;
+| fields utan, l2Score`;
 
 // ── Bulk L3: per-app AI ops signals (simplified — needs davis auth for full) ──
 // Max 5 checks; without davis we check what we can
 const BULK_L3_QUERY = `fetch bizevents, from:now()-24h
-| filter event.type == "workflow.import.servicenow.appci"
-| fieldsAdd applicationci = lower(applicationci)
-| filter isNotNull(applicationci)
-| filter stringLength(applicationci) <= 3
-| dedup applicationci
+| filter event.type == "workflow.import.servicenow.utan"
+| fieldsAdd utan = lower(utan)
+| filter isNotNull(utan)
+| dedup utan
 | fieldsAdd l3Score = 0
-| fields applicationci, l3Score`;
+| fields utan, l3Score`;
 
 // ── Bulk L4: per-app proactive signals ──
 // Checks: resource alerts(1), scaling metrics, k8s, predictive(0), cloud capacity, deploys, release(0), dashboards(0), budget(0) → 9 max
 const BULK_L4_QUERY = `fetch dt.entity.service
-| fieldsAdd applicationci = arrayDistinct(
+| fieldsAdd utan = arrayDistinct(
     iCollectArray(
       splitString(
         arrayRemoveNulls(
           iCollectArray(
-            if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+            if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
           )
         )[], ":"
       )[1]
     )
   )
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(splitString(applicationci[], ",")[0])
+| fieldsAdd utan = arrayDistinct(
+    iCollectArray(splitString(utan[], ",")[0])
   )
-| expand applicationci
-| filter stringLength(applicationci) <= 3
-| summarize svcCount = count(), by:{applicationci}
+| expand utan
+| summarize svcCount = count(), by:{utan}
 | lookup [
     fetch dt.entity.cloud_application
-    | fieldsAdd applicationci = arrayDistinct(
+    | fieldsAdd utan = arrayDistinct(
         iCollectArray(
           splitString(
             arrayRemoveNulls(
               iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
               )
             )[], ":"
           )[1]
         )
       )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
+    | fieldsAdd utan = arrayDistinct(
+        iCollectArray(splitString(utan[], ",")[0])
       )
-    | expand applicationci
-    | summarize k8sCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sCount}
+    | expand utan
+    | summarize k8sCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{k8sCount}
 | lookup [
     fetch events, from:now()-7d
     | filter event.kind == "DAVIS_EVENT"
     | filter event.type == "CUSTOM_DEPLOYMENT"
     | expand affected_entity_tags
-    | parse affected_entity_tags, "'applicationci:' LD:appci"
-    | filter isNotNull(appci)
-    | fieldsAdd applicationci = lower(appci)
-    | summarize deployCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{deployCount}
+    | parse affected_entity_tags, "'utan:' LD:utan"
+    | filter isNotNull(utan)
+    | fieldsAdd utan = lower(utan)
+    | summarize deployCount = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{deployCount}
 | lookup [
     fetch bizevents, from:now()-24h
     | filter event.type == "workflow.summary.cloud.aws"
-    | summarize awsTotal = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{awsTotal}
+    | summarize awsTotal = count(), by:{utan}
+  ], sourceField:utan, lookupField:utan, fields:{awsTotal}
 | fieldsAdd
     k8sCount = if(isNull(k8sCount), 0, else: k8sCount),
     deployCount = if(isNull(deployCount), 0, else: deployCount),
@@ -210,37 +206,35 @@ const BULK_L4_QUERY = `fetch dt.entity.service
     + if(awsTotal > 0, 1, else: 0)
     + if(deployCount > 0, 1, else: 0)
     + 0 + 0 + 0
-| fields applicationci, l4Score`;
+| fields utan, l4Score`;
 
 // ── Bulk L5: per-app autonomous signals ──
 // Max 5 checks
 const BULK_L5_QUERY = `fetch bizevents, from:now()-7d
 | filter contains(event.type, "workflow")
-| filter isNotNull(applicationci)
-| fieldsAdd applicationci = lower(applicationci)
-| filter stringLength(applicationci) <= 3
-| summarize workflowCount = count(), by:{applicationci}
+| filter isNotNull(utan)
+| fieldsAdd utan = lower(utan)
+| summarize workflowCount = count(), by:{utan}
 | fieldsAdd l5Score =
     if(workflowCount > 0, 1, else: 0)
     + if(workflowCount > 0, 1, else: 0)
     + 0 + 0 + 0
-| fields applicationci, l5Score`;
+| fields utan, l5Score`;
 
 // ── CMDB info ──
 // Primary: CMDB lookup table
-const CMDB_LOOKUP_QUERY = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
-| fieldsAdd appci = lower(applicationci)
-| fields appci, ciname = name, tier = business_criticality, app_owner_name = owned_by`;
+const CMDB_LOOKUP_QUERY = `load "/lookups/utan_data"
+| fieldsAdd utan = lower(utan)
+| fields utan, ciname = SNOW_app_name, tier = top_tier, app_owner_name = ownership_by`;
 
 // Fallback: bizevents ServiceNow import
 const CMDB_FALLBACK_QUERY = `fetch bizevents, from:now()-48h
-| filter event.type == "workflow.import.servicenow.appci"
-| fieldsAdd appci = lower(applicationci)
-| filter isNotNull(appci)
-| filter stringLength(appci) <= 3
+| filter event.type == "workflow.import.servicenow.utan"
+| fieldsAdd utan = lower(utan)
+| filter isNotNull(utan)
 | sort timestamp desc
-| dedup appci
-| fields appci, ciname, tier, app_owner_name`;
+| dedup utan
+| fields utan, ciname, tier, app_owner_name`;
 
 // ── Pillar config (must match scorecard max values) ──
 const pillarDefs = [
@@ -253,7 +247,7 @@ const pillarDefs = [
 const TOTAL_MAX = pillarDefs.reduce((s, p) => s + p.max, 0); // 30
 
 interface AppScore {
-  appci: string;
+  utan: string;
   name: string;
   tier: string;
   owner: string;
@@ -374,7 +368,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
     // Build lookup maps
     const makeMap = (records: Record<string, unknown>[] | undefined, scoreKey: string) => {
       const m = new Map<string, number>();
-      (records || []).forEach((r) => m.set(String(r.applicationci), Number(r[scoreKey] || 0)));
+      (records || []).forEach((r) => m.set(String(r.utan), Number(r[scoreKey] || 0)));
       return m;
     };
     const l1Map = makeMap(l1Data.records as Record<string, unknown>[], "l1Score");
@@ -385,20 +379,20 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
 
     const cmdbMap = new Map<string, Record<string, unknown>>();
     ((cmdbData?.records || []) as Record<string, unknown>[]).forEach((r) => {
-      cmdbMap.set(String(r.appci), r);
+      cmdbMap.set(String(r.utan), r);
     });
 
-    // All unique appCIs from L1
-    const allApps: AppScore[] = Array.from(l1Map.entries()).map(([appci, l1]) => {
-      const l2 = l2Map.get(appci) || 0;
-      const l3 = l3Map.get(appci) || 0;
-      const l4 = l4Map.get(appci) || 0;
-      const l5 = l5Map.get(appci) || 0;
+    // All unique utans from L1
+    const allApps: AppScore[] = Array.from(l1Map.entries()).map(([utan, l1]) => {
+      const l2 = l2Map.get(utan) || 0;
+      const l3 = l3Map.get(utan) || 0;
+      const l4 = l4Map.get(utan) || 0;
+      const l5 = l5Map.get(utan) || 0;
       const total = l1 + l2 + l3 + l4 + l5;
       const pct = Math.round((total / TOTAL_MAX) * 100);
-      const cmdb = cmdbMap.get(appci);
+      const cmdb = cmdbMap.get(utan);
       return {
-        appci,
+        utan,
         name: String(cmdb?.ciname || ""),
         tier: String(cmdb?.tier || ""),
         owner: String(cmdb?.app_owner_name || ""),
@@ -510,7 +504,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
         }}>
           <div>
             <div style={{ fontSize: 20, fontWeight: 900, color: "#fff" }}>SRE Maturity Leaders</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Top 25 Applications at United Airlines</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Top 25 Applications at Northwestern Mutual</div>
           </div>
           <div style={{ fontSize: 28 }}>{"\ud83c\udfc6"}</div>
         </div>
@@ -541,7 +535,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
             const isTop3 = i < 3;
 
             return (
-              <div key={app.appci} style={{
+              <div key={app.utan} style={{
                 display: "grid",
                 gridTemplateColumns: "32px 2fr 1fr 1fr 1fr 1fr 1fr 1fr 1.2fr",
                 padding: "10px 20px",
@@ -555,13 +549,13 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
                   {getRankDisplay(i)}
                 </span>
 
-                {/* App info — 4 lines: name, appci, tier, owner */}
+                {/* App info — 4 lines: name, utan, tier, owner */}
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: "#1414D3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {app.name || app.appci.toUpperCase()}
+                    {app.name || app.utan.toUpperCase()}
                   </div>
                   <div style={{ fontSize: 10, color: "var(--sre-text-secondary)", lineHeight: 1.4, marginTop: 1 }}>
-                    <span style={{ fontWeight: 700 }}>{app.appci.toUpperCase()}</span>
+                    <span style={{ fontWeight: 700 }}>{app.utan.toUpperCase()}</span>
                     {app.tier ? <span> &middot; {app.tier}</span> : ""}
                     {app.owner ? <span> &middot; {app.owner}</span> : ""}
                   </div>
