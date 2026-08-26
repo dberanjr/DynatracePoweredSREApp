@@ -124,7 +124,7 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
     chartType: "table",
     detailQuery: (appCI: string) => `fetch logs, samplingRatio:1000, from:now()-24h
 | filter isNotNull(applicationci) and lower(applicationci) == lower("${appCI}")
-| summarize logCount = count(), by:{bin(timestamp, 1h)}
+| summarize logCount = count(), by:{timestamp = bin(timestamp, 1h)}
 | sort timestamp asc`,
     scorecardSnippet: `fetch logs, samplingRatio:1000
 | filter isNotNull(applicationci)
@@ -283,8 +283,8 @@ load "/lookups/slo"
     detailQuery: (appCI: string) => `load "/lookups/guardians"
 | fieldsAdd appci = lower(appci)
 | filter appci == lower("${appCI}")
-| fields guardianName, appci, guardianCount
-| sort guardianName asc`,
+| fields appci, guardianCount
+| sort appci asc`,
     scorecardSnippet: `// Source: /lookups/guardians  (refreshed daily by workflow 933fd998)
 // Workflow queries the Guardian Settings API and writes one row per AppCI.
 load "/lookups/guardians"
@@ -426,7 +426,7 @@ load "/lookups/slo-dashboards"
 | summarize
     deploys = count(),
     success = countIf(\`workflow-outcome\` == "success"),
-  by:{bin(timestamp, 1d)}
+  by:{timestamp = bin(timestamp, 1d)}
 | sort timestamp asc`,
     scorecardSnippet: `// Detects GitHub Actions CDK deployments AND Harness pipeline deployments.
 // Previously filtered on cdk-command == "deploy"; now accepts all
@@ -459,7 +459,7 @@ fetch events, from:now()-30d
 | filter event.kind == "WORKFLOW_EVENT"
 | filter matchesValue(\`dt.automation_engine.workflow.title\`, "* Production Dynatrace Alerts")
 | filter lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " "))) == lower("${appCI}")
-| summarize executions = count(), by:{bin(timestamp, 1d)}
+| summarize executions = count(), by:{timestamp = bin(timestamp, 1d)}
 | sort timestamp asc`,
     scorecardSnippet: `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
@@ -592,7 +592,7 @@ fetch dt.davis.problems, from:now()-7d
     deploys   = count(),
     success   = countIf(\`workflow-outcome\` == "success"),
     avgLeadMs = avg(leadMs),
-  by:{bin(timestamp, 1d)}
+  by:{timestamp = bin(timestamp, 1d)}
 | sort timestamp asc`,
     scorecardSnippet: `// DORA metrics are derived from CUSTOM_DEPLOYMENT events.
 fetch events, from:now()-30d
@@ -874,7 +874,7 @@ fetch bizevents, from:now()-24h
     detailQuery: (appCI: string) => `fetch bizevents, from:now()-7d
 | filter contains(event.type, "workflow")
 | filter lower(applicationci) == lower("${appCI}")
-| summarize count = count(), by:{bin(timestamp, 1d)}
+| summarize count = count(), by:{timestamp = bin(timestamp, 1d)}
 | sort timestamp asc`,
     scorecardSnippet: `fetch bizevents, from:now()-7d
 | filter contains(event.type, "workflow")
