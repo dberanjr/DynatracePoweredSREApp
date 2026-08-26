@@ -10,6 +10,9 @@ export interface CheckDetailConfig {
   guidance: string;
   chartType: "table" | "bar" | "none";
   detailQuery: (appCI: string) => string;
+  secondaryQuery?: (appCI: string) => string;
+  secondaryChartType?: "table" | "bar";
+  secondaryLabel?: string;
   scorecardSnippet: string;
 }
 
@@ -62,12 +65,31 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
     detailQuery: (appCI: string) => `fetch dt.entity.host
 | limit 100000
 | filter lifetime[end] > asTimestamp(now()-2h)
-| expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
-| dedup entity.name
-| fields host = entity.name, mode = monitoringMode
-| sort host asc`,
+| fieldsAdd applicationci = arrayDistinct(
+    iCollectArray(
+      splitString(
+        arrayRemoveNulls(
+          iCollectArray(
+            if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+          )
+        )[], ":"
+      )[1]
+    )
+  )
+| fieldsAdd applicationci = arrayDistinct(
+    iCollectArray(splitString(applicationci[], ",")[0])
+  )
+| expand applicationci
+| filter applicationci == lower("${appCI}")
+| summarize count = count(), by:{monitoring_mode = coalesce(monitoringMode, "Not Monitored")}
+| sort count desc`,
+    secondaryQuery: (appCI: string) => `fetch logs, samplingRatio:1000, from:now()-7d
+| filter isNotNull(applicationci) and lower(applicationci) == lower("${appCI}")
+| filter isNotNull(dt.entity.host)
+| summarize by:{timestamp = bin(timestamp, 1d)}, hosts = countDistinct(dt.entity.host)
+| sort timestamp asc`,
+    secondaryChartType: "bar",
+    secondaryLabel: "Unique hosts active per day (7d, sampled)",
     scorecardSnippet: `fetch dt.entity.host
 | filter lifetime[end] > asTimestamp(now()-2h)
 | fieldsAdd applicationci = arrayDistinct(iCollectArray(

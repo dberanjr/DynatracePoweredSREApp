@@ -292,6 +292,37 @@ function DataPanel({
   return <DataTable records={records} />;
 }
 
+function SecondaryDataPanel({
+  query,
+  chartType,
+  accentColor,
+}: {
+  query: string;
+  chartType: "table" | "bar";
+  accentColor: string;
+}) {
+  const { data, isLoading, error } = useDqlWithCache({ query });
+  if (isLoading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
+        <ProgressCircle size="small" />
+        <span style={{ fontSize: 11, color: "var(--sre-text-secondary)" }}>Loading…</span>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div style={{ fontSize: 11, color: "#cf222e", padding: 8, background: "rgba(220,53,69,0.06)", borderRadius: 6, border: "1px solid rgba(220,53,69,0.2)" }}>
+        {error.message}
+      </div>
+    );
+  }
+  const records = (data?.records ?? []) as Record<string, unknown>[];
+  if (!records.length) return <div style={{ fontSize: 11, color: "var(--sre-text-secondary)", fontStyle: "italic" }}>No data</div>;
+  if (chartType === "bar") return <SimpleBarChart records={records} accentColor={accentColor} />;
+  return <DataTable records={records} />;
+}
+
 export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, onClose }: Props) {
   const config = CHECK_DETAIL_CONFIGS[checkKey];
   const status = getStatus(currentValue);
@@ -525,6 +556,29 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
               Supporting Data
             </div>
             <DataPanel config={config} appCI={appCI} accentColor={accentColor} />
+            {config?.secondaryQuery && (
+              <>
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: "var(--sre-text-secondary, #6F747F)",
+                    letterSpacing: 0.6,
+                    textTransform: "uppercase",
+                    marginTop: 8,
+                    paddingTop: 12,
+                    borderTop: "1px solid var(--sre-border, rgba(0,0,0,0.08))",
+                  }}
+                >
+                  {config.secondaryLabel ?? "Trend (7d)"}
+                </div>
+                <SecondaryDataPanel
+                  query={config.secondaryQuery(appCI)}
+                  chartType={config.secondaryChartType ?? "bar"}
+                  accentColor={accentColor}
+                />
+              </>
+            )}
           </div>
         </div>
 
