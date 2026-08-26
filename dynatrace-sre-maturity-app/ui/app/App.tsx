@@ -17,6 +17,8 @@ import { PortfolioPage } from "./pages/PortfolioPage";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LandingPage } from "./pages/LandingPage";
 import { ProblemAnalyticsPage } from "./pages/ProblemAnalyticsPage";
+import { AboutPage } from "./pages/AboutPage";
+import { DefinitionsPage } from "./pages/DefinitionsPage";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 
 export interface Timeframe {
@@ -24,17 +26,18 @@ export interface Timeframe {
   to: string;
 }
 
-// Try loading from lookup table first
+// Try loading from lookup table first.
+// All non-retired applications (In Production + Implementing), one row per
+// applicationci, carrying the human-readable application name, sorted A→Z.
 const APPCI_LOOKUP_QUERY = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
 | filter operational_status != "Retired"
 | filter isNotNull(applicationci)
-| filter stringLength(applicationci) <= 3
-| dedup applicationci
+| summarize appName = takeFirst(name), by:{applicationci}
 | sort applicationci asc
-| fields applicationci
+| fields applicationci, appName
 | limit 10000`;
 
-// Fallback: derive AppCI values from entity tags
+// Fallback: derive AppCI values from entity tags (no application name available)
 const APPCI_FALLBACK_QUERY = `fetch dt.entity.service
 | expand tags
 | parse tags, "'applicationci:' LD:appci"
@@ -43,21 +46,28 @@ const APPCI_FALLBACK_QUERY = `fetch dt.entity.service
 | filter stringLength(appci) <= 3
 | dedup appci
 | sort appci asc
-| fields applicationci = appci
+| fieldsAdd appName = ""
+| fields applicationci = appci, appName
 | limit 10000`;
 
 export const App = () => {
   const [selectedAppCI, setSelectedAppCI] = useState<string | null>("ADH");
   const [timeframe, setTimeframe] = useState<Timeframe>({ from: "now()-24h", to: "now()" });
 
-  // Try lookup table first
+  // Try lookup table first.
+  // maxResultRecords lifts the Grail query API's 1000-record default so the
+  // dropdown receives all non-retired AppCIs (~1,987 today) — the DQL `limit`
+  // alone isn't enough; the API caps the response at 1000 without this. Set to
+  // 5000 for headroom well above the current count.
   const { data: lookupData, error: lookupError, isLoading: lookupLoading } = useDql({
     query: APPCI_LOOKUP_QUERY,
+    maxResultRecords: 5000,
   });
 
   // Fallback to entity tags if lookup fails
   const { data: fallbackData, isLoading: fallbackLoading } = useDql({
     query: lookupError ? APPCI_FALLBACK_QUERY : "data record(skip = true) | limit 0",
+    maxResultRecords: 5000,
   });
 
   const appciData = lookupError ? fallbackData : lookupData;
@@ -65,7 +75,10 @@ export const App = () => {
 
   const appciOptions = useMemo(() => {
     if (!appciData?.records) return [];
-    return appciData.records.map((r: Record<string, unknown>) => String(r.applicationci));
+    return appciData.records.map((r: Record<string, unknown>) => ({
+      code: String(r.applicationci),
+      name: r.appName != null ? String(r.appName) : "",
+    }));
   }, [appciData]);
 
   const appCI = selectedAppCI || "ADH";
@@ -98,9 +111,13 @@ export const App = () => {
               <SelectTrigger placeholder={appciLoading ? "Loading..." : "Select AppCI"} style={{ minWidth: 180 }} />
               <SelectContent>
                 <SelectFilter />
-                {appciOptions.map((opt: string) => (
-                  <SelectOption key={opt} value={opt}>
-                    {opt}
+                {appciOptions.map((opt) => (
+                  <SelectOption
+                    key={opt.code}
+                    value={opt.code}
+                    textValue={opt.name ? `${opt.code} ${opt.name}` : opt.code}
+                  >
+                    {opt.name ? `${opt.code} (${opt.name})` : opt.code}
                   </SelectOption>
                 ))}
               </SelectContent>
@@ -118,8 +135,10 @@ export const App = () => {
             <Route path="/proactive" element={<ErrorBoundary><ProactivePage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
             <Route path="/problem-analytics" element={<ErrorBoundary><ProblemAnalyticsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
             <Route path="/scorecards" element={<ErrorBoundary><ScorecardsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/definitions" element={<ErrorBoundary><DefinitionsPage /></ErrorBoundary>} />
             <Route path="/portfolio" element={<ErrorBoundary><PortfolioPage /></ErrorBoundary>} />
             <Route path="/data" element={<ErrorBoundary><Data /></ErrorBoundary>} />
+            <Route path="/about" element={<ErrorBoundary><AboutPage /></ErrorBoundary>} />
           </Routes>
         </ErrorBoundary>
       </Page.Main>

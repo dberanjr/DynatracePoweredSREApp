@@ -9,8 +9,10 @@ const navItems = [
   { to: "/proactive", label: "Proactive" },
   { to: "/problem-analytics", label: "Problem Analytics" },
   { to: "/scorecards", label: "Scorecards" },
+  { to: "/definitions", label: "Definitions" },
   { to: "/portfolio", label: "Portfolio" },
   { to: "/data", label: "Explore Data" },
+  { to: "/about", label: "About" },
 ];
 
 export const Header = () => {

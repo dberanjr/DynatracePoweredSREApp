@@ -6,11 +6,13 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { CHECK_EXPLANATIONS } from "./checkExplanations";
+import { CheckDetailModal } from "./CheckDetailModal";
 
 interface Props {
   title: string;
   query: string;
   accentColor: string;
+  appCI: string;
 }
 
 function getStatus(value: string): "pass" | "fail" | "warn" | "na" {
@@ -27,10 +29,10 @@ function getStatusDisplay(value: string): string {
 }
 
 const statusStyles = {
-  pass: { bg: "rgba(40, 167, 69, 0.08)", border: "rgba(40, 167, 69, 0.3)", text: "#1a7f37", icon: "\u2705" },
-  fail: { bg: "rgba(220, 53, 69, 0.08)", border: "rgba(220, 53, 69, 0.3)", text: "#cf222e", icon: "\ud83d\udd34" },
-  warn: { bg: "rgba(255, 193, 7, 0.1)", border: "rgba(255, 193, 7, 0.4)", text: "#9a6700", icon: "\u26a0\ufe0f" },
-  na: { bg: "rgba(128, 128, 128, 0.06)", border: "rgba(128, 128, 128, 0.2)", text: "#656d76", icon: "\u2796" },
+  pass: { bg: "rgba(40, 167, 69, 0.08)", border: "rgba(40, 167, 69, 0.3)", text: "#1a7f37", icon: "✅" },
+  fail: { bg: "rgba(220, 53, 69, 0.08)", border: "rgba(220, 53, 69, 0.3)", text: "#cf222e", icon: "🔴" },
+  warn: { bg: "rgba(255, 193, 7, 0.1)", border: "rgba(255, 193, 7, 0.4)", text: "#9a6700", icon: "⚠️" },
+  na: { bg: "rgba(128, 128, 128, 0.06)", border: "rgba(128, 128, 128, 0.2)", text: "#656d76", icon: "➖" },
 };
 
 function parseScore(scoreStr: string): { current: number; total: number } {
@@ -70,9 +72,7 @@ function ScoreRing({ current, total, color, size = 70 }: { current: number; tota
   );
 }
 
-// Small circled "i" that reveals an explanation on hover. The tooltip is
-// rendered via a portal to document.body so the card's overflow:hidden (and
-// the narrow grid columns) can't clip it.
+// Small circled "i" that reveals an explanation on hover via portal.
 function InfoTooltip({ text, color }: { text: string; color: string }) {
   const ref = React.useRef<HTMLSpanElement>(null);
   const [coords, setCoords] = React.useState<{ x: number; y: number } | null>(null);
@@ -147,22 +147,43 @@ function InfoTooltip({ text, color }: { text: string; color: string }) {
   );
 }
 
-function CheckItem({ label, value }: { label: string; value: string }) {
+interface CheckItemProps {
+  label: string;
+  value: string;
+  onClick: () => void;
+}
+
+function CheckItem({ label, value, onClick }: CheckItemProps) {
   const status = getStatus(value);
   const display = getStatusDisplay(value);
   const s = statusStyles[status];
   const explanation = CHECK_EXPLANATIONS[label];
+  const [hovered, setHovered] = React.useState(false);
 
   return (
-    <div style={{
-      padding: "8px 10px",
-      borderRadius: 6,
-      background: s.bg,
-      border: `1px solid ${s.border}`,
-      display: "flex",
-      alignItems: "flex-start",
-      gap: 6,
-    }}>
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(); }}
+      aria-label={`${label}: ${value}. Click for details.`}
+      style={{
+        padding: "8px 10px",
+        borderRadius: 6,
+        background: hovered ? s.bg.replace("0.08", "0.15").replace("0.06", "0.12").replace("0.1", "0.18") : s.bg,
+        border: `1px solid ${hovered ? s.border.replace("0.3", "0.6").replace("0.2", "0.45").replace("0.4", "0.65") : s.border}`,
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 6,
+        cursor: "pointer",
+        transition: "background 0.15s, border-color 0.15s, transform 0.1s",
+        transform: hovered ? "translateY(-1px)" : "none",
+        boxShadow: hovered ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
+        outline: "none",
+      }}
+    >
       <span style={{ fontSize: 13, lineHeight: "16px", flexShrink: 0 }}>{s.icon}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 1 }}>
@@ -170,6 +191,12 @@ function CheckItem({ label, value }: { label: string; value: string }) {
             {label}
           </span>
           {explanation && <InfoTooltip text={explanation} color={s.text} />}
+          {/* "expand" hint on hover */}
+          {hovered && (
+            <span style={{ marginLeft: "auto", fontSize: 9, color: s.text, opacity: 0.6, flexShrink: 0 }}>
+              details ↗
+            </span>
+          )}
         </div>
         <div style={{ fontSize: 11, color: "var(--sre-text-primary, #1f2328)", wordBreak: "break-word", lineHeight: 1.3 }}>
           {display || (status === "na" ? "N/A" : status === "fail" ? "Not detected" : "Active")}
@@ -179,8 +206,20 @@ function CheckItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-export const ScorecardCard = ({ title, query, accentColor }: Props) => {
+export const ScorecardCard = ({ title, query, accentColor, appCI }: Props) => {
   const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query });
+  const [selectedCheck, setSelectedCheck] = React.useState<string | null>(null);
+  const [selectedValue, setSelectedValue] = React.useState<string>("");
+
+  const handleCheckClick = (key: string, value: string) => {
+    setSelectedCheck(key);
+    setSelectedValue(value);
+  };
+
+  const handleClose = () => {
+    setSelectedCheck(null);
+    setSelectedValue("");
+  };
 
   if (isLoading) {
     return (
@@ -239,40 +278,61 @@ export const ScorecardCard = ({ title, query, accentColor }: Props) => {
   const ringColor = pct >= 80 ? "#49C2B3" : pct >= 50 ? "#C93FDB" : "#dc3545";
 
   return (
-    <RefreshOverlay isRefreshing={isRefreshing}>
-      <div style={{
-        background: "var(--sre-surface, #fff)",
-        borderRadius: 12,
-        border: "1px solid var(--sre-border, rgba(0,0,0,0.08))",
-        overflow: "hidden",
-        boxShadow: "0 1px 3px var(--sre-card-shadow)",
-        display: "flex",
-        flexDirection: "column",
-      }}>
-        {/* Header */}
+    <>
+      <RefreshOverlay isRefreshing={isRefreshing}>
         <div style={{
-          background: `linear-gradient(135deg, ${accentColor}, ${accentColor}dd)`,
-          padding: "14px 16px",
-          textAlign: "center",
+          background: "var(--sre-surface, #fff)",
+          borderRadius: 12,
+          border: "1px solid var(--sre-border, rgba(0,0,0,0.08))",
+          overflow: "hidden",
+          boxShadow: "0 1px 3px var(--sre-card-shadow)",
+          display: "flex",
+          flexDirection: "column",
         }}>
-          <Heading level={6} style={{ color: "#fff", margin: 0 }}>{title}</Heading>
-        </div>
+          {/* Header */}
+          <div style={{
+            background: `linear-gradient(135deg, ${accentColor}, ${accentColor}dd)`,
+            padding: "14px 16px",
+            textAlign: "center",
+          }}>
+            <Heading level={6} style={{ color: "#fff", margin: 0 }}>{title}</Heading>
+          </div>
 
-        {/* Score ring */}
-        <Flex flexDirection="column" alignItems="center" gap={4} padding={16} style={{ borderBottom: "1px solid var(--sre-border)" }}>
-          <ScoreRing current={current} total={total} color={ringColor} />
-          <span style={{ fontSize: 10, fontWeight: 700, color: ringColor, letterSpacing: 0.5 }}>
-            {pct}% COMPLETE
-          </span>
-        </Flex>
+          {/* Score ring */}
+          <Flex flexDirection="column" alignItems="center" gap={4} padding={16} style={{ borderBottom: "1px solid var(--sre-border)" }}>
+            <ScoreRing current={current} total={total} color={ringColor} />
+            <span style={{ fontSize: 10, fontWeight: 700, color: ringColor, letterSpacing: 0.5 }}>
+              {pct}% COMPLETE
+            </span>
+          </Flex>
 
-        {/* Checks stacked vertically */}
-        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
-          {checkKeys.map((key) => (
-            <CheckItem key={key} label={key} value={String(record[key])} />
-          ))}
+          {/* Checks — each is clickable */}
+          <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+            <div style={{ fontSize: 9, color: "var(--sre-text-secondary, #6F747F)", letterSpacing: 0.4, marginBottom: 2, fontStyle: "italic" }}>
+              Click any item for details and supporting data
+            </div>
+            {checkKeys.map((key) => (
+              <CheckItem
+                key={key}
+                label={key}
+                value={String(record[key])}
+                onClick={() => handleCheckClick(key, String(record[key]))}
+              />
+            ))}
+          </div>
         </div>
-      </div>
-    </RefreshOverlay>
+      </RefreshOverlay>
+
+      {/* Detail modal */}
+      {selectedCheck && (
+        <CheckDetailModal
+          checkKey={selectedCheck}
+          currentValue={selectedValue}
+          appCI={appCI}
+          accentColor={accentColor}
+          onClose={handleClose}
+        />
+      )}
+    </>
   );
 };

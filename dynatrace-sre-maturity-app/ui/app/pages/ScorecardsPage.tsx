@@ -268,7 +268,8 @@ data record(applicationci = lower("${appCI}"))
         else: "fail No AppCI dashboards"),
     \`5. SRE Assessment in ARD\` = if(sreAssessment > 0,
         "pass CMDB tier assigned",
-        else: "fail No tier data")
+        else: "fail No tier data"),
+    \`6. Critical Services Tagged\` = "n/a Coming soon — BigPanda/CMDB pipeline pending"
 
 | fieldsAdd passCount =
     if(goldenSignalServices > 0, 1, else: 0)
@@ -284,7 +285,8 @@ data record(applicationci = lower("${appCI}"))
     \`2. SLOs Created\`,
     \`3. Site Reliability Guardians Created\`,
     \`4. SLO Dashboards Published\`,
-    \`5. SRE Assessment in ARD\``;
+    \`5. SRE Assessment in ARD\`,
+    \`6. Critical Services Tagged\``;
 
   const l3Query = `// L3 AI-Assisted Operations - Maturity Scorecard
 data record(applicationci = lower("${appCI}"))
@@ -335,12 +337,12 @@ data record(applicationci = lower("${appCI}"))
     | summarize itsmWorkflows = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppci}
   ], sourceField:applicationci, lookupField:wfAppci, fields:{itsmWorkflows}
 
-// CI/CD + DORA: GitHub Actions deployments (last 30 days), per AppCI
-//   source: dashboard "GitHub Actions DORA Metrics" (CUSTOM_DEPLOYMENT / cdk deploy events)
+// CI/CD + DORA: deployments from any CI/CD platform (last 30 days), per AppCI
+//   covers GitHub Actions CDK deployments AND Harness pipeline deployments
+//   source: CUSTOM_DEPLOYMENT events (application_ci field required)
 | lookup [
     fetch events, from:now()-30d
     | filter event.type == "CUSTOM_DEPLOYMENT"
-    | filter \`cdk-command\` == "deploy"
     | filter isNotNull(application_ci)
     | fieldsAdd leadMs = if(\`new-deployment\` == "true" and isNotNull(\`avg-release-age\`), toLong(\`avg-release-age\`), else: null)
     | summarize
@@ -631,11 +633,11 @@ data record(applicationci = lower("${appCI}"))
       ]} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, alignItems: "stretch" }}>
-        <ScorecardCard title="L1 — Full Observability" query={l1Query} accentColor="#3BACF0" />
-        <ScorecardCard title="L2 — Measured Reliability" query={l2Query} accentColor="#1966FF" />
-        <ScorecardCard title="L3 — AI-Assisted Operations" query={l3Query} accentColor="#5E28E5" />
-        <ScorecardCard title="L4 — Proactive Reliability" query={l4Query} accentColor="#8D1CDC" />
-        <ScorecardCard title="L5 — Autonomous Reliability" query={l5Query} accentColor="#49C2B3" />
+        <ScorecardCard title="L1 — Full Observability" query={l1Query} accentColor="#3BACF0" appCI={appCI} />
+        <ScorecardCard title="L2 — Measured Reliability" query={l2Query} accentColor="#1966FF" appCI={appCI} />
+        <ScorecardCard title="L3 — AI-Assisted Operations" query={l3Query} accentColor="#5E28E5" appCI={appCI} />
+        <ScorecardCard title="L4 — Proactive Reliability" query={l4Query} accentColor="#8D1CDC" appCI={appCI} />
+        <ScorecardCard title="L5 — Autonomous Reliability" query={l5Query} accentColor="#49C2B3" appCI={appCI} />
       </div>
     </Flex>
   );
