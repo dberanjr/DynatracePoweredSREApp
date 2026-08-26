@@ -307,8 +307,8 @@ load "/lookups/guardians"
     detailQuery: (appCI: string) => `load "/lookups/slo-dashboards"
 | fieldsAdd appci = lower(appci)
 | filter appci == lower("${appCI}")
-| fields dashboardName, appci
-| sort dashboardName asc`,
+| fields appci, dashboardCount
+| sort appci asc`,
     scorecardSnippet: `// Source: /lookups/slo-dashboards  (refreshed daily by workflow)
 // Workflow reads the Documents API and keeps dashboards matching:
 //   name starts with 3-letter AppCI  AND  contains standalone "SLO"
@@ -488,8 +488,8 @@ fetch events, from:now()-30d
     detailQuery: (appCI: string) => `load "/lookups/runbooks"
 | fieldsAdd appci = lower(appci)
 | filter appci == lower("${appCI}")
-| fields notebookName, appci, runbookCount
-| sort notebookName asc`,
+| fields appci, runbookCount
+| sort appci asc`,
     scorecardSnippet: `// Source: /lookups/runbooks  (refreshed daily by workflow 0e3d3737)
 // Workflow scans Dynatrace Notebooks API for notebooks whose name:
 //   - Starts with a 3-letter token matching an AppCI code
