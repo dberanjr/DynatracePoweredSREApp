@@ -27,3 +27,7 @@ dist/
 # Logs
 *.log
 npm-debug.log*
+
+# Internal meeting notes / transcripts (never publish)
+*Meeting Transcripts*
+*.transcript.txt

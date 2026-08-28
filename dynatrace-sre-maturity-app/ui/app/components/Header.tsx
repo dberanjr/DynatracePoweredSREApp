@@ -3,15 +3,9 @@ import { Link, useLocation } from "react-router-dom";
 
 const navItems = [
   { to: "/", label: "Home" },
-  { to: "/overview", label: "Overview" },
   { to: "/golden-signals", label: "Golden Signals" },
-  { to: "/ai-ops", label: "AI Ops" },
-  { to: "/proactive", label: "Proactive" },
-  { to: "/problem-analytics", label: "Problem Analytics" },
   { to: "/scorecards", label: "Scorecards" },
   { to: "/definitions", label: "Definitions" },
-  { to: "/portfolio", label: "Portfolio" },
-  { to: "/data", label: "Explore Data" },
   { to: "/about", label: "About" },
 ];
 

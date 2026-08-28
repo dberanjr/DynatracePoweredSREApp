@@ -72,29 +72,43 @@ data record(applicationci = lower("${appCI}"))
   ], sourceField:applicationci, lookupField:applicationci, fields:{logCount}
 | fieldsRename logs = logCount
 
-// Signal 4: K8s / Cloud workloads
+// Signal 4: Kubernetes clusters
+// Cluster-name-prefix detection, NOT workload tags — K8s workloads (dt.entity.cloud_application)
+// are often tagged with a sub-application's CI (e.g. a shared EKS cluster hosting several
+// namespaces), while the cluster itself is named "<appci>-<region>-<env>". Matching on the
+// cluster name correctly reflects the parent ApplicationCI for portfolio-style apps.
 | lookup [
-    fetch dt.entity.cloud_application
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(
-          splitString(
-            arrayRemoveNulls(
-              iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-              )
-            )[], ":"
-          )[1]
-        )
-      )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
-      )
-    | expand applicationci
-    | summarize k8sCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sCount}
-| fieldsRename k8sWorkloads = k8sCount
+    fetch dt.entity.kubernetes_cluster
+    | fieldsAdd applicationci = lower(splitString(entity.name, "-")[0])
+    | summarize k8sClusterCount = count(), by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sClusterCount}
+| fieldsRename k8sClusters = k8sClusterCount
 
-// Signal 5: RUM
+// Signal 5: Cloud (all AWS/Azure/GCP resources — same smartscapeNodes source as
+// the Clouds app, not just EC2/RDS/Lambda, since those undercounted vs. the
+// app's actual cloud footprint. Azure/GCP are unioned in for multi-cloud
+// readiness even though this tenant is AWS-only today — the tag field names
+// for those two (tags:azure, tags:gcp_labels) are inferred from Dynatrace's
+// per-provider naming convention since neither has any resources here yet to
+// verify against, but a wrong field name just yields 0 rows, not an error.)
+| lookup [
+    smartscapeNodes "AWS*"
+    | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+    | append [
+        smartscapeNodes "AZURE*"
+        | fieldsFlatten \`tags:azure\`, fields:{ApplicationCI}
+      ]
+    | append [
+        smartscapeNodes "GCP*"
+        | fieldsFlatten \`tags:gcp_labels\`, fields:{ApplicationCI}
+      ]
+    | filter isNotNull(ApplicationCI)
+    | fieldsAdd applicationci = lower(ApplicationCI)
+    | summarize cloudCount = count(), by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{cloudCount}
+| fieldsRename cloudResources = cloudCount
+
+// Signal 6: RUM
 | lookup [
     fetch dt.entity.application, from:now()-1000d
     | fieldsAdd applicationci = arrayDistinct(
@@ -117,7 +131,7 @@ data record(applicationci = lower("${appCI}"))
   ], sourceField:applicationci, lookupField:applicationci, fields:{rumCount}
 | fieldsRename rumApps = rumCount
 
-// Signal 6: Synthetics
+// Signal 7: Synthetics
 | lookup [
     fetch dt.entity.synthetic_test
     | fieldsAdd applicationci = arrayDistinct(
@@ -145,7 +159,8 @@ data record(applicationci = lower("${appCI}"))
     fullStack = if(isNull(fullStack), 0, else: fullStack),
     services = if(isNull(services), 0, else: services),
     logs = if(isNull(logs), 0, else: logs),
-    k8sWorkloads = if(isNull(k8sWorkloads), 0, else: k8sWorkloads),
+    k8sClusters = if(isNull(k8sClusters), 0, else: k8sClusters),
+    cloudResources = if(isNull(cloudResources), 0, else: cloudResources),
     rumApps = if(isNull(rumApps), 0, else: rumApps),
     synthetics = if(isNull(synthetics), 0, else: synthetics)
 
@@ -163,10 +178,13 @@ data record(applicationci = lower("${appCI}"))
     \`4. Smartscape Discovery\` = if(services > 0,
         "pass Active",
         else: "fail Not discovered"),
-    \`5. K8s / Cloud\` = if(k8sWorkloads > 0,
-        concat("pass ", toString(k8sWorkloads), " workloads"),
+    \`5. Kubernetes\` = if(k8sClusters > 0,
+        concat("pass ", toString(k8sClusters), " cluster(s)"),
         else: "n/a N/A"),
-    \`6. RUM / Synthetics\` = if(rumApps > 0 or synthetics > 0,
+    \`6. Cloud\` = if(cloudResources > 0,
+        concat("pass ", toString(cloudResources), " resources"),
+        else: "n/a N/A"),
+    \`7. RUM / Synthetics\` = if(rumApps > 0 or synthetics > 0,
         concat("pass RUM:", toString(rumApps), " Syn:", toString(synthetics)),
         else: "fail Not configured")
 
@@ -175,9 +193,10 @@ data record(applicationci = lower("${appCI}"))
     + if(services > 0, 1, else: 0)
     + if(logs > 0, 1, else: 0)
     + if(services > 0, 1, else: 0)
-    + if(k8sWorkloads > 0, 1, else: 0)
+    + if(k8sClusters > 0, 1, else: 0)
+    + if(cloudResources > 0, 1, else: 0)
     + if(rumApps > 0 or synthetics > 0, 1, else: 0)
-| fieldsAdd \`L1 Score\` = concat(toString(passCount), " / 6")
+| fieldsAdd \`L1 Score\` = concat(toString(passCount), " / 7")
 
 | fields
     \`L1 Score\`,
@@ -185,8 +204,9 @@ data record(applicationci = lower("${appCI}"))
     \`2. Tracing Validated\`,
     \`3. Logs Correlated\`,
     \`4. Smartscape Discovery\`,
-    \`5. K8s / Cloud\`,
-    \`6. RUM / Synthetics\``;
+    \`5. Kubernetes\`,
+    \`6. Cloud\`,
+    \`7. RUM / Synthetics\``;
 
   const l2Query = `// L2 Measured Reliability - Maturity Scorecard
 data record(applicationci = lower("${appCI}"))
@@ -220,17 +240,21 @@ data record(applicationci = lower("${appCI}"))
     | summarize sloCount = count(), by:{appci}
   ], sourceField:applicationci, lookupField:appci, fields:{sloCount}
 
-// Signal 3: Site Reliability Guardian exists (from /lookups/guardians; appci -> guardianCount, refreshed by workflow)
+// Signal 3: Site Reliability Guardians (from /lookups/guardians; itemized one row per
+//   guardian, refreshed daily at 06:00 UTC by workflow — summarize to a count here)
 | lookup [
     load "/lookups/guardians"
     | fieldsAdd appci = lower(appci)
+    | summarize guardianCount = count(), by:{appci}
   ], sourceField:applicationci, lookupField:appci, fields:{guardianCount}
 
-// Signal 4: SLO dashboards published (from /lookups/slo-dashboards; refreshed by workflow)
-//   counts dashboards whose name starts with a 3-letter AppCI token and contains "SLO"
+// Signal 4: SLO dashboards published (from /lookups/slo-dashboards; itemized one row
+//   per dashboard, refreshed daily at 06:00 UTC by workflow — counts dashboards whose
+//   name starts with a 3-letter AppCI token and contains "SLO")
 | lookup [
     load "/lookups/slo-dashboards"
     | fieldsAdd appci = lower(appci)
+    | summarize dashboardCount = count(), by:{appci}
   ], sourceField:applicationci, lookupField:appci, fields:{dashboardCount}
 | fieldsRename dashboards = dashboardCount
 
@@ -291,13 +315,19 @@ data record(applicationci = lower("${appCI}"))
   const l3Query = `// L3 AI-Assisted Operations - Maturity Scorecard
 data record(applicationci = lower("${appCI}"))
 
-// Event correlation signal (default timeframe)
+// Event correlation signal
+//   FIXED (2026-08-28): two bugs. (1) This read arraySize(affected_entities),
+//   but affected_entities is null on 100% of dt.davis.problems records in this
+//   tenant, so the check reported "0 correlated" for every app, always. The
+//   populated field is affected_entity_ids. (2) It ran over the dashboard's
+//   default timeframe while every other figure in this check uses 7d, so the
+//   numbers shown side by side described different windows. Now aligned to 7d.
 | lookup [
-    fetch dt.davis.problems
+    fetch dt.davis.problems, from:now()-7d
     | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
     | filter isNotNull(appci)
-    | filter dt.davis.is_duplicate == false
-    | fieldsAdd isCorrelated = arraySize(affected_entities) > 1
+    | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
+    | fieldsAdd isCorrelated = arraySize(affected_entity_ids) > 1
     | summarize correlatedProblems = countIf(isCorrelated == true), by:{appci}
     | fieldsRename applicationci = appci
   ], sourceField:applicationci, lookupField:applicationci, fields:{correlatedProblems}
@@ -437,116 +467,123 @@ data record(applicationci = lower("${appCI}"))
   const l4Query = `// L4 Proactive Reliability - Maturity Scorecard
 data record(applicationci = lower("${appCI}"))
 
-// Signal 1: Resource saturation problems
+// Signal 1: SLO burn-rate alerts (30d)
+//   Davis CUSTOM_ALERT problems raised by SLO burn-rate metric events. Alert names
+//   follow the tenant convention "<APPCI> - SLO <name> for Availability or Performance
+//   Burn Rate is above <threshold>", so the AppCI is the 3-char token before " - ".
+//   CAVEAT: this detects burn-rate alerts that FIRED, not alert configs that exist.
+//   A correctly-configured alert on a consistently healthy SLO will not appear here
+//   (alert configs live in anomaly-detector settings objects, not queryable in DQL).
 | lookup [
-    fetch dt.davis.problems
-    | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
-    | filter isNotNull(appci)
-    | filter dt.davis.is_duplicate == false
+    fetch dt.davis.problems, from:now()-30d
+    | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
+    | filter event.category == "CUSTOM_ALERT"
+    | filter contains(lower(event.name), "burn rate")
+    | fieldsAdd appci = lower(trim(splitString(event.name, " - ")[0]))
+    | filter stringLength(appci) == 3
+    | summarize burnAlerts = countDistinct(event.name), burnFired = count(), by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{burnAlerts, burnFired}
+
+// Signal 2: Autoscaling constructs + total cloud footprint
+//   Counts real autoscaling entities, not a generic cloud-resource tally: EC2/EKS Auto
+//   Scaling Groups, Application Auto Scaling scalable targets (ECS service autoscaling),
+//   and EKS managed nodegroups. cloudTotal is carried alongside so the check can tell
+//   "no cloud at all" (n/a) apart from "has cloud but nothing autoscales" (fail).
+//   KNOWN GAP: in-cluster autoscalers (HPA, KEDA, Karpenter) are not represented here —
+//   they live in K8s workload YAML, which needs a separate per-mechanism evaluation.
+| lookup [
+    smartscapeNodes "AWS*"
+    | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+    | filter isNotNull(ApplicationCI)
     | summarize
-        resourceProblems = countIf(event.category == "RESOURCE_CONTENTION"),
-        by:{appci}
-    | fieldsRename applicationci = appci
-  ], sourceField:applicationci, lookupField:applicationci, fields:{resourceProblems}
-| fieldsRename resourceAlerts = resourceProblems
+        cloudTotal = count(),
+        asgCount = countIf(type == "AWS_AUTOSCALING_AUTOSCALINGGROUP"),
+        ecsScale = countIf(type == "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET"),
+        ngCount = countIf(type == "AWS_EKS_NODEGROUP"),
+        by:{appci = lower(ApplicationCI)}
+  ], sourceField:applicationci, lookupField:appci, fields:{cloudTotal, asgCount, ecsScale, ngCount}
 
-// Signal 2: K8s workloads
+// Signal 3: Deployments (30d) — same CUSTOM_DEPLOYMENT source as the L3 CI/CD check
 | lookup [
-    fetch dt.entity.cloud_application
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(
-          splitString(
-            arrayRemoveNulls(
-              iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-              )
-            )[], ":"
-          )[1]
-        )
-      )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
-      )
-    | expand applicationci
-    | summarize k8sCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sCount}
-| fieldsRename k8sWorkloads = k8sCount
-
-// Signal 3: Deployment events
-| lookup [
-    fetch events, from:now()-7d
-    | filter event.kind == "DAVIS_EVENT"
+    fetch events, from:now()-30d
     | filter event.type == "CUSTOM_DEPLOYMENT"
-    | expand affected_entity_tags
-    | parse affected_entity_tags, "'applicationci:' LD:appci"
-    | filter isNotNull(appci)
-    | fieldsAdd applicationci = lower(appci)
-    | summarize deployCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{deployCount}
-| fieldsRename deployments = deployCount
+    | filter isNotNull(application_ci)
+    | summarize deployCount = count(), by:{appci = lower(application_ci)}
+  ], sourceField:applicationci, lookupField:appci, fields:{deployCount}
 
-// Signal 4: AWS cloud inventory
+// Signal 4: Site Reliability Guardian validations (30d)
+//   SRG emits SDLC_EVENT validation events carrying dt.srg.tags with the ApplicationCI.
+//   trigger.type distinguishes a guardian fired BY a deployment (the L4 goal) from one
+//   merely running on a cron schedule.
 | lookup [
-    fetch bizevents, from:now()-24h
-    | filter event.type == "workflow.summary.cloud.aws"
+    fetch events, from:now()-30d
+    | filter event.kind == "SDLC_EVENT"
+    | filter event.type == "validation" and event.status == "finished"
+    | fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"ApplicationCI\\":[\\"")[1], "\\"")[0])
+    | filter isNotNull(appci)
+    | fieldsAdd trig = coalesce(\`dt.automation_engine.workflow_execution.trigger.type\`, "Manual")
     | summarize
-        awsTotal = count(),
-        eksCount = countIf(contains(type, "eks")),
-        ecsCount = countIf(contains(type, "ecs")),
-        by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{awsTotal, eksCount, ecsCount}
-| fieldsRename aws = awsTotal, eks = eksCount, ecs = ecsCount
+        srgRuns = count(),
+        srgEventTriggered = countIf(trig != "Schedule" and trig != "Manual"),
+        by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{srgRuns, srgEventTriggered}
 
 // Null-safe defaults
 | fieldsAdd
-    resourceAlerts = if(isNull(resourceAlerts), 0, else: resourceAlerts),
-    k8sWorkloads = if(isNull(k8sWorkloads), 0, else: k8sWorkloads),
-    deployments = if(isNull(deployments), 0, else: deployments),
-    aws = if(isNull(aws), 0, else: aws),
-    eks = if(isNull(eks), 0, else: eks),
-    ecs = if(isNull(ecs), 0, else: ecs)
+    burnAlerts = if(isNull(burnAlerts), 0, else: burnAlerts),
+    burnFired = if(isNull(burnFired), 0, else: burnFired),
+    cloudTotal = if(isNull(cloudTotal), 0, else: cloudTotal),
+    asgCount = if(isNull(asgCount), 0, else: asgCount),
+    ecsScale = if(isNull(ecsScale), 0, else: ecsScale),
+    ngCount = if(isNull(ngCount), 0, else: ngCount),
+    deployCount = if(isNull(deployCount), 0, else: deployCount),
+    srgRuns = if(isNull(srgRuns), 0, else: srgRuns),
+    srgEventTriggered = if(isNull(srgEventTriggered), 0, else: srgEventTriggered)
+| fieldsAdd scaleTargets = asgCount + ecsScale + ngCount
 
 // Compute status
 | fieldsAdd
-    \`1. Resource Saturation Alerts\` = "pass Davis alerting active",
-    \`2. Dynamic Scaling Metrics\` = if(aws > 0,
-        concat("pass ", toString(aws), " AWS resources tracked"),
-        else: "fail No cloud metrics"),
-    \`3. K8s Autoscaling Visible\` = if(k8sWorkloads > 0 or eks > 0,
-        concat("pass ", toString(k8sWorkloads), " workloads / ", toString(eks), " EKS"),
-        else: "n/a N/A for this app"),
-    \`4. Predictive Forecasting\` = "fail Not enabled",
-    \`5. Cloud Capacity Reviewed\` = if(aws > 0,
-        concat("pass ", toString(aws), " resources inventoried"),
-        else: "fail No AWS inventory"),
-    \`6. Deployment Events\` = if(deployments > 0,
-        concat("pass ", toString(deployments), " events (7d)"),
-        else: "fail Not integrated"),
-    \`7. Release Impact Tracking\` = "fail Not enabled",
-    \`8. Pre/Post Dashboards\` = "fail Not detected",
-    \`9. Error Budget Gating\` = "fail Not configured"
+    \`1. SLO Burn Rate Alerting\` = if(burnAlerts > 0,
+        concat("pass ", toString(burnAlerts), " burn-rate alert(s), ",
+            toString(burnFired), " fired (30d)"),
+        else: "fail No SLO burn-rate alerts fired (30d)"),
+    \`2. Dynamic Scaling / K8s Autoscaling\` = if(scaleTargets > 0,
+        concat("pass ", toString(scaleTargets), " autoscaling target(s): ",
+            toString(asgCount), " ASG / ", toString(ecsScale), " ECS / ",
+            toString(ngCount), " nodegroup"),
+        else: if(cloudTotal > 0,
+            concat("fail ", toString(cloudTotal), " cloud resources, none autoscaling"),
+            else: "n/a No cloud footprint for this app")),
+    \`3. Predictive Forecasting\` = "fail Davis forecasting not adopted",
+    \`4. Release Impact Tracking\` = if(srgEventTriggered > 0,
+        concat("pass ", toString(srgEventTriggered), " deploy-triggered guardian run(s) (30d)"),
+        else: if(srgRuns > 0 and deployCount > 0,
+            concat("warn ", toString(srgRuns), " scheduled guardian runs / ",
+                toString(deployCount), " deploys — not deploy-triggered"),
+            else: if(srgRuns > 0,
+                concat("warn ", toString(srgRuns), " scheduled guardian runs, no deploys (30d)"),
+                else: if(deployCount > 0,
+                    concat("fail ", toString(deployCount), " deploys, no guardian validation"),
+                    else: "fail No deployments or guardian validations (30d)")))),
+    \`5. Error Budget Gating\` = "fail Error budget not sent to change management"
 
+// Only a genuine pass scores. warn / n/a / fail all score 0 against a fixed denominator
+// of 5, so the two capability gaps (forecasting, gating) stay visible as red.
 | fieldsAdd passCount =
-    1
-    + if(aws > 0, 1, else: 0)
-    + if(k8sWorkloads > 0 or eks > 0, 1, else: 0)
+    if(burnAlerts > 0, 1, else: 0)
+    + if(scaleTargets > 0, 1, else: 0)
     + 0
-    + if(aws > 0, 1, else: 0)
-    + if(deployments > 0, 1, else: 0)
-    + 0 + 0 + 0
-| fieldsAdd \`L4 Score\` = concat(toString(passCount), " / 9")
+    + if(srgEventTriggered > 0, 1, else: 0)
+    + 0
+| fieldsAdd \`L4 Score\` = concat(toString(passCount), " / 5")
 
 | fields
     \`L4 Score\`,
-    \`1. Resource Saturation Alerts\`,
-    \`2. Dynamic Scaling Metrics\`,
-    \`3. K8s Autoscaling Visible\`,
-    \`4. Predictive Forecasting\`,
-    \`5. Cloud Capacity Reviewed\`,
-    \`6. Deployment Events\`,
-    \`7. Release Impact Tracking\`,
-    \`8. Pre/Post Dashboards\`,
-    \`9. Error Budget Gating\``;
+    \`1. SLO Burn Rate Alerting\`,
+    \`2. Dynamic Scaling / K8s Autoscaling\`,
+    \`3. Predictive Forecasting\`,
+    \`4. Release Impact Tracking\`,
+    \`5. Error Budget Gating\``;
 
   const l5Query = `// L5 Autonomous Reliability - Maturity Scorecard
 data record(applicationci = lower("${appCI}"))

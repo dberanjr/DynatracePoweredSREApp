@@ -1,9 +1,16 @@
 {
   "$schema": "./.dt-app/app.config.schema.json",
-  "environmentUrl": "https://ual.apps.dynatrace.com/",
+  "environmentUrl": "https://YOUR_TENANT.apps.dynatrace.com/",
+  "build": {
+    "dynatraceDependencies": {
+      "addOrOverride": {
+        "/platform/slo/v1": "1.0.0"
+      }
+    }
+  },
   "app": {
     "name": "DynatracePoweredSRE",
-    "version": "2.22.3",
+    "version": "2.35.0",
     "description": "Dynatrace-Powered SRE Maturity Assessment App",
     "id": "my.dynatrace.sre.maturity.app",
     "scopes": [
@@ -14,7 +21,13 @@
       { "name": "storage:bizevents:read", "comment": "Read business events" },
       { "name": "storage:metrics:read", "comment": "Read metrics" },
       { "name": "storage:entities:read", "comment": "Read entity data" },
-      { "name": "storage:system:read", "comment": "Read system tables" }
+      { "name": "storage:system:read", "comment": "Read system tables" },
+      { "name": "storage:spans:read", "comment": "Read distributed trace / span data" },
+      { "name": "storage:smartscape:read", "comment": "Read Smartscape nodes (cloud resource inventory)" },
+      { "name": "settings:objects:read", "comment": "Read Site Reliability Guardian settings objects (live guardian detail)" },
+      { "name": "document:documents:read", "comment": "Read dashboard documents (live SLO dashboard detail)" },
+      { "name": "iam:users:read", "comment": "Resolve dashboard owner user IDs to display names" },
+      { "name": "slo:slos:read", "comment": "Read Gen3 SLOs (live SLO detail + linking)" }
     ]
   }
 }

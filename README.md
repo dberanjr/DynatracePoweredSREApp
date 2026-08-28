@@ -1,9 +1,9 @@
 # Dynatrace-Powered SRE
 
 An application-level **SRE maturity and reliability intelligence** app built on the
-[Dynatrace App Toolkit](https://developer.dynatrace.com/). It surfaces golden signals,
-SLO scorecards, problem analytics, and AIOps insights for your application portfolio,
-scored into an SRE maturity view.
+[Dynatrace App Toolkit](https://developer.dynatrace.com/). Every application in the portfolio
+(keyed by `applicationci`) is scored across a five-level SRE maturity model, entirely from live
+Dynatrace data — no spreadsheets, no manual assessment.
 
 > **Note:** This repository is sanitized for public use. Environment/tenant URLs are set to
 > the placeholder `https://YOUR_TENANT.apps.dynatrace.com` — replace them with your own
@@ -11,49 +11,118 @@ scored into an SRE maturity view.
 
 ## Features
 
-- **SRE Maturity Scorecards (L1–L5)** — every application (keyed by `applicationci`) is scored
-  across five maturity levels, each a set of **data-driven checks** rendered as pass / warn / fail
-  cards with a completion ring, plus a portfolio leaderboard. Hover the **ⓘ** on any check to see
-  exactly how it is calculated.
-- **Golden Signals** — latency, traffic, errors, and saturation views.
-- **Problem Analytics** — Davis problem trends with deep links into the Problems app.
-- **Proactive / AIOps** — anomaly and predictive insights powered by Davis.
-- **Portfolio Overview** — overall score and reliability KPIs across applications.
+- **SRE Maturity Scorecards (L1–L5)** — 30 data-driven checks rendered as pass / warn / fail /
+  n-a cards with a completion ring, plus a portfolio leaderboard across all applications.
+- **Check detail modals** — click any check to open a modal with the underlying evidence:
+  tables, bar and donut charts, trend lines, and deep links into Hosts, Services, Distributed
+  Tracing, Logs, Problems, Dashboards, Notebooks, and SLOs.
+- **Definitions tab** — a self-documenting reference rendering the description, pass logic,
+  remediation guidance, and the exact **scorecard DQL** for all 30 checks, grouped by level.
+  Generated from the same config the modals use, so it cannot drift from the UI.
+- **Golden Signals** — latency, traffic, errors, and saturation, including a normalized
+  four-signal overlay chart.
+- **About page** — build-time version, git commit hash, and commit date, kept in sync
+  automatically by `scripts/sync-version.mjs`.
+
+The primary navigation is deliberately scoped to **Home, Golden Signals, Scorecards,
+Definitions, and About**. Several earlier pages — Overview, AI Ops, Proactive, Problem
+Analytics, Portfolio, and Explore Data — are still built and routable
+(`/overview`, `/ai-ops`, `/proactive`, `/problem-analytics`, `/portfolio`, `/data`)
+but are no longer linked from the header. Re-add them in
+`ui/app/components/Header.tsx` if you want them surfaced.
 
 ## SRE maturity model
 
-The Scorecards page evaluates each application across five levels, entirely from live Dynatrace
-data (Grail DQL, SLO/Settings/Documents APIs, and curated lookup tables):
+Each level is a fixed set of checks. Note that the **denominator is not always the check count**:
+checks that are `n/a` for structural reasons are excluded from the score, while deliberate
+capability gaps are scored as `fail` so they stay visible rather than being quietly dropped.
 
-| Level | Theme | Representative checks |
-| ----- | ----- | --------------------- |
-| **L1** | Full Observability | OneAgent coverage, tracing, logs, Smartscape, K8s/cloud, RUM/Synthetics |
-| **L2** | Measured Reliability | Golden-signal SLIs, **SLOs created**, **Site Reliability Guardians**, **SLO dashboards**, SRE assessment (CMDB tier) |
-| **L3** | AI-Assisted Operations | Causal AI detection + event correlation, **CI/CD integration** (GitHub Actions deployments), ITSM routing, runbooks, alert-noise review, root-cause coverage, **DORA metrics** (deployment frequency & lead time) |
-| **L4** | Proactive Reliability | Resource saturation, dynamic scaling, K8s autoscaling, deployment events, cloud capacity |
-| **L5** | Autonomous Reliability | Workflow automation, incident auto-enrichment, end-to-end remediation |
+| Level | Theme | Checks | Score | Notes |
+| ----- | ----- | ------ | ----- | ----- |
+| **L1** | Full Observability | 7 | `/7` | OneAgent, tracing, logs, Smartscape, Kubernetes, cloud, RUM/Synthetics. K8s and cloud report `n/a` when the app has no such footprint. |
+| **L2** | Measured Reliability | 6 | `/5` | Golden-signal SLIs, SLOs, Site Reliability Guardians, SLO dashboards, CMDB tier. *Critical Services Tagged* is a stub excluded from the denominator. |
+| **L3** | AI-Assisted Operations | 7 | `/7` | Causal AI detection + correlation, CI/CD, ITSM routing, runbooks, alert noise, root-cause coverage, DORA. |
+| **L4** | Proactive Reliability | 5 | `/5` | SLO burn-rate alerting, dynamic scaling / K8s autoscaling, predictive forecasting, release impact tracking, error budget gating. |
+| **L5** | Autonomous Reliability | 5 | `/5` | Repetitive task identification, workflow automation, E2E remediation, incident auto-enrichment, AI postmortems. |
 
-> DORA metrics are an interim view — a company-wide DORA standard (incl. change failure rate and
-> MTTR) is expected to refine these definitions.
+### Deliberate `fail` results
 
-## Data sources & lookup tables
+Three checks report `fail` for every application because the capability genuinely does not exist
+in the reference tenant. This is intentional — scoring them `n/a` would hide the gap by shrinking
+the denominator:
 
-Most checks run as Grail DQL via `useDqlWithCache`. A few signals are sourced from **Grail lookup
-tables** that are kept fresh by Dynatrace Workflows (the app only needs read access):
+- **L4 Predictive Forecasting** — no Davis forecast analyzer runs anywhere in the tenant.
+- **L4 Error Budget Gating** — no ServiceNow workflow action exists; alert routing goes to
+  Microsoft Teams and email only.
+- **L3 Runbooks Linked** — verified zero runbook notebooks exist (see the caveat below).
 
-- `/lookups/slo` — SLOs per AppCI
-- `/lookups/guardians` — Site Reliability Guardians per AppCI, refreshed daily from the guardian
-  Settings API (matched on the `applicationCI`/`appci` tag)
-- `/lookups/slo-dashboards` — SLO dashboards per AppCI, refreshed daily from the documents API
-  (dashboards whose name starts with a 3-letter AppCI token and contains `SLO`)
+### Known measurement caveats
 
-CI/CD and DORA checks read GitHub Actions `CUSTOM_DEPLOYMENT` events directly from Grail.
+The Definitions tab documents these per check; the important ones:
+
+- **L4 SLO Burn Rate Alerting** detects burn-rate alerts that *fired*, not alert configs that
+  *exist*. A correctly configured alert on a consistently healthy SLO will not appear, because
+  alert definitions live in anomaly-detector settings objects that DQL cannot read.
+- **L4 Dynamic Scaling** counts cloud autoscaling constructs (ASGs, Application Auto Scaling
+  targets, EKS nodegroups). In-cluster autoscalers (HPA, KEDA, Karpenter) live in Kubernetes
+  workload YAML and are not counted.
+- **L3 DORA Metrics** is an interim view. A company-wide DORA standard — including formal change
+  failure rate and MTTR definitions — is expected to refine it.
+- **L3 ITSM Integration** proves that alert *routing* is automated, not that tickets are created.
+
+## Data sources
+
+Most checks run as Grail DQL through `useDqlWithCache`. Two other sources fill gaps DQL cannot
+reach.
+
+### Lookup tables
+
+Refreshed by Dynatrace Workflows; the app only needs read access (`storage:files:read`).
+
+| Table | Contents | Refresh |
+| ----- | -------- | ------- |
+| `/lookups/slo` | SLOs per AppCI | Hourly |
+| `/lookups/guardians` | Site Reliability Guardians per AppCI, one row each | Daily, 06:00 UTC |
+| `/lookups/slo-dashboards` | SLO dashboards per AppCI, one row each | Daily, 06:00 UTC |
+| `/lookups/runbooks` | Runbook notebooks per AppCI | Daily |
+| `/lookups/critical_services` | Critical services with severity + business impact | Scheduled |
+
+> **Lookup staleness caveat.** `/lookups/runbooks` currently holds only a `__none__` sentinel row
+> while its refresh workflow still reports success daily. A lookup-only check therefore cannot
+> distinguish "no runbooks exist" from "the pipeline is broken" — which is why the runbook,
+> guardian, and dashboard **modals** read their APIs live instead (see below). Verified
+> 2026-08-28: the tenant genuinely has zero runbook notebooks, so both sources agree today.
+>
+> `/lookups/critical_services` is populated (≈9,000 service rows across ≈360 AppCIs) but the
+> L2 *Critical Services Tagged* check is **not yet wired to it** and still reports `n/a`.
+
+### App functions (`dynatrace-sre-maturity-app/api/`)
+
+Server-side functions called on demand by the detail modals, so modal contents stay live even
+when a scheduled lookup refresh lags:
+
+| Function | Reads | Used by |
+| -------- | ----- | ------- |
+| `getGuardianDetail` | Guardian Settings API | L2 Site Reliability Guardians |
+| `getDashboardDetail` | Documents API (dashboards) | L2 SLO Dashboards Published |
+| `getSloDetail` | Gen3 SLO API (`/platform/slo/v1`) | L2 SLOs Created |
+| `getRunbookDetail` | Documents API (notebooks) | L3 Runbooks Linked |
+
+Because the scorecard grid and leaderboard are driven by a **single bulk DQL query across every
+application**, the scorecard's pass/fail still reads the lookup tables. The functions enrich the
+per-app modal only. The Definitions tab states this split explicitly for each affected check.
+
+### Events
+
+CI/CD, DORA, and release-impact checks read `CUSTOM_DEPLOYMENT` events and Site Reliability
+Guardian `SDLC_EVENT` validations directly from Grail. Any CI/CD platform reporting an
+`application_ci` field is counted (GitHub Actions and Harness today).
 
 ## Tech stack
 
 - React 18 + TypeScript
 - Dynatrace Strato components & design tokens
-- Dynatrace SDK (`@dynatrace-sdk/*`) for DQL queries, SLOs, and navigation
+- Dynatrace SDK (`@dynatrace-sdk/*`) for DQL, SLOs, settings, documents, IAM, and navigation
 - `dt-app` (Dynatrace App Toolkit) for dev/build/deploy
 
 ## Project layout
@@ -63,12 +132,28 @@ CI/CD and DORA checks read GitHub Actions `CUSTOM_DEPLOYMENT` events directly fr
 ├── app.config.ts                 # top-level app config (environmentUrl, scopes)
 ├── src/                          # top-level app source
 └── dynatrace-sre-maturity-app/   # primary app project
-    ├── app.config.json           # app id, name, environmentUrl
+    ├── app.config.json           # app id, name, version, environmentUrl, scopes
+    ├── api/                      # server-side app functions (guardian/dashboard/SLO/runbook detail)
+    ├── scripts/sync-version.mjs  # regenerates ui/app/version.ts on build & deploy
     └── ui/app/
-        ├── components/           # ScorecardCard, checkExplanations (tooltip text), MaturityLeaderboard, ...
-        ├── pages/                # GoldenSignals, Scorecards, ProblemAnalytics, AiOps, Portfolio, ...
-        └── hooks/                # useDqlWithCache
+        ├── components/           # CheckDetailModal, checkDetailConfigs (single source of
+        │                         #   truth for modals + Definitions), checkExplanations
+        │                         #   (tooltips), MaturityLeaderboard, ScorecardCard, ...
+        ├── pages/                # Scorecards, Definitions, GoldenSignals, ProblemAnalytics,
+        │                         #   AiOps, Proactive, Portfolio, About, Landing, ...
+        └── hooks/                # useDqlWithCache, useSloApi
 ```
+
+### Keeping checks consistent
+
+Three files must agree, all keyed by the exact check label the DQL emits:
+
+- `ui/app/pages/ScorecardsPage.tsx` — the L1–L5 queries that produce each check's status
+- `ui/app/components/checkDetailConfigs.ts` — modal config **and** Definitions tab content
+- `ui/app/components/checkExplanations.ts` — hover tooltip text
+
+If you add or rename a check, update all three. The Definitions tab renders straight from
+`checkDetailConfigs.ts`, so its `scorecardSnippet` must reflect what the scorecard actually runs.
 
 ## Prerequisites
 
@@ -88,9 +173,12 @@ Set your Dynatrace environment URL — replace the `YOUR_TENANT` placeholder in:
 https://YOUR_TENANT.apps.dynatrace.com   →   https://<your-env>.apps.dynatrace.com
 ```
 
-The app requests read scopes for logs, events, business events, metrics, entities, system tables,
-Davis problems, Smartscape topology, and lookup tables (`storage:files:read`, used by the SLO /
-guardian / SLO-dashboard checks). See `dynatrace-sre-maturity-app/app.config.json`.
+The app requests read-only scopes for logs, buckets, files (lookup tables), events, business
+events, metrics, entities, system tables, spans, and Smartscape, plus `settings:objects:read`
+(guardians), `document:documents:read` (dashboards and notebooks), `iam:users:read` (resolving
+owner names), and `slo:slos:read` (Gen3 SLOs). The Gen3 SLO API also requires an explicit
+`build.dynatraceDependencies` entry for `/platform/slo/v1`. See
+`dynatrace-sre-maturity-app/app.config.json`.
 
 ## Getting started
 
@@ -102,6 +190,10 @@ npm run build    # production build to dist/
 npm run deploy   # build and deploy to the environment in app.config.json
 npm run lint     # lint the UI source
 ```
+
+`build` and `deploy` run `scripts/sync-version.mjs` first, regenerating `ui/app/version.ts` from
+`app.config.json` plus the current git commit — so the in-app version footer and About page always
+match what was deployed. Bump `app.version` in `app.config.json`; never edit `version.ts` by hand.
 
 ## License
 

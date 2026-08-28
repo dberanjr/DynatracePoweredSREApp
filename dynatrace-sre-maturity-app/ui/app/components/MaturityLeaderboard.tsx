@@ -133,19 +133,90 @@ const BULK_L2_QUERY = `fetch dt.entity.service
     + if(hasTier > 0, 1, else: 0)
 | fields applicationci, l2Score`;
 
-// ── Bulk L3: per-app AI ops signals (simplified — needs davis auth for full) ──
-// Max 5 checks; without davis we check what we can
-const BULK_L3_QUERY = `fetch bizevents, from:now()-24h
-| filter event.type == "workflow.import.servicenow.appci"
-| fieldsAdd applicationci = lower(applicationci)
-| filter isNotNull(applicationci)
+// ── Bulk L3: per-app AI ops signals ──
+// Checks: causal AI, CI/CD, ITSM routing, runbooks(0 — needs the Documents API,
+// which is per-app only via app function), alert noise, root cause, DORA → 7 max.
+// FIXED (2026-08-28): this previously returned a hardcoded l3Score = 0 for every
+// app — the comment claimed Davis auth was missing, but the L3 scorecard queries
+// dt.davis.problems successfully, so the leaderboard's L3 column was simply blank
+// for all 563 applications. Mirrors l3Query in ScorecardsPage.tsx.
+//
+// Runbooks is the one check that cannot be evaluated in bulk: it reads the
+// Documents API through an app function that takes a single AppCI, so it scores
+// 0 here and the per-app scorecard is authoritative for that row.
+const BULK_L3_QUERY = `fetch dt.entity.service
+| fieldsAdd applicationci = arrayDistinct(
+    iCollectArray(
+      splitString(
+        arrayRemoveNulls(
+          iCollectArray(
+            if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+          )
+        )[], ":"
+      )[1]
+    )
+  )
+| fieldsAdd applicationci = arrayDistinct(
+    iCollectArray(splitString(applicationci[], ",")[0])
+  )
+| expand applicationci
 | filter stringLength(applicationci) <= 3
-| dedup applicationci
-| fieldsAdd l3Score = 0
+| summarize svcCount = count(), by:{applicationci}
+| lookup [
+    fetch dt.davis.problems, from:now()-7d
+    | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
+    | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+    | filter isNotNull(appci)
+    | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
+    | fieldsAdd isCausal = matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
+    | fieldsAdd isNoise = eventCount == 1 and matchesValue(event.category, array("AVAILABILITY", "RESOURCE_CONTENTION", "CUSTOM_ALERT", "MONITORING_UNAVAILABLE"))
+    | summarize
+        total7d = count(),
+        causalTotal = countIf(isCausal),
+        causalWithCause = countIf(isCausal and isNotNull(root_cause_entity_id)),
+        noiseTotal = countIf(isNoise),
+        by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{total7d, causalTotal, causalWithCause, noiseTotal}
+| lookup [
+    fetch events, from:now()-30d
+    | filter event.type == "CUSTOM_DEPLOYMENT"
+    | filter isNotNull(application_ci)
+    | summarize deployTotal = count(), by:{appci = lower(application_ci)}
+  ], sourceField:applicationci, lookupField:appci, fields:{deployTotal}
+| lookup [
+    fetch dt.system.events, from:now()-30d
+    | filter event.provider == "AUTOMATION_ENGINE"
+    | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
+    | filter matchesValue(\`dt.automation_engine.workflow.title\`, "* Production Dynatrace Alerts")
+    | fieldsAdd wfAppci = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+    | summarize itsmWorkflows = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppci}
+  ], sourceField:applicationci, lookupField:wfAppci, fields:{itsmWorkflows}
+| fieldsAdd
+    total7d = if(isNull(total7d), 0, else: total7d),
+    causalTotal = if(isNull(causalTotal), 0, else: causalTotal),
+    causalWithCause = if(isNull(causalWithCause), 0, else: causalWithCause),
+    noiseTotal = if(isNull(noiseTotal), 0, else: noiseTotal),
+    deployTotal = if(isNull(deployTotal), 0, else: deployTotal),
+    itsmWorkflows = if(isNull(itsmWorkflows), 0, else: itsmWorkflows)
+| fieldsAdd noisePct = if(total7d > 0, round(toDouble(noiseTotal) * 100.0 / toDouble(total7d), decimals:0), else: 0.0)
+| fieldsAdd rootCausePct = if(causalTotal > 0, round(toDouble(causalWithCause) * 100.0 / toDouble(causalTotal), decimals:0), else: 0.0)
+| fieldsAdd l3Score =
+    if(causalTotal > 0, 1, else: 0)
+    + if(deployTotal > 0, 1, else: 0)
+    + if(itsmWorkflows > 0, 1, else: 0)
+    + 0
+    + if(total7d > 0 and noisePct <= 50, 1, else: 0)
+    + if(causalTotal > 0 and rootCausePct >= 40, 1, else: 0)
+    + if(deployTotal > 0, 1, else: 0)
 | fields applicationci, l3Score`;
 
 // ── Bulk L4: per-app proactive signals ──
-// Checks: resource alerts(1), scaling metrics, k8s, predictive(0), cloud capacity, deploys, release(0), dashboards(0), budget(0) → 9 max
+// Checks: burn-rate alerting, dynamic scaling/K8s autoscaling, predictive
+// forecasting(0 — not adopted tenant-wide), release impact tracking,
+// error budget gating(0 — no ServiceNow integration) → 5 max.
+// Mirrors l4Query in ScorecardsPage.tsx; keep the two in sync.
+// Deployment count is deliberately omitted here: it only distinguishes
+// warn from fail on release impact, and never contributes to the score.
 const BULK_L4_QUERY = `fetch dt.entity.service
 | fieldsAdd applicationci = arrayDistinct(
     iCollectArray(
@@ -165,51 +236,40 @@ const BULK_L4_QUERY = `fetch dt.entity.service
 | filter stringLength(applicationci) <= 3
 | summarize svcCount = count(), by:{applicationci}
 | lookup [
-    fetch dt.entity.cloud_application
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(
-          splitString(
-            arrayRemoveNulls(
-              iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-              )
-            )[], ":"
-          )[1]
-        )
-      )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
-      )
-    | expand applicationci
-    | summarize k8sCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sCount}
+    fetch dt.davis.problems, from:now()-30d
+    | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
+    | filter event.category == "CUSTOM_ALERT"
+    | filter contains(lower(event.name), "burn rate")
+    | fieldsAdd appci = lower(trim(splitString(event.name, " - ")[0]))
+    | filter stringLength(appci) == 3
+    | summarize burnAlerts = countDistinct(event.name), by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{burnAlerts}
 | lookup [
-    fetch events, from:now()-7d
-    | filter event.kind == "DAVIS_EVENT"
-    | filter event.type == "CUSTOM_DEPLOYMENT"
-    | expand affected_entity_tags
-    | parse affected_entity_tags, "'applicationci:' LD:appci"
+    smartscapeNodes "AWS*"
+    | filter matchesValue(type, "AWS_AUTOSCALING_AUTOSCALINGGROUP", "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET", "AWS_EKS_NODEGROUP")
+    | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+    | filter isNotNull(ApplicationCI)
+    | summarize scaleTargets = count(), by:{appci = lower(ApplicationCI)}
+  ], sourceField:applicationci, lookupField:appci, fields:{scaleTargets}
+| lookup [
+    fetch events, from:now()-30d
+    | filter event.kind == "SDLC_EVENT"
+    | filter event.type == "validation" and event.status == "finished"
+    | fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"ApplicationCI\\":[\\"")[1], "\\"")[0])
     | filter isNotNull(appci)
-    | fieldsAdd applicationci = lower(appci)
-    | summarize deployCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{deployCount}
-| lookup [
-    fetch bizevents, from:now()-24h
-    | filter event.type == "workflow.summary.cloud.aws"
-    | summarize awsTotal = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{awsTotal}
+    | fieldsAdd trig = coalesce(\`dt.automation_engine.workflow_execution.trigger.type\`, "Manual")
+    | summarize srgEventTriggered = countIf(trig != "Schedule" and trig != "Manual"), by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{srgEventTriggered}
 | fieldsAdd
-    k8sCount = if(isNull(k8sCount), 0, else: k8sCount),
-    deployCount = if(isNull(deployCount), 0, else: deployCount),
-    awsTotal = if(isNull(awsTotal), 0, else: awsTotal)
+    burnAlerts = if(isNull(burnAlerts), 0, else: burnAlerts),
+    scaleTargets = if(isNull(scaleTargets), 0, else: scaleTargets),
+    srgEventTriggered = if(isNull(srgEventTriggered), 0, else: srgEventTriggered)
 | fieldsAdd l4Score =
-    1
-    + if(awsTotal > 0, 1, else: 0)
-    + if(k8sCount > 0, 1, else: 0)
+    if(burnAlerts > 0, 1, else: 0)
+    + if(scaleTargets > 0, 1, else: 0)
     + 0
-    + if(awsTotal > 0, 1, else: 0)
-    + if(deployCount > 0, 1, else: 0)
-    + 0 + 0 + 0
+    + if(srgEventTriggered > 0, 1, else: 0)
+    + 0
 | fields applicationci, l4Score`;
 
 // ── Bulk L5: per-app autonomous signals ──
@@ -246,11 +306,11 @@ const CMDB_FALLBACK_QUERY = `fetch bizevents, from:now()-48h
 const pillarDefs = [
   { key: "l1", label: "Observe", color: "#3BACF0", max: 6 },
   { key: "l2", label: "Measure", color: "#1966FF", max: 5 },
-  { key: "l3", label: "AI Ops", color: "#5E28E5", max: 5 },
-  { key: "l4", label: "Proactive", color: "#8D1CDC", max: 9 },
+  { key: "l3", label: "AI Ops", color: "#5E28E5", max: 7 },
+  { key: "l4", label: "Proactive", color: "#8D1CDC", max: 5 },
   { key: "l5", label: "Auto", color: "#49C2B3", max: 5 },
 ];
-const TOTAL_MAX = pillarDefs.reduce((s, p) => s + p.max, 0); // 30
+const TOTAL_MAX = pillarDefs.reduce((s, p) => s + p.max, 0); // 28
 
 interface AppScore {
   appci: string;
