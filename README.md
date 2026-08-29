@@ -40,21 +40,20 @@ capability gaps are scored as `fail` so they stay visible rather than being quie
 | Level | Theme | Checks | Score | Notes |
 | ----- | ----- | ------ | ----- | ----- |
 | **L1** | Full Observability | 7 | `/7` | OneAgent, tracing, logs, Smartscape, Kubernetes, cloud, RUM/Synthetics. K8s and cloud report `n/a` when the app has no such footprint. |
-| **L2** | Measured Reliability | 6 | `/5` | Golden-signal SLIs, SLOs, Site Reliability Guardians, SLO dashboards, CMDB tier. *Critical Services Tagged* is a stub excluded from the denominator. |
+| **L2** | Measured Reliability | 6 | `/6` | Golden-signal SLIs, SLOs, Site Reliability Guardians, SLO dashboards, CMDB tier, Critical Services Tagged. |
 | **L3** | AI-Assisted Operations | 7 | `/7` | Causal AI detection + correlation, CI/CD, ITSM routing, runbooks, alert noise, root-cause coverage, DORA. |
 | **L4** | Proactive Reliability | 5 | `/5` | SLO burn-rate alerting, dynamic scaling / K8s autoscaling, predictive forecasting, release impact tracking, error budget gating. |
 | **L5** | Autonomous Reliability | 5 | `/5` | Repetitive task identification, workflow automation, E2E remediation, incident auto-enrichment, AI postmortems. |
 
 ### Deliberate `fail` results
 
-Three checks report `fail` for every application because the capability genuinely does not exist
+Two checks report `fail` for every application because the capability genuinely does not exist
 in the reference tenant. This is intentional — scoring them `n/a` would hide the gap by shrinking
 the denominator:
 
 - **L4 Predictive Forecasting** — no Davis forecast analyzer runs anywhere in the tenant.
 - **L4 Error Budget Gating** — no ServiceNow workflow action exists; alert routing goes to
   Microsoft Teams and email only.
-- **L3 Runbooks Linked** — verified zero runbook notebooks exist (see the caveat below).
 
 ### Known measurement caveats
 
@@ -69,6 +68,10 @@ The Definitions tab documents these per check; the important ones:
 - **L3 DORA Metrics** is an interim view. A company-wide DORA standard — including formal change
   failure rate and MTTR definitions — is expected to refine it.
 - **L3 ITSM Integration** proves that alert *routing* is automated, not that tickets are created.
+- **L3 Runbooks Linked** currently reports `fail` for every application — verified 2026-08-29 that
+  this tenant has zero runbook notebooks. Unlike the two deliberate fails above, this is not
+  structural: it reads the Documents API live (see App functions below) and will start passing
+  for any AppCI the moment a matching notebook exists.
 
 ## Data sources
 
@@ -84,17 +87,17 @@ Refreshed by Dynatrace Workflows; the app only needs read access (`storage:files
 | `/lookups/slo` | SLOs per AppCI | Hourly |
 | `/lookups/guardians` | Site Reliability Guardians per AppCI, one row each | Daily, 06:00 UTC |
 | `/lookups/slo-dashboards` | SLO dashboards per AppCI, one row each | Daily, 06:00 UTC |
-| `/lookups/runbooks` | Runbook notebooks per AppCI | Daily |
-| `/lookups/critical_services` | Critical services with severity + business impact | Scheduled |
+| `/lookups/critical_services` | Critical services with severity, business impact, and resolved entity IDs (~9,000 rows / ~360 AppCIs; ~38% have resolved entity IDs) | Daily, 06:00 UTC |
 
-> **Lookup staleness caveat.** `/lookups/runbooks` currently holds only a `__none__` sentinel row
-> while its refresh workflow still reports success daily. A lookup-only check therefore cannot
-> distinguish "no runbooks exist" from "the pipeline is broken" — which is why the runbook,
-> guardian, and dashboard **modals** read their APIs live instead (see below). Verified
-> 2026-08-28: the tenant genuinely has zero runbook notebooks, so both sources agree today.
+> **Retired 2026-08-29: `/lookups/runbooks`.** It held only a `__none__` sentinel row while its
+> refresh workflow still reported success daily, so a lookup-only check could not distinguish "no
+> runbooks exist" from "the pipeline is broken". *Runbooks Linked* now reads the Documents API
+> live everywhere instead — scorecard, leaderboard, and modal alike (see App functions below) —
+> and the table is no longer read anywhere in the app.
 >
-> `/lookups/critical_services` is populated (≈9,000 service rows across ≈360 AppCIs) but the
-> L2 *Critical Services Tagged* check is **not yet wired to it** and still reports `n/a`.
+> *Critical Services Tagged* is wired to `/lookups/critical_services`: a pass requires at least
+> one listed service whose `entity_ids` resolved to a real Dynatrace entity, not merely being
+> listed.
 
 ### App functions (`dynatrace-sre-maturity-app/api/`)
 
@@ -103,14 +106,21 @@ when a scheduled lookup refresh lags:
 
 | Function | Reads | Used by |
 | -------- | ----- | ------- |
-| `getGuardianDetail` | Guardian Settings API | L2 Site Reliability Guardians |
-| `getDashboardDetail` | Documents API (dashboards) | L2 SLO Dashboards Published |
-| `getSloDetail` | Gen3 SLO API (`/platform/slo/v1`) | L2 SLOs Created |
-| `getRunbookDetail` | Documents API (notebooks) | L3 Runbooks Linked |
+| `getGuardianDetail` | Guardian Settings API | L2 Site Reliability Guardians (modal only) |
+| `getDashboardDetail` | Documents API (dashboards) | L2 SLO Dashboards Published (modal only) |
+| `getSloDetail` | Gen3 SLO API (`/platform/slo/v1`) | L2 SLOs Created (modal only) |
+| `getRunbookDetail` | Documents API (notebooks) | L3 Runbooks Linked — per-app scorecard card + modal |
+| `getAllRunbookCounts` | Documents API (notebooks), bulk across every AppCI in one call | L3 Runbooks Linked — portfolio leaderboard |
 
-Because the scorecard grid and leaderboard are driven by a **single bulk DQL query across every
-application**, the scorecard's pass/fail still reads the lookup tables. The functions enrich the
-per-app modal only. The Definitions tab states this split explicitly for each affected check.
+For Guardians, SLO Dashboards, and SLOs Created, the scorecard grid and leaderboard are still
+driven by a **single bulk DQL query across every application**, so their pass/fail reads the
+lookup tables above and these functions enrich the per-app modal only.
+
+*Runbooks Linked* is the one exception (since 2026-08-29): its Documents API dependency has no
+Grail/DQL equivalent at all, so every surface — per-app scorecard card, portfolio leaderboard, and
+modal — calls one of the two functions above live, via the `useLiveCheckOverride` hook
+(`ui/app/hooks/useLiveCheckOverride.ts`), which layers the result onto the DQL-computed score
+client-side rather than reading a lookup table. The Definitions tab states this explicitly.
 
 ### Events
 
@@ -133,7 +143,8 @@ Guardian `SDLC_EVENT` validations directly from Grail. Any CI/CD platform report
 ├── src/                          # top-level app source
 └── dynatrace-sre-maturity-app/   # primary app project
     ├── app.config.json           # app id, name, version, environmentUrl, scopes
-    ├── api/                      # server-side app functions (guardian/dashboard/SLO/runbook detail)
+    ├── api/                      # server-side app functions (guardian/dashboard/SLO/runbook
+    │                             #   detail, bulk runbook counts)
     ├── scripts/sync-version.mjs  # regenerates ui/app/version.ts on build & deploy
     └── ui/app/
         ├── components/           # CheckDetailModal, checkDetailConfigs (single source of
@@ -141,18 +152,24 @@ Guardian `SDLC_EVENT` validations directly from Grail. Any CI/CD platform report
         │                         #   (tooltips), MaturityLeaderboard, ScorecardCard, ...
         ├── pages/                # Scorecards, Definitions, GoldenSignals, ProblemAnalytics,
         │                         #   AiOps, Proactive, Portfolio, About, Landing, ...
-        └── hooks/                # useDqlWithCache, useSloApi
+        └── hooks/                # useDqlWithCache, useSloApi, useLiveCheckOverride
 ```
 
 ### Keeping checks consistent
 
-Three files must agree, all keyed by the exact check label the DQL emits:
+Four files must agree, all keyed by the exact check label the DQL emits:
 
-- `ui/app/pages/ScorecardsPage.tsx` — the L1–L5 queries that produce each check's status
+- `ui/app/pages/ScorecardsPage.tsx` — the L1–L5 queries that produce each check's status for the
+  per-app scorecard
+- `ui/app/components/MaturityLeaderboard.tsx` — separate bulk queries (`BULK_L1_QUERY` ... `BULK_L5_QUERY`)
+  that score every application at once for the portfolio leaderboard. DQL cannot join these to
+  `ScorecardsPage.tsx`'s queries, so parity between the two is enforced by convention, not shared
+  code — they drifted once already (Cloud, SLOs, Guardians, and Incident Auto-Enrichment were
+  silently hardcoded to 0 here until a 2026-08-29 audit caught it) and can drift again.
 - `ui/app/components/checkDetailConfigs.ts` — modal config **and** Definitions tab content
 - `ui/app/components/checkExplanations.ts` — hover tooltip text
 
-If you add or rename a check, update all three. The Definitions tab renders straight from
+If you add or rename a check, update all four. The Definitions tab renders straight from
 `checkDetailConfigs.ts`, so its `scorecardSnippet` must reflect what the scorecard actually runs.
 
 ## Prerequisites
