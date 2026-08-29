@@ -4,6 +4,7 @@ import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
+import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOverride";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { CHECK_EXPLANATIONS } from "./checkExplanations";
 import { CheckDetailModal } from "./CheckDetailModal";
@@ -13,6 +14,7 @@ interface Props {
   query: string;
   accentColor: string;
   appCI: string;
+  liveOverride?: LiveCheckOverride;
 }
 
 function getStatus(value: string): "pass" | "fail" | "warn" | "na" {
@@ -206,8 +208,9 @@ function CheckItem({ label, value, onClick }: CheckItemProps) {
   );
 }
 
-export const ScorecardCard = ({ title, query, accentColor, appCI }: Props) => {
+export const ScorecardCard = ({ title, query, accentColor, appCI, liveOverride }: Props) => {
   const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query });
+  const { apply: applyLiveOverride } = useLiveCheckOverride(appCI, liveOverride);
   const [selectedCheck, setSelectedCheck] = React.useState<string | null>(null);
   const [selectedValue, setSelectedValue] = React.useState<string>("");
 
@@ -267,7 +270,7 @@ export const ScorecardCard = ({ title, query, accentColor, appCI }: Props) => {
     );
   }
 
-  const record = data.records[0] as Record<string, unknown>;
+  const record = applyLiveOverride(data.records[0] as Record<string, unknown>);
   const keys = Object.keys(record);
   const scoreKey = keys.find((k) => k.toLowerCase().includes("score"));
   const scoreValue = scoreKey ? String(record[scoreKey]) : "0 / 0";

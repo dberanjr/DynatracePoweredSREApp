@@ -2,11 +2,15 @@ import React, { useMemo, useEffect } from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql, useAppFunction } from "@dynatrace-sdk/react-hooks";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 
 // ── Bulk L1 query: per-app observability signals (matches scorecard L1 logic) ──
-// Checks: hosts, services, logs, smartscape(=services), k8s, rum/synthetics → 6 max
+// Checks: hosts, services, logs, smartscape(=services), k8s, cloud, rum/synthetics → 7 max
+// FIXED (2026-08-29): Cloud was entirely missing (no smartscapeNodes lookup at all)
+// and RUM/Synthetics was a hardcoded +0 — both real, computable signals that this
+// query simply never fetched, so the leaderboard undercounted L1 for every app.
+// Mirrors l1Query in ScorecardsPage.tsx; keep the two in sync.
 const BULK_L1_QUERY = `fetch dt.entity.service
 | fieldsAdd applicationci = arrayDistinct(
     iCollectArray(
@@ -73,22 +77,84 @@ const BULK_L1_QUERY = `fetch dt.entity.service
     | filter isNotNull(applicationci)
     | summarize logCount = count(), by:{applicationci}
   ], sourceField:applicationci, lookupField:applicationci, fields:{logCount}
+| lookup [
+    smartscapeNodes "AWS*"
+    | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+    | append [
+        smartscapeNodes "AZURE*"
+        | fieldsFlatten \`tags:azure\`, fields:{ApplicationCI}
+      ]
+    | append [
+        smartscapeNodes "GCP*"
+        | fieldsFlatten \`tags:gcp_labels\`, fields:{ApplicationCI}
+      ]
+    | filter isNotNull(ApplicationCI)
+    | fieldsAdd applicationci = lower(ApplicationCI)
+    | summarize cloudCount = count(), by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{cloudCount}
+| lookup [
+    fetch dt.entity.application, from:now()-1000d
+    | fieldsAdd applicationci = arrayDistinct(
+        iCollectArray(
+          splitString(
+            arrayRemoveNulls(
+              iCollectArray(
+                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+              )
+            )[], ":"
+          )[1]
+        )
+      )
+    | fieldsAdd applicationci = arrayDistinct(
+        iCollectArray(splitString(applicationci[], ",")[0])
+      )
+    | expand applicationci
+    | fieldsAdd rumActive = if(lifetime[end] > now()-7d, true, else: false)
+    | summarize rumCount = countIf(rumActive == true), by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{rumCount}
+| lookup [
+    fetch dt.entity.synthetic_test
+    | fieldsAdd applicationci = arrayDistinct(
+        iCollectArray(
+          splitString(
+            arrayRemoveNulls(
+              iCollectArray(
+                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+              )
+            )[], ":"
+          )[1]
+        )
+      )
+    | fieldsAdd applicationci = arrayDistinct(
+        iCollectArray(splitString(applicationci[], ",")[0])
+      )
+    | expand applicationci
+    | summarize synCount = count(), by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{synCount}
 | fieldsAdd
     hostCount = if(isNull(hostCount), 0, else: hostCount),
     serviceCount = if(isNull(serviceCount), 0, else: serviceCount),
     k8sCount = if(isNull(k8sCount), 0, else: k8sCount),
-    logCount = if(isNull(logCount), 0, else: logCount)
+    logCount = if(isNull(logCount), 0, else: logCount),
+    cloudCount = if(isNull(cloudCount), 0, else: cloudCount),
+    rumCount = if(isNull(rumCount), 0, else: rumCount),
+    synCount = if(isNull(synCount), 0, else: synCount)
 | fieldsAdd l1Score =
     if(hostCount > 0, 1, else: 0)
     + if(serviceCount > 0, 1, else: 0)
     + if(logCount > 0, 1, else: 0)
     + if(serviceCount > 0, 1, else: 0)
     + if(k8sCount > 0, 1, else: 0)
-    + 0
+    + if(cloudCount > 0, 1, else: 0)
+    + if(rumCount > 0 or synCount > 0, 1, else: 0)
 | fields applicationci, l1Score, serviceCount, hostCount, k8sCount, logCount`;
 
 // ── Bulk L2: per-app measured reliability signals ──
-// Checks: golden signals(=services>0), SLOs(0), error budget(0), dashboards, SRE assessment → 5 max
+// Checks: golden signals, SLOs, guardians, dashboards, SRE assessment, critical services → 6 max
+// FIXED (2026-08-29): SLOs and Guardians were both hardcoded +0 despite being plain
+// DQL lookups (no REST call needed) — trivial to add, previously just never wired.
+// Critical Services Tagged is new: see /lookups/critical_services in ScorecardsPage.tsx.
+// Mirrors l2Query in ScorecardsPage.tsx; keep the two in sync.
 const BULK_L2_QUERY = `fetch dt.entity.service
 | fieldsAdd applicationci = arrayDistinct(
     iCollectArray(
@@ -123,14 +189,34 @@ const BULK_L2_QUERY = `fetch dt.entity.service
     | filter isNotNull(tier)
     | summarize hasTier = count(), by:{applicationci}
   ], sourceField:applicationci, lookupField:applicationci, fields:{hasTier}
+| lookup [
+    load "/lookups/slo"
+    | fieldsAdd appci = lower(substring(slo, from:0, to:3))
+    | summarize sloCount = count(), by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{sloCount}
+| lookup [
+    load "/lookups/guardians"
+    | fieldsAdd appci = lower(appci)
+    | summarize guardianCount = count(), by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{guardianCount}
+| lookup [
+    load "/lookups/critical_services"
+    | fieldsAdd appci = lower(appci)
+    | summarize resolved = countIf(entity_ids != "-"), by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{resolved}
 | fieldsAdd
     dashboardCount = if(isNull(dashboardCount), 0, else: dashboardCount),
-    hasTier = if(isNull(hasTier), 0, else: hasTier)
+    hasTier = if(isNull(hasTier), 0, else: hasTier),
+    sloCount = if(isNull(sloCount), 0, else: sloCount),
+    guardianCount = if(isNull(guardianCount), 0, else: guardianCount),
+    resolved = if(isNull(resolved), 0, else: resolved)
 | fieldsAdd l2Score =
     if(serviceCount > 0, 1, else: 0)
-    + 0 + 0
+    + if(sloCount > 0, 1, else: 0)
+    + if(guardianCount > 0, 1, else: 0)
     + if(dashboardCount > 0, 1, else: 0)
     + if(hasTier > 0, 1, else: 0)
+    + if(resolved > 0, 1, else: 0)
 | fields applicationci, l2Score`;
 
 // ── Bulk L3: per-app AI ops signals ──
@@ -141,9 +227,11 @@ const BULK_L2_QUERY = `fetch dt.entity.service
 // dt.davis.problems successfully, so the leaderboard's L3 column was simply blank
 // for all 563 applications. Mirrors l3Query in ScorecardsPage.tsx.
 //
-// Runbooks is the one check that cannot be evaluated in bulk: it reads the
-// Documents API through an app function that takes a single AppCI, so it scores
-// 0 here and the per-app scorecard is authoritative for that row.
+// Runbooks Linked is NOT computed in this DQL query — the Documents API it
+// depends on has no Grail equivalent. FIXED (2026-08-29): it's no longer a
+// permanent 0 either. getAllRunbookCounts (a bulk sibling of the modal's
+// getRunbookDetail) reads the Documents API once for every AppCI in the
+// tenant, and its result is merged into l3Score client-side, below.
 const BULK_L3_QUERY = `fetch dt.entity.service
 | fieldsAdd applicationci = arrayDistinct(
     iCollectArray(
@@ -273,17 +361,41 @@ const BULK_L4_QUERY = `fetch dt.entity.service
 | fields applicationci, l4Score`;
 
 // ── Bulk L5: per-app autonomous signals ──
-// Max 5 checks
+// Checks: repetitive tasks, workflow automation, E2E remediation(0 — not detected),
+// incident auto-enrichment, AI postmortem(0 — not detected) → 5 max
+// FIXED (2026-08-29): Incident Auto-Enrichment was dropped entirely — this query
+// never fetched dt.davis.problems at all, so a real, computable signal always
+// scored 0 on the leaderboard. Mirrors l5Query in ScorecardsPage.tsx; keep in sync.
 const BULK_L5_QUERY = `fetch bizevents, from:now()-7d
 | filter contains(event.type, "workflow")
 | filter isNotNull(applicationci)
 | fieldsAdd applicationci = lower(applicationci)
 | filter stringLength(applicationci) <= 3
 | summarize workflowCount = count(), by:{applicationci}
+| lookup [
+    fetch dt.davis.problems
+    | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+    | filter isNotNull(appci)
+    | filter dt.davis.is_duplicate == false
+    | fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"
+        and isNotNull(labels.alerting_profile)
+    | summarize
+        totalProblems = count(),
+        enrichedProblems = countIf(hasItsmProfile == true),
+        by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{totalProblems, enrichedProblems}
+| fieldsAdd
+    totalProblems = if(isNull(totalProblems), 0, else: totalProblems),
+    enrichedProblems = if(isNull(enrichedProblems), 0, else: enrichedProblems)
+| fieldsAdd enrichPct = if(totalProblems > 0,
+    round(toDouble(enrichedProblems) * 100.0 / toDouble(totalProblems), decimals:0),
+    else: 0.0)
 | fieldsAdd l5Score =
     if(workflowCount > 0, 1, else: 0)
     + if(workflowCount > 0, 1, else: 0)
-    + 0 + 0 + 0
+    + 0
+    + if(totalProblems > 0 and enrichPct >= 50, 1, else: 0)
+    + 0
 | fields applicationci, l5Score`;
 
 // ── CMDB info ──
@@ -304,8 +416,8 @@ const CMDB_FALLBACK_QUERY = `fetch bizevents, from:now()-48h
 
 // ── Pillar config (must match scorecard max values) ──
 const pillarDefs = [
-  { key: "l1", label: "Observe", color: "#3BACF0", max: 6 },
-  { key: "l2", label: "Measure", color: "#1966FF", max: 5 },
+  { key: "l1", label: "Observe", color: "#3BACF0", max: 7 },
+  { key: "l2", label: "Measure", color: "#1966FF", max: 6 },
   { key: "l3", label: "AI Ops", color: "#5E28E5", max: 7 },
   { key: "l4", label: "Proactive", color: "#8D1CDC", max: 5 },
   { key: "l5", label: "Auto", color: "#49C2B3", max: 5 },
@@ -416,6 +528,10 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
   const { data: l1Data, isLoading: l1L } = useDqlWithCache({ query: BULK_L1_QUERY });
   const { data: l2Data, isLoading: l2L } = useDqlWithCache({ query: BULK_L2_QUERY });
   const { data: l3Data, isLoading: l3L } = useDqlWithCache({ query: BULK_L3_QUERY });
+  const { data: runbookCountsData, isLoading: runbookCountsL } = useAppFunction<{ counts?: Record<string, number> }>(
+    { name: "getAllRunbookCounts", data: {} },
+    { autoFetch: true, autoFetchOnUpdate: true }
+  );
   const { data: l4Data, isLoading: l4L } = useDqlWithCache({ query: BULK_L4_QUERY });
   const { data: l5Data, isLoading: l5L } = useDqlWithCache({ query: BULK_L5_QUERY });
   const { data: cmdbLookupData, isLoading: cmdbLookupL, error: cmdbLookupErr } = useDql({ query: CMDB_LOOKUP_QUERY });
@@ -426,7 +542,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
   const cmdbData = cmdbLookupErr ? cmdbFallbackData : cmdbLookupData;
   const cmdbL = cmdbLookupErr ? cmdbFallbackL : cmdbLookupL;
 
-  const loading = l1L || l2L || l3L || l4L || l5L || cmdbL;
+  const loading = l1L || l2L || l3L || l4L || l5L || cmdbL || runbookCountsL;
 
   const { scores, tierMaturity, enterprisePct } = useMemo(() => {
     if (!l1Data?.records) return { scores: [], tierMaturity: [], enterprisePct: 0 };
@@ -442,6 +558,16 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
     const l3Map = makeMap(l3Data?.records as Record<string, unknown>[] | undefined, "l3Score");
     const l4Map = makeMap(l4Data?.records as Record<string, unknown>[] | undefined, "l4Score");
     const l5Map = makeMap(l5Data?.records as Record<string, unknown>[] | undefined, "l5Score");
+
+    // Runbooks Linked can't be computed in BULK_L3_QUERY (Documents API has no
+    // DQL equivalent), so it's never counted in the DQL-side l3Score above —
+    // merge the live bulk count in here instead of double-counting.
+    const runbookCounts = runbookCountsData?.counts ?? {};
+    Array.from(l3Map.keys()).forEach((appci) => {
+      if ((runbookCounts[appci] ?? 0) > 0) {
+        l3Map.set(appci, (l3Map.get(appci) ?? 0) + 1);
+      }
+    });
 
     const cmdbMap = new Map<string, Record<string, unknown>>();
     ((cmdbData?.records || []) as Record<string, unknown>[]).forEach((r) => {
@@ -492,7 +618,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
 
     const top25 = allApps.sort((a, b) => b.pct - a.pct || b.total - a.total).slice(0, 25);
     return { scores: top25, tierMaturity, enterprisePct };
-  }, [l1Data, l2Data, l3Data, l4Data, l5Data, cmdbData]);
+  }, [l1Data, l2Data, l3Data, l4Data, l5Data, cmdbData, runbookCountsData]);
 
   useEffect(() => {
     if (onTierData && tierMaturity.length > 0) {

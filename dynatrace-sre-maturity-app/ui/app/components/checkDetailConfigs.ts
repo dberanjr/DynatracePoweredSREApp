@@ -808,38 +808,39 @@ load "/lookups/slo-dashboards"
     level: "L2",
     levelColor: "#1966FF",
     description:
-      "Checks whether the critical services for this application are tagged and identified in Dynatrace. Critical service tagging enables priority routing in ITSM, auto-escalation in incident management, and targeted alerting thresholds. STATUS (verified 2026-08-28): the data pipeline this check was waiting on now EXISTS. The workflow 'Refresh /lookups/critical_services' populates a table carrying 9,072 service rows across 361 ApplicationCIs, each with a severity (high / medium / low) and a business-impact description. The check itself, however, is still hardcoded to n/a and has not been wired to that table yet, so it neither passes nor counts against the L2 score. Two things are worth settling before it is activated: only about 38% of rows (3,462) have their entity_ids resolved to real Dynatrace entities — the rest carry a '-' placeholder — and the table contains a small amount of dirty data (6 rows with a '-' severity and one 'medum' typo).",
+      "Checks whether the critical services for this application are tagged and identified in Dynatrace. Critical service tagging enables priority routing in ITSM, auto-escalation in incident management, and targeted alerting thresholds. WIRED UP (2026-08-29): sources /lookups/critical_services, a table refreshed daily at 06:00 UTC carrying 9,072 service rows across 361 ApplicationCIs, each with a severity (high / medium / low) and a business-impact description. A pass requires at least one listed service whose entity_ids resolved to a real Dynatrace entity — being merely listed is not enough, since only ~38% of rows tenant-wide (3,462 of 9,072) have resolved. The table below lists every critical service for this app with its resolution state, sorted unresolved-first so the biggest gaps are immediately visible.",
     passLogic:
-      "Currently N/A and excluded from the L2 denominator, which is why L2 scores out of 5 rather than 6. The check is not yet wired to /lookups/critical_services even though that table is now populated. Activating it requires a decision on what constitutes a pass: any critical service listed, or only services whose entity_ids actually resolve to monitored entities.",
+      "Pass: at least one critical service listed for this AppCI has entity_ids resolved to a real Dynatrace entity (not '-'). Fail: services are listed but none have resolved. N/A: no critical services are listed for this AppCI at all.",
     guidance:
-      "The upstream pipeline is no longer the blocker — /lookups/critical_services is populated and refreshing. The remaining work is to wire this check to it and agree on the pass threshold, then to improve entity resolution so more than ~38% of listed services map to real Dynatrace entities. Data hygiene on the source (the BigPanda list / incident-management spreadsheet feeding it) would also clean up the handful of malformed severity values. Long-term the intent is still CMDB integration, owned by the configuration-management team and tracked separately.",
-    chartType: "none",
-    detailQuery: (_appCI: string) => `data record(status = "pending")
-| fieldsAdd message = "Critical services lookup pipeline not yet configured."`,
-    scorecardSnippet: `// ── STUB ── check not yet wired up ───────────────────────────────────
-// What the scorecard actually emits today — a hardcoded constant:
-//
-//   \`6. Critical Services Tagged\` = "n/a Coming soon — BigPanda/CMDB pipeline pending"
-//
-// It is excluded from passCount, so L2 scores out of 5, not 6.
-//
-// ── The data it is waiting on now EXISTS (verified 2026-08-28) ────────
-// Note the table name uses an UNDERSCORE, not a hyphen:
-//
-//   load "/lookups/critical_services"
-//   | fieldsAdd appci = lower(appci)
-//   | summarize criticalCount = count(),
-//               resolved = countIf(entity_ids != "-"),
-//               by:{appci}
+      "Work down the table starting with unresolved high-severity rows — those are business-critical services Dynatrace can't yet tie back to a monitored entity. Resolution happens upstream in the BigPanda/CMDB pipeline that feeds this lookup; improving the tenant-wide 38% resolution rate is a data-hygiene effort owned by the configuration-management team, tracked separately from this app.",
+    chartType: "table",
+    detailQuery: (appCI: string) => `load "/lookups/critical_services"
+| filter lower(appci) == lower("${appCI}")
+| fieldsAdd resolved = entity_ids != "-"
+| fieldsAdd severityRank = if(lower(severity) == "high", 1,
+    else: if(lower(severity) == "medium", 2,
+      else: if(lower(severity) == "low", 3, else: 4)))
+| sort resolved asc, severityRank asc
+| fields service = entity_name, severity, businessImpact = business_impact, resolved
+| limit 200`,
+    scorecardSnippet: `// Wired to /lookups/critical_services (refreshed daily at 06:00 UTC)
+// Note the table name uses an UNDERSCORE, not a hyphen.
+load "/lookups/critical_services"
+| fieldsAdd appci = lower(appci)
+| summarize criticalCount = count(),
+            resolved = countIf(entity_ids != "-"),
+            by:{appci}
+// joined via lookup(), sourceField:applicationci, lookupField:appci
+
+// Pass: resolved > 0 (at least one listed service's entity_ids resolved)
+// Fail: criticalCount > 0 but resolved == 0 (listed, none resolved)
+// N/A:  criticalCount == 0 (no critical services listed for this AppCI)
 //
 // Columns: appci, entity_name, severity (high|medium|low),
 //          business_impact, entity_ids, id_count, row_id
 // Scale:   9,072 rows / 361 AppCIs; 3,462 (38%) have resolved entity_ids
 // Source:  workflow "Refresh /lookups/critical_services
-//          (entity_severity resolved to entity IDs)"
-//
-// Open question before activating: does a pass mean "any critical service
-// listed", or "at least one service whose entity_ids actually resolve"?`,
+//          (entity_severity resolved to entity IDs)"`,
   },
 
   // ─── L3 AI-Assisted Operations ───────────────────────────────────────────
@@ -1026,7 +1027,7 @@ fetch events, from:now()-30d
     level: "L3",
     levelColor: "#5E28E5",
     description:
-      "Counts runbook notebooks linked to this ApplicationCI — the step-by-step remediation procedures an on-call operator follows during an incident. A notebook qualifies when its name starts with the 3-letter AppCI code and contains the word 'Runbook'. The table lists each matching notebook with its owner and last-modified date; click a row to open it. Below it, a second table lists notebooks that belong to this app but did NOT qualify, and says exactly why — so a failing check tells you whether runbooks genuinely don't exist or simply aren't named to convention. TWO SOURCES: the scorecard's pass/fail still reads the /lookups/runbooks table, because the card grid and the portfolio leaderboard are driven by a single bulk DQL query across every application. That table holds only an empty sentinel row even though its refresh workflow reports success daily, which on its own would leave every app failing with no way to tell a real gap from a broken pipeline — so the modal reads the Documents API live through an app function instead, the same approach used for Guardians and SLO Dashboards. Verified 2026-08-28: this tenant has zero runbook notebooks, so both sources currently agree.",
+      "Counts runbook notebooks linked to this ApplicationCI — the step-by-step remediation procedures an on-call operator follows during an incident. A notebook qualifies when its name starts with the 3-letter AppCI code and contains the word 'Runbook'. The table lists each matching notebook with its owner and last-modified date; click a row to open it. Below it, a second table lists notebooks that belong to this app but did NOT qualify, and says exactly why — so a failing check tells you whether runbooks genuinely don't exist or simply aren't named to convention. RESOLVED (2026-08-29): the scorecard's pass/fail and the leaderboard ranking now both read the Documents API live too, the same as the modal — the /lookups/runbooks table (which held only an empty sentinel row despite its refresh workflow reporting success daily) is no longer used anywhere. The per-app scorecard calls getRunbookDetail directly; the portfolio leaderboard calls a bulk sibling, getAllRunbookCounts, which reads the same Documents API once for every app instead of filtering to one. All three views now agree by construction, not by coincidence.",
     passLogic:
       "Pass: at least one notebook exists whose name starts with this ApplicationCI's 3-letter code and contains the word 'Runbook' (any case).",
     guidance:
@@ -1059,28 +1060,30 @@ fetch events, from:now()-30d
     },
     secondaryChartType: "table",
     secondaryLabel: "Notebooks for this app that did NOT qualify as runbooks, and why",
-    scorecardSnippet: `// Scorecard pass/fail source: /lookups/runbooks
-// (refreshed on a schedule by an Automation Engine workflow)
-load "/lookups/runbooks"
-| fieldsAdd appci = lower(appci)
-// joined via lookup(), sourceField:applicationci, lookupField:appci
-// runbookCount is null-defaulted to 0
-
-// Pass: runbookCount > 0
+    scorecardSnippet: `// Scorecard pass/fail source: live, not a lookup table.
+// The L3 DQL query (ScorecardsPage.tsx) cannot compute this signal — the
+// Documents API it depends on has no Grail/DQL equivalent — so this check's
+// value is a permanent placeholder in the query itself:
 //
-// NOTE: the modal's detail tables do NOT use this lookup. They call the
-// getRunbookDetail app function, which reads the Documents API live
-// (filter=type=='notebook'), keeps notebooks whose name starts with a
-// 3-letter AppCI token AND contains "Runbook" (any case), resolves the owner
-// via client-iam, and additionally returns the near-miss notebooks with the
-// reason each one did not qualify.
+//   \`4. Runbooks Linked\` = "n/a Checking live runbook status…"
 //
-// WHY THE SPLIT: the lookup table holds only a "__none__" sentinel row while
-// its refresh workflow still reports SUCCESS daily, so a lookup-only check
-// cannot distinguish "no runbooks exist" from "the pipeline is broken". The
-// live function closes that gap in the modal. Verified 2026-08-28: this
-// tenant genuinely has ZERO runbook notebooks, so both sources agree today
-// and the scorecard's fail is truthful.`,
+// and is deliberately excluded from the DQL-side passCount. The real
+// pass/fail is applied client-side after the query resolves, via
+// useLiveCheckOverride, which calls the getRunbookDetail app function for
+// this AppCI and overwrites the check value + adjusts the "X / 7" score:
+//
+//   pass "N runbook(s)"   if getRunbookDetail returns any matching notebook
+//   fail "No AppCI runbooks"  otherwise
+//
+// Portfolio leaderboard: the same live source, via a bulk sibling function
+// (getAllRunbookCounts) that reads the Documents API once for every AppCI
+// instead of filtering to one — so the leaderboard's ranking, the per-app
+// scorecard, and this modal are now all backed by the same live data.
+//
+// The old /lookups/runbooks table is no longer read anywhere. It held only a
+// "__none__" sentinel row despite its refresh workflow reporting SUCCESS
+// daily, which made "no runbooks exist" indistinguishable from "the pipeline
+// is broken" — the reason this check moved off it entirely on 2026-08-29.`,
   },
 
   "5. Alert Noise Review": {

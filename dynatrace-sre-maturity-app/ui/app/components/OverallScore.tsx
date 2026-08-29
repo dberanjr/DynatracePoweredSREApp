@@ -3,6 +3,7 @@ import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
+import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOverride";
 import { RefreshOverlay } from "./RefreshOverlay";
 
 interface LevelResult {
@@ -121,13 +122,15 @@ function getCurrentLevel(levels: LevelResult[]): { grade: string; color: string;
 }
 
 interface OverallScoreProps {
-  queries: { label: string; query: string; color: string }[];
+  appCI: string;
+  queries: { label: string; query: string; color: string; liveOverride?: LiveCheckOverride }[];
 }
 
-export const OverallScore = ({ queries }: OverallScoreProps) => {
+export const OverallScore = ({ appCI, queries }: OverallScoreProps) => {
   const results = queries.map((q) => {
     const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query: q.query });
-    return { ...q, data, isLoading, isRefreshing, error };
+    const { apply } = useLiveCheckOverride(appCI, q.liveOverride);
+    return { ...q, data, isLoading, isRefreshing, error, apply };
   });
 
   const anyFirstLoad = results.some((r) => r.isLoading);
@@ -151,7 +154,9 @@ export const OverallScore = ({ queries }: OverallScoreProps) => {
   }
 
   const levels: LevelResult[] = results.map((r) => {
-    const { current, total } = parseScore(r.data?.records as Record<string, unknown>[] | undefined);
+    const rawRecord = (r.data?.records as Record<string, unknown>[] | undefined)?.[0];
+    const records = rawRecord ? [r.apply(rawRecord)] : undefined;
+    const { current, total } = parseScore(records);
     return { label: r.label, current, total, color: r.color };
   });
 

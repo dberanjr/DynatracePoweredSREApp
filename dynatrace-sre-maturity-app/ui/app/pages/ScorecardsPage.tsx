@@ -4,11 +4,25 @@ import { Heading } from "@dynatrace/strato-components/typography";
 import { ScorecardCard } from "../components/ScorecardCard";
 import { OverallScore } from "../components/OverallScore";
 import { AppContextBanner } from "../components/AppContextBanner";
+import { LiveCheckOverride } from "../hooks/useLiveCheckOverride";
 
 interface Props {
   appCI: string;
   timeframe: { from: string; to: string };
 }
+
+// Runbooks Linked can't be computed in DQL (its data lives behind the
+// Documents API), so its pass/fail is decided live and layered onto the L3
+// query's result after the fact — see useLiveCheckOverride.
+const runbooksLiveOverride: LiveCheckOverride = {
+  checkKey: "4. Runbooks Linked",
+  scoreKey: "L3 Score",
+  appFunctionName: "getRunbookDetail",
+  toStatus: (result) => {
+    const count = ((result as { runbooks?: unknown[] })?.runbooks ?? []).length;
+    return count > 0 ? `pass ${count} runbook(s)` : "fail No AppCI runbooks";
+  },
+};
 
 export const ScorecardsPage = ({ appCI, timeframe }: Props) => {
 
@@ -268,13 +282,25 @@ data record(applicationci = lower("${appCI}"))
   ], sourceField:applicationci, lookupField:applicationci, fields:{hasTier}
 | fieldsRename sreAssessment = hasTier
 
+// Signal 6: Critical services tagged (from /lookups/critical_services; itemized one
+//   row per service, refreshed daily at 06:00 UTC by workflow — a pass requires at
+//   least one listed service whose entity_ids actually resolved to a real Dynatrace
+//   entity, not merely being listed. ~38% of rows resolve tenant-wide.)
+| lookup [
+    load "/lookups/critical_services"
+    | fieldsAdd appci = lower(appci)
+    | summarize criticalCount = count(), resolved = countIf(entity_ids != "-"), by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{criticalCount, resolved}
+
 // Null-safe defaults
 | fieldsAdd
     goldenSignalServices = if(isNull(goldenSignalServices), 0, else: goldenSignalServices),
     sloCount = if(isNull(sloCount), 0, else: sloCount),
     guardianCount = if(isNull(guardianCount), 0, else: toLong(guardianCount)),
     dashboards = if(isNull(dashboards), 0, else: toLong(dashboards)),
-    sreAssessment = if(isNull(sreAssessment), 0, else: sreAssessment)
+    sreAssessment = if(isNull(sreAssessment), 0, else: sreAssessment),
+    criticalCount = if(isNull(criticalCount), 0, else: toLong(criticalCount)),
+    resolved = if(isNull(resolved), 0, else: toLong(resolved))
 
 // Compute status
 | fieldsAdd
@@ -293,7 +319,11 @@ data record(applicationci = lower("${appCI}"))
     \`5. SRE Assessment in ARD\` = if(sreAssessment > 0,
         "pass CMDB tier assigned",
         else: "fail No tier data"),
-    \`6. Critical Services Tagged\` = "n/a Coming soon — BigPanda/CMDB pipeline pending"
+    \`6. Critical Services Tagged\` = if(resolved > 0,
+        concat("pass ", toString(resolved), " of ", toString(criticalCount), " tagged services resolved"),
+        else: if(criticalCount > 0,
+            concat("fail Listed but unresolved (0/", toString(criticalCount), ")"),
+            else: "n/a No critical services listed for this AppCI"))
 
 | fieldsAdd passCount =
     if(goldenSignalServices > 0, 1, else: 0)
@@ -301,7 +331,8 @@ data record(applicationci = lower("${appCI}"))
     + if(guardianCount > 0, 1, else: 0)
     + if(dashboards > 0, 1, else: 0)
     + if(sreAssessment > 0, 1, else: 0)
-| fieldsAdd \`L2 Score\` = concat(toString(passCount), " / 5")
+    + if(resolved > 0, 1, else: 0)
+| fieldsAdd \`L2 Score\` = concat(toString(passCount), " / 6")
 
 | fields
     \`L2 Score\`,
@@ -382,13 +413,11 @@ data record(applicationci = lower("${appCI}"))
         by:{appci = lower(application_ci)}
   ], sourceField:applicationci, lookupField:appci, fields:{deployTotal, deploySuccess, avgLeadMs}
 
-// Runbooks Linked: notebooks acting as runbooks (from /lookups/runbooks; refreshed daily by workflow)
-//   counts notebooks whose name starts with a 3-letter AppCI token and contains "Runbook" (any case)
-| lookup [
-    load "/lookups/runbooks"
-    | fieldsAdd appci = lower(appci)
-  ], sourceField:applicationci, lookupField:appci, fields:{runbookCount}
-| fieldsRename runbooks = runbookCount
+// Runbooks Linked: NOT computed here. The Documents API this check depends on
+// can't be queried in DQL, so its live pass/fail + score adjustment is applied
+// client-side after this query resolves — see the liveOverride passed to
+// ScorecardCard/OverallScore in the render section below, and
+// getRunbookDetail.function.ts for the live lookup itself.
 
 // Null-safe defaults
 | fieldsAdd
@@ -402,8 +431,7 @@ data record(applicationci = lower("${appCI}"))
     noiseTotal = if(isNull(noiseTotal), 0, else: noiseTotal),
     deployTotal = if(isNull(deployTotal), 0, else: deployTotal),
     deploySuccess = if(isNull(deploySuccess), 0, else: deploySuccess),
-    avgLeadMs = if(isNull(avgLeadMs), 0.0, else: avgLeadMs),
-    runbooks = if(isNull(runbooks), 0, else: toLong(runbooks))
+    avgLeadMs = if(isNull(avgLeadMs), 0.0, else: avgLeadMs)
 
 | fieldsAdd avgLeadDays = round(avgLeadMs / 86400000.0, decimals:1)
 | fieldsAdd noisePct = if(total7d > 0,
@@ -426,9 +454,7 @@ data record(applicationci = lower("${appCI}"))
     \`3. ITSM Integration\` = if(itsmWorkflows > 0,
         concat("pass ", toString(itsmWorkflows), " alert routing workflow(s)"),
         else: "fail No 'Production Dynatrace Alerts' workflow"),
-    \`4. Runbooks Linked\` = if(runbooks > 0,
-        concat("pass ", toString(runbooks), " runbook(s)"),
-        else: "fail No AppCI runbooks"),
+    \`4. Runbooks Linked\` = "n/a Checking live runbook status…",
     \`5. Alert Noise Review\` = if(total7d > 0,
         concat(if(noisePct > 50, "warn ", else: "pass "),
             toString(noiseTotal), " noise / ", toString(total7d),
@@ -444,11 +470,13 @@ data record(applicationci = lower("${appCI}"))
         concat("pass ", toString(deployTotal), " deploys, ", toString(avgLeadDays), "d avg lead time"),
         else: "fail No deployment data")
 
+// NOTE: Runbooks Linked does not contribute here — the live override adds it
+// client-side (+0/+1) once getRunbookDetail resolves, so this baseline
+// intentionally excludes it to avoid double-counting.
 | fieldsAdd passCount =
     if(causalTotal > 0, 1, else: 0)
     + if(deployTotal > 0, 1, else: 0)
     + if(itsmWorkflows > 0, 1, else: 0)
-    + if(runbooks > 0, 1, else: 0)
     + if(total7d > 0 and noisePct <= 50, 1, else: 0)
     + if(causalTotal > 0 and rootCausePct >= 40, 1, else: 0)
     + if(deployTotal > 0, 1, else: 0)
@@ -661,10 +689,10 @@ data record(applicationci = lower("${appCI}"))
 
       <AppContextBanner appCI={appCI} />
 
-      <OverallScore queries={[
+      <OverallScore appCI={appCI} queries={[
         { label: "L1 Observability", query: l1Query, color: "#3BACF0" },
         { label: "L2 Reliability", query: l2Query, color: "#1966FF" },
-        { label: "L3 AI Ops", query: l3Query, color: "#5E28E5" },
+        { label: "L3 AI Ops", query: l3Query, color: "#5E28E5", liveOverride: runbooksLiveOverride },
         { label: "L4 Proactive", query: l4Query, color: "#8D1CDC" },
         { label: "L5 Autonomous", query: l5Query, color: "#49C2B3" },
       ]} />
@@ -672,7 +700,7 @@ data record(applicationci = lower("${appCI}"))
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, alignItems: "stretch" }}>
         <ScorecardCard title="L1 — Full Observability" query={l1Query} accentColor="#3BACF0" appCI={appCI} />
         <ScorecardCard title="L2 — Measured Reliability" query={l2Query} accentColor="#1966FF" appCI={appCI} />
-        <ScorecardCard title="L3 — AI-Assisted Operations" query={l3Query} accentColor="#5E28E5" appCI={appCI} />
+        <ScorecardCard title="L3 — AI-Assisted Operations" query={l3Query} accentColor="#5E28E5" appCI={appCI} liveOverride={runbooksLiveOverride} />
         <ScorecardCard title="L4 — Proactive Reliability" query={l4Query} accentColor="#8D1CDC" appCI={appCI} />
         <ScorecardCard title="L5 — Autonomous Reliability" query={l5Query} accentColor="#49C2B3" appCI={appCI} />
       </div>
