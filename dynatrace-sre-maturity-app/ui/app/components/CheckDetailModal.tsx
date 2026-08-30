@@ -5,6 +5,7 @@ import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { useAppFunction } from "@dynatrace-sdk/react-hooks";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { CHECK_DETAIL_CONFIGS, LEVEL_META, CheckDetailConfig } from "./checkDetailConfigs";
+import { HardcodedBadge } from "./HardcodedBadge";
 
 interface Props {
   checkKey: string;
@@ -12,6 +13,9 @@ interface Props {
   appCI: string;
   accentColor: string;
   onClose: () => void;
+  /** All checks in the same level, in display order, including the currently-open one. */
+  siblings: { key: string; value: string }[];
+  onNavigate: (key: string, value: string) => void;
 }
 
 // Shared fixed height for the primary and secondary tables so a modal with
@@ -1446,7 +1450,7 @@ function useCloudAccountInfo(appCI: string) {
   return { label: `${base}${extra}` };
 }
 
-export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, onClose }: Props) {
+export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, onClose, siblings, onNavigate }: Props) {
   const config = CHECK_DETAIL_CONFIGS[checkKey];
   // null = "All". Reset whenever the modal switches to a different check so a
   // filter chosen on one check doesn't silently carry over to the next.
@@ -1461,11 +1465,23 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
   const levelInfo = config ? LEVEL_META[config.level] : null;
   const levelLabel = levelInfo ? `${config!.level} — ${levelInfo.title}` : "";
 
+  const siblingIndex = siblings.findIndex((s) => s.key === checkKey);
+
   React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (siblings.length < 2) return;
+      if (e.key === "ArrowLeft") {
+        const prev = siblings[(siblingIndex - 1 + siblings.length) % siblings.length];
+        onNavigate(prev.key, prev.value);
+      } else if (e.key === "ArrowRight") {
+        const next = siblings[(siblingIndex + 1) % siblings.length];
+        onNavigate(next.key, next.value);
+      }
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, onNavigate, siblings, siblingIndex]);
 
   const modal = (
     <div
@@ -1490,11 +1506,57 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
           maxWidth: 1440,
           maxHeight: "88vh",
           display: "flex",
-          flexDirection: "column",
+          flexDirection: "row",
           boxShadow: "0 24px 80px rgba(0,0,0,0.38)",
           overflow: "hidden",
         }}
       >
+        {/* ── Sibling sidebar (redesign) ── */}
+        {siblings.length > 1 && (
+          <div
+            style={{
+              width: 206,
+              flexShrink: 0,
+              background: "var(--panel, #F7F8FA)",
+              borderRight: "1px solid var(--sre-border, rgba(0,0,0,0.08))",
+              display: "flex",
+              flexDirection: "column",
+              overflowY: "auto",
+              padding: 8,
+            }}
+          >
+            {siblings.map((s) => {
+              const isActive = s.key === checkKey;
+              const sStatus = s.value.toLowerCase().startsWith("pass") ? "pass"
+                : s.value.toLowerCase().startsWith("fail") ? "fail"
+                : s.value.toLowerCase().startsWith("warn") ? "warn" : "na";
+              const dotColor = { pass: "#1E9E5A", fail: "#DC3545", warn: "#E8A33D", na: "#8FA0BC" }[sStatus];
+              return (
+                <div
+                  key={s.key}
+                  onClick={() => onNavigate(s.key, s.value)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "9px 10px",
+                    borderRadius: 7,
+                    cursor: "pointer",
+                    background: isActive ? "var(--sre-surface, #fff)" : "transparent",
+                    fontWeight: isActive ? 700 : 500,
+                  }}
+                >
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: dotColor }} />
+                  <span style={{ fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.key.replace(/^\d+\.\s*/, "")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
         {/* ── Header ── */}
         <div
           style={{
@@ -1649,6 +1711,11 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
             {displayValue ||
               (status === "pass" ? "Active" : status === "na" ? "Not applicable" : "Not detected")}
           </span>
+          {config?.hardcoded && (
+            <span style={{ marginLeft: "auto" }}>
+              <HardcodedBadge size="full" />
+            </span>
+          )}
         </div>
 
         {/* ── Body (two columns) ── */}
@@ -1932,10 +1999,42 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
             background: "var(--sre-surface-secondary, rgba(0,0,0,0.02))",
             display: "flex",
             alignItems: "center",
-            justifyContent: "flex-end",
+            gap: 8,
+            justifyContent: "space-between",
           }}
         >
-          <span>Click backdrop or press Esc to close</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {config?.openIn?.length ? (
+              <>
+                <span style={{ fontWeight: 700, letterSpacing: 0.6, flexShrink: 0 }}>OPEN IN</span>
+                {config.openIn.map((l) => (
+                  <a
+                    key={l.path}
+                    href={`${getEnvironmentUrl().replace(/\/$/, "")}${l.path}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "4px 9px",
+                      border: "1px solid var(--sre-border, rgba(0,0,0,0.08))",
+                      borderRadius: 6,
+                      color: "var(--sre-text-primary, #1f2328)",
+                      textDecoration: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {l.label} ↗
+                  </a>
+                ))}
+              </>
+            ) : null}
+          </div>
+          <span style={{ flexShrink: 0 }}>
+            {siblings.length > 1 ? "← → checks · " : ""}Click backdrop or press Esc to close
+          </span>
+        </div>
         </div>
       </div>
     </div>
