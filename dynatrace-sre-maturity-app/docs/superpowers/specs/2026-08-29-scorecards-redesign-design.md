@@ -176,7 +176,7 @@ the existing `guidance` field. Full table (all 30 checks):
 | L2 | 3. Site Reliability Guardians Created | App team | Medium |
 | L2 | 4. SLO Dashboards Published | App team | Low |
 | L2 | 5. SRE Assessment in ARD | App team | Low |
-| L2 | 6. Critical Services Tagged | Platform team | Medium |
+| L2 | 6. Critical Services Tagged | App team | Medium |
 | L3 | 1. Causal AI Detection + Event Correlation | App team | Low |
 | L3 | 2. CI/CD Integration | App team | Medium |
 | L3 | 3. ITSM Integration | App team | Medium |
@@ -195,10 +195,53 @@ the existing `guidance` field. Full table (all 30 checks):
 | L5 | 4. Incident Auto-Enrichment | App team | Medium |
 | L5 | 5. AI Postmortem / PTASK in ARD | Platform team | High |
 
-Note: `Critical Services Tagged` is owner=Platform because its check itself
-is an unwired stub (per its existing `checkExplanations.ts` text) — but it's
-hardcoded to `n/a` today so it never actually appears in the fail/warn list
-below; the table entry exists for completeness/future-proofing.
+**Correction from the first draft of this spec**: `Critical Services Tagged`
+was listed as owner=Platform, following `checkExplanations.ts`'s prose, which
+still describes it as an unwired stub. That text is stale — the live L2 query
+in `ScorecardsPage.tsx` already computes this check for real from
+`/lookups/critical_services` (`resolved`/`criticalCount`, contributing to a
+`/6` denominator, not the `/5` the comment claims). It's owner=App team like
+any other live check; `checkExplanations.ts` should get a follow-up fix
+outside this redesign's scope, but the table above already reflects the
+correct (live) classification.
+
+### 6a. Labeling hardcoded/not-yet-live checks (user requirement)
+
+Per user instruction: every check is expected to eventually be a real,
+per-app measurement — nothing in this tenant is permanently unmeasurable.
+Until a check is wired to live data, the UI must say so plainly rather than
+presenting a hardcoded placeholder as if it were a real result for this app.
+
+Cross-checked directly against the live DQL in `ScorecardsPage.tsx` (not
+against `checkExplanations.ts`'s prose, which is what produced the error
+above) — exactly 4 of the 30 checks are unconditional hardcoded strings today,
+identical for every AppCI in the tenant:
+- `L4 "3. Predictive Forecasting"` — literally `"fail Davis forecasting not adopted"`
+- `L4 "5. Error Budget Gating"` — literally `"fail Error budget not sent to change management"`
+- `L5 "3. E2E Remediation Automated"` — literally `"fail Not detected"`
+- `L5 "5. AI Postmortem / PTASK in ARD"` — literally `"fail Not detected"`
+
+All other 26 checks (including `Critical Services Tagged` and
+`Runbooks Linked`, which route through a live-override function) are
+genuinely computed per-app today.
+
+**New field**: `hardcoded?: boolean` on `CheckDetailConfig`, `true` only for
+the 4 checks above.
+
+**UI treatment, everywhere a check's status renders** (hero banner heatmap
+cell, Engineer-mode card row, Executive-mode donut/heatmap/open-items list,
+hover popover, modal header): when `hardcoded` is true, keep the normal
+fail-red coloring (it is a real gap) but overlay a visible marker — a small
+"NOT YET LIVE" chip plus a diagonal-hatch pattern on the cell/row background
+— and add one explanatory line wherever there's room for it ("Same result for
+every application in this tenant until this capability is built — not a
+per-app measurement yet"). The hover popover and modal must always show this
+line for these 4 checks; the compact heatmap cell/row treatments just need the
+visual marker (hatch + chip), not the full sentence.
+
+This also applies inside the recommendation band (§6): a "next move" card for
+one of these 4 checks gets the same "NOT YET LIVE" chip next to its title, so
+it reads as a platform-capability call-out rather than a per-app action item.
 
 **Ranking algorithm** (pure function of the 5 levels' current check results —
 no new queries):
@@ -254,8 +297,8 @@ mockup's dark-mode-tuned hexes for `[data-theme="dark"]`, matching how
 - `ui/app/components/OverallScore.tsx` → new `MaturitySpine.tsx` (or restyle in place)
 - `ui/app/components/ScorecardCard.tsx` — restyle, add Engineer/Executive branches
 - `ui/app/components/CheckDetailModal.tsx` — add sidebar/keyboard nav chrome
-- `ui/app/components/checkDetailConfigs.ts` — add `owner`/`effort`/optional
-  `openIn` to `CheckDetailConfig`, add `outcome` to `LEVEL_META`
+- `ui/app/components/checkDetailConfigs.ts` — add `owner`/`effort`/`hardcoded`/
+  optional `openIn` to `CheckDetailConfig`, add `outcome` to `LEVEL_META`
 - new `ui/app/components/NextMovesBand.tsx`
 - new small hover-popover component (e.g. `ui/app/components/CheckHoverPreview.tsx`)
 - `ui/app/pages/ScorecardsPage.tsx` — wire `mode` state, render new tree
@@ -276,3 +319,7 @@ practice). Plan:
    directly.
 4. Confirm `Home.tsx` / `MaturityLeaderboard.tsx` / `PortfolioPage.tsx` are
    visually unaffected (additive CSS vars only).
+5. Confirm all 4 `hardcoded: true` checks (L4 #3, L4 #5, L5 #3, L5 #5) show
+   the "NOT YET LIVE" marker everywhere they render (heatmap cell, card row,
+   hover popover, modal, recommendation band), and that no other check shows
+   it.
