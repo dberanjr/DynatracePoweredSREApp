@@ -16,6 +16,34 @@
   --sre-table-header-bg: #ffffff;
   --sre-table-border: #f0f0f0;
   --sre-surface: #ffffff;
+
+  /* Scorecards redesign (2026-08-29) — additive, do not remove --sre-* above */
+  --page: #EDEFF3;
+  --card: #ffffff;
+  --line: #E3E6EB;
+  --line-soft: #F2F4F7;
+  --ink: #1A2440;
+  --ink-2: #6F747F;
+  --panel: #F7F8FA;
+  --panel-2: #FBFCFD;
+  --chip: #F4F6F9;
+  --chip-hover: #EEF1F5;
+  --row-end: #ffffff;
+  --band: #141C31;
+  --spine: #1A2440;
+  --pass-ink: #17663C;
+  --fail-ink: #B3261E;
+  --warn-ink: #8A6100;
+  --na-ink: #4C5B73;
+  --nav-active: #1414D3;
+  --nav-active-bg: rgba(20, 20, 211, .04);
+  --lv1: #3BACF0;
+  --lv2: #1966FF;
+  --lv3: #5E28E5;
+  --lv4: #8D1CDC;
+  --lv5: #49C2B3;
+  --rail-icon: rgba(0, 0, 0, .09);
+  --shadow: 0 1px 2px rgba(26, 36, 64, .05);
 }
 
 [data-theme="dark"] {
@@ -33,6 +61,34 @@
   --sre-table-header-bg: #1A2440;
   --sre-table-border: rgba(255, 255, 255, 0.06);
   --sre-surface: #141d2e;
+
+  /* Scorecards redesign (2026-08-29) — additive, do not remove --sre-* above */
+  --page: #0F1520;
+  --card: #141D2E;
+  --line: rgba(255, 255, 255, .10);
+  --line-soft: rgba(255, 255, 255, .055);
+  --ink: #E6EBF3;
+  --ink-2: #96A1B5;
+  --panel: #111927;
+  --panel-2: #121B2A;
+  --chip: #1B2537;
+  --chip-hover: #222E44;
+  --row-end: #141D2E;
+  --band: #111A2E;
+  --spine: #16203A;
+  --pass-ink: #6FD59B;
+  --fail-ink: #FF8E86;
+  --warn-ink: #F0C070;
+  --na-ink: #A8B8D0;
+  --nav-active: #7FB6FF;
+  --nav-active-bg: rgba(127, 182, 255, .10);
+  --lv1: #7FCFF7;
+  --lv2: #8F9BFF;
+  --lv3: #A98CF5;
+  --lv4: #D49BF2;
+  --lv5: #EF8FFF;
+  --rail-icon: rgba(255, 255, 255, .13);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .45);
 }
 
 /* Responsive: Enterprise summary */
