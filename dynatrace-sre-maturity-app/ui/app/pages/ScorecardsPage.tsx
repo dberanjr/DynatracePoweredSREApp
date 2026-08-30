@@ -2,9 +2,13 @@ import React from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading } from "@dynatrace/strato-components/typography";
 import { ScorecardCard } from "../components/ScorecardCard";
-import { OverallScore } from "../components/OverallScore";
-import { AppContextBanner } from "../components/AppContextBanner";
-import { LiveCheckOverride } from "../hooks/useLiveCheckOverride";
+import { MaturitySpine } from "../components/MaturitySpine";
+import { AppIdentityBar } from "../components/AppIdentityBar";
+import { NextMovesBand } from "../components/NextMovesBand";
+import { CheckDetailModal } from "../components/CheckDetailModal";
+import { useDqlWithCache } from "../hooks/useDqlWithCache";
+import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOverride";
+import { LevelId, LevelRecord } from "../components/checkStatus";
 
 interface Props {
   appCI: string;
@@ -683,27 +687,93 @@ data record(applicationci = lower("${appCI}"))
     \`4. Incident Auto-Enrichment\`,
     \`5. AI Postmortem / PTASK in ARD\``;
 
+  const levelConfigs: { level: LevelId; label: string; query: string; color: string; liveOverride?: LiveCheckOverride }[] = [
+    { level: "L1", label: "L1 — Full Observability", query: l1Query, color: "#3BACF0" },
+    { level: "L2", label: "L2 — Measured Reliability", query: l2Query, color: "#1966FF" },
+    { level: "L3", label: "L3 — AI-Assisted Operations", query: l3Query, color: "#5E28E5", liveOverride: runbooksLiveOverride },
+    { level: "L4", label: "L4 — Proactive Reliability", query: l4Query, color: "#8D1CDC" },
+    { level: "L5", label: "L5 — Autonomous Reliability", query: l5Query, color: "#49C2B3" },
+  ];
+
+  // levelConfigs is a fixed-length, fixed-order array (never conditional on
+  // props), so calling hooks inside this .map() keeps the same number of
+  // hook calls in the same order on every render — the same pattern the
+  // OverallScore.tsx component this replaces already used.
+  const results = levelConfigs.map((lc) => {
+    const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query: lc.query });
+    const { apply } = useLiveCheckOverride(appCI, lc.liveOverride);
+    return { ...lc, data, isLoading, isRefreshing, error, apply };
+  });
+
+  const levelRecords: LevelRecord[] = results.map((r) => {
+    const rawRecord = (r.data?.records as Record<string, unknown>[] | undefined)?.[0];
+    const record = rawRecord ? r.apply(rawRecord) : {};
+    return { level: r.level, record };
+  });
+
+  const anyFirstLoad = results.some((r) => r.isLoading);
+  const anyRefreshing = results.some((r) => r.isRefreshing);
+
+  const [mode, setMode] = React.useState<"engineer" | "executive">("engineer");
+  const [openCheck, setOpenCheck] = React.useState<{ level: LevelId; key: string; value: string } | null>(null);
+
+  const handleCheckOpen = (level: LevelId, key: string, value: string) => setOpenCheck({ level, key, value });
+
+  const openLevelRecord = openCheck ? levelRecords.find((lr) => lr.level === openCheck.level) : undefined;
+  const siblings = openLevelRecord
+    ? Object.keys(openLevelRecord.record)
+        .filter((k) => !k.toLowerCase().includes("score"))
+        .map((k) => ({ key: k, value: String(openLevelRecord.record[k]) }))
+    : [];
+
   return (
     <Flex flexDirection="column" gap={20} padding={16}>
       <Heading level={3}>SRE Maturity Level Scorecards</Heading>
 
-      <AppContextBanner appCI={appCI} />
+      <AppIdentityBar appCI={appCI} />
 
-      <OverallScore appCI={appCI} queries={[
-        { label: "L1 Observability", query: l1Query, color: "#3BACF0" },
-        { label: "L2 Reliability", query: l2Query, color: "#1966FF" },
-        { label: "L3 AI Ops", query: l3Query, color: "#5E28E5", liveOverride: runbooksLiveOverride },
-        { label: "L4 Proactive", query: l4Query, color: "#8D1CDC" },
-        { label: "L5 Autonomous", query: l5Query, color: "#49C2B3" },
-      ]} />
+      <MaturitySpine
+        levelRecords={levelRecords}
+        isLoading={anyFirstLoad}
+        isRefreshing={anyRefreshing}
+        mode={mode}
+        onModeChange={setMode}
+        onCheckOpen={handleCheckOpen}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, alignItems: "stretch" }}>
-        <ScorecardCard title="L1 — Full Observability" query={l1Query} accentColor="#3BACF0" appCI={appCI} />
-        <ScorecardCard title="L2 — Measured Reliability" query={l2Query} accentColor="#1966FF" appCI={appCI} />
-        <ScorecardCard title="L3 — AI-Assisted Operations" query={l3Query} accentColor="#5E28E5" appCI={appCI} liveOverride={runbooksLiveOverride} />
-        <ScorecardCard title="L4 — Proactive Reliability" query={l4Query} accentColor="#8D1CDC" appCI={appCI} />
-        <ScorecardCard title="L5 — Autonomous Reliability" query={l5Query} accentColor="#49C2B3" appCI={appCI} />
+        {results.map((r) => {
+          const lr = levelRecords.find((l) => l.level === r.level)!;
+          return (
+            <ScorecardCard
+              key={r.level}
+              level={r.level}
+              title={r.label}
+              accentColor={r.color}
+              record={r.isLoading ? undefined : lr.record}
+              isLoading={r.isLoading}
+              isRefreshing={r.isRefreshing}
+              error={r.error}
+              mode={mode}
+              onCheckOpen={handleCheckOpen}
+            />
+          );
+        })}
       </div>
+
+      <NextMovesBand levelRecords={levelRecords} onCheckOpen={handleCheckOpen} />
+
+      {openCheck && (
+        <CheckDetailModal
+          checkKey={openCheck.key}
+          currentValue={openCheck.value}
+          appCI={appCI}
+          accentColor={results.find((r) => r.level === openCheck.level)!.color}
+          onClose={() => setOpenCheck(null)}
+          siblings={siblings}
+          onNavigate={(key, value) => setOpenCheck({ level: openCheck.level, key, value })}
+        />
+      )}
     </Flex>
   );
 };
