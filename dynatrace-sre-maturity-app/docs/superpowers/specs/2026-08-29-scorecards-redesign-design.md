@@ -79,12 +79,20 @@ plus a one-line nav change in `Header.tsx`.
 Remove the `{ to: "/golden-signals", label: "Golden Signals" }` entry from
 `navItems`. Nothing else changes.
 
-### 2. App identity bar — restyle `AppContextBanner.tsx`
-Single-row layout matching the mockup: app name + AppCI badge on the left,
-Tier/Status/Managing Director/Owner/Support Group as inline chips filling the
-rest of the row (replacing today's 2-row grid). Same data source
-(`PROFILE_LOOKUP` / `PROFILE_FALLBACK`, unchanged). No command palette — the
-app name is static text, not a click target.
+### 2. App identity bar — new `AppIdentityBar.tsx` (not a restyle of `AppContextBanner.tsx`)
+**Self-review correction**: `AppContextBanner.tsx` is also used by `Home.tsx`
+(confirmed via grep) — restyling it in place would change the Home page's
+look too, which is out of scope (this redesign only touches the Scorecards
+page tree, per the Current State section above). Instead, add a new
+`AppIdentityBar.tsx` component, used only by `ScorecardsPage.tsx`; leave
+`AppContextBanner.tsx` completely untouched so `Home.tsx` is unaffected.
+`AppIdentityBar` duplicates `AppContextBanner`'s `PROFILE_LOOKUP`/
+`PROFILE_FALLBACK` queries (same data, deliberately not shared — the two
+components' layouts are different enough that parametrizing one component
+for both would be more convoluted than the small duplication). Single-row
+layout matching the mockup: app name + AppCI badge on the left, Tier/Status/
+Managing Director/Owner/Support Group as inline chips filling the rest of the
+row. No command palette — the app name is static text, not a click target.
 
 ### 3. Hero banner — replace `OverallScore.tsx` with a new component
 (e.g. `MaturitySpine.tsx`) with two render modes toggled by local state
@@ -293,7 +301,7 @@ mockup's dark-mode-tuned hexes for `[data-theme="dark"]`, matching how
 
 ### 8. Files touched (implementation-time list, not exhaustive)
 - `ui/app/components/Header.tsx` — remove nav item
-- `ui/app/components/AppContextBanner.tsx` — restyle
+- new `ui/app/components/AppIdentityBar.tsx` (`AppContextBanner.tsx` untouched — still used by `Home.tsx`)
 - `ui/app/components/OverallScore.tsx` → new `MaturitySpine.tsx` (or restyle in place)
 - `ui/app/components/ScorecardCard.tsx` — restyle, add Engineer/Executive branches
 - `ui/app/components/CheckDetailModal.tsx` — add sidebar/keyboard nav chrome
