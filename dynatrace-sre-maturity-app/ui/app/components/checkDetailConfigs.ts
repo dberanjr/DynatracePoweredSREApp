@@ -47,38 +47,58 @@ export interface CheckDetailConfig {
   showTypeWordCloud?: boolean;
   samplingNote?: string;
   scorecardSnippet: string;
+
+  // ── Redesign metadata (2026-08-29) — one-time editorial content, not
+  // per-app data. See docs/superpowers/specs/2026-08-29-scorecards-redesign-design.md §6/§6a.
+  /** Who can act on this check if it's failing. */
+  owner?: "App team" | "Platform team";
+  /** Rough one-time estimate of how much work fixing this check is. */
+  effort?: "Low" | "Medium" | "High";
+  /**
+   * True only when this check's DQL assigns an unconditional literal string —
+   * the same result for every AppCI in the tenant — rather than computing a
+   * real per-app result. The UI must visibly label these as not-yet-live.
+   */
+  hardcoded?: boolean;
+  /** Static "open in" footer links — app landing pages, not filtered to the AppCI. */
+  openIn?: { label: string; path: string }[];
 }
 
-export const LEVEL_META: Record<string, { title: string; color: string; summary: string }> = {
+export const LEVEL_META: Record<string, { title: string; color: string; summary: string; outcome: string }> = {
   L1: {
     title: "Full Observability",
     color: "#3BACF0",
     summary:
       "Confirms the application is fully instrumented with OneAgent, distributed traces, logs, and — where applicable — RUM, synthetics, and Kubernetes/cloud workloads. This is the prerequisite for all higher maturity levels.",
+    outcome: "Everything this application does is visible — hosts, traces, logs, cloud, users.",
   },
   L2: {
     title: "Measured Reliability",
     color: "#1966FF",
     summary:
       "Verifies that reliability targets are formally defined and measured: golden-signal SLIs, SLOs, Site Reliability Guardians, SLO dashboards, and a CMDB tier assignment. L2 is where teams move from observation to accountability.",
+    outcome: "Reliability is formally defined and measured: SLIs, SLOs, guardians, dashboards.",
   },
   L3: {
     title: "AI-Assisted Operations",
     color: "#5E28E5",
     summary:
       "Validates that Davis Causal AI is actively detecting and correlating problems, that deployments and ITSM routing are integrated, that runbooks are linked, and that DORA metrics are tracked. L3 means the team is using Dynatrace to reduce MTTR.",
+    outcome: "Davis correlates problems; deploys, alert routing and DORA are integrated.",
   },
   L4: {
     title: "Proactive Reliability",
     color: "#8D1CDC",
     summary:
       "Outcome: \"Outages are predicted and prevented before customers notice.\" Five requirements: SLO burn-rate alerting, dynamic scaling / Kubernetes autoscaling, predictive forecasting, release impact tracking, and error budget gating. Two of these — predictive forecasting and error budget gating — have no signal anywhere in the tenant today and deliberately score as fail rather than N/A, so the capability gap stays visible on the scorecard instead of being quietly excluded from the denominator.",
+    outcome: "Outages are predicted and prevented before customers notice.",
   },
   L5: {
     title: "Autonomous Reliability",
     color: "#49C2B3",
     summary:
       "Measures whether the application has automated self-healing workflows, AI-assisted incident enrichment, E2E auto-remediation, and AI-generated postmortems. L5 is the goal state where reliability is maintained autonomously.",
+    outcome: "Reliability is maintained without human intervention.",
   },
 };
 
@@ -1652,3 +1672,89 @@ fetch events, from:now()-30d
 //   | summarize count = count(), by:{applicationci}`,
   },
 };
+
+// ── Redesign metadata (2026-08-29) ──────────────────────────────────────────
+// One-time editorial content per check (owner/effort/hardcoded/openIn), kept
+// in one table instead of scattered across the 30 verbose entries above.
+// Merged onto CHECK_DETAIL_CONFIGS below so callers keep reading
+// CHECK_DETAIL_CONFIGS[key].owner etc. as if it were defined inline.
+//
+// `hardcoded: true` is set ONLY for the 4 checks whose DQL in
+// ScorecardsPage.tsx assigns an unconditional literal string today (verified
+// directly against that file, 2026-08-29): L4 "3. Predictive Forecasting",
+// L4 "5. Error Budget Gating", L5 "3. E2E Remediation Automated", L5
+// "5. AI Postmortem / PTASK in ARD". Every other check — including
+// "6. Critical Services Tagged", which checkExplanations.ts's prose still
+// describes as an unwired stub — is genuinely computed per-app today.
+//
+// `openIn` is populated only where a real, already-used-elsewhere-in-this-
+// codebase Dynatrace app path exists (grepped from CheckDetailModal.tsx's
+// existing row-click URLs); checks with no verified 1:1 app mapping are left
+// without an `openIn` entry rather than guessing one.
+type RedesignMeta = Pick<CheckDetailConfig, "owner" | "effort" | "hardcoded" | "openIn">;
+
+const CHECK_REDESIGN_META: Record<string, RedesignMeta> = {
+  // L1 — Full Observability
+  "1. OneAgent Deployed": { owner: "App team", effort: "Medium",
+    openIn: [{ label: "Infrastructure & Operations", path: "/ui/apps/dynatrace.infraops/smartscape/Compute/Hosts" }] },
+  "2. Tracing Validated": { owner: "App team", effort: "Low",
+    openIn: [{ label: "Services", path: "/ui/apps/dynatrace.services/explorer-new/services" }] },
+  "3. Logs Correlated": { owner: "App team", effort: "Low",
+    openIn: [{ label: "Logs", path: "/ui/apps/dynatrace.logs/" }] },
+  "4. Smartscape Discovery": { owner: "App team", effort: "Low",
+    openIn: [{ label: "Services", path: "/ui/apps/dynatrace.services/explorer-new/services" }] },
+  "5. Kubernetes": { owner: "App team", effort: "Low" },
+  "6. Cloud": { owner: "App team", effort: "Low",
+    openIn: [{ label: "Clouds", path: "/ui/apps/dynatrace.clouds/smartscape/services" }] },
+  "7. RUM / Synthetics": { owner: "App team", effort: "Medium" },
+
+  // L2 — Measured Reliability
+  "1. Golden Signal SLIs": { owner: "App team", effort: "Low",
+    openIn: [{ label: "Services", path: "/ui/apps/dynatrace.services/explorer-new/services" }] },
+  "2. SLOs Created": { owner: "App team", effort: "Medium" },
+  "3. Site Reliability Guardians Created": { owner: "App team", effort: "Medium" },
+  "4. SLO Dashboards Published": { owner: "App team", effort: "Low",
+    openIn: [{ label: "Dashboards", path: "/ui/apps/dynatrace.dashboards/" }] },
+  "5. SRE Assessment in ARD": { owner: "App team", effort: "Low" },
+  "6. Critical Services Tagged": { owner: "App team", effort: "Medium" },
+
+  // L3 — AI-Assisted Operations
+  "1. Causal AI Detection + Event Correlation": { owner: "App team", effort: "Low",
+    openIn: [{ label: "Problems", path: "/ui/apps/dynatrace.davis.problems/" }] },
+  "2. CI/CD Integration": { owner: "App team", effort: "Medium" },
+  "3. ITSM Integration": { owner: "App team", effort: "Medium",
+    openIn: [{ label: "Workflows", path: "/ui/apps/dynatrace.automations/workflows" }] },
+  "4. Runbooks Linked": { owner: "App team", effort: "Low",
+    openIn: [{ label: "Notebooks", path: "/ui/apps/dynatrace.notebooks/" }] },
+  "5. Alert Noise Review": { owner: "App team", effort: "Medium",
+    openIn: [{ label: "Problems", path: "/ui/apps/dynatrace.davis.problems/" }] },
+  "6. Problems with Root Cause": { owner: "App team", effort: "Medium",
+    openIn: [{ label: "Problems", path: "/ui/apps/dynatrace.davis.problems/" }] },
+  "7. DORA Metrics": { owner: "App team", effort: "Low" },
+
+  // L4 — Proactive Reliability
+  "1. SLO Burn Rate Alerting": { owner: "App team", effort: "Medium",
+    openIn: [{ label: "Problems", path: "/ui/apps/dynatrace.davis.problems/" }] },
+  "2. Dynamic Scaling / K8s Autoscaling": { owner: "App team", effort: "High",
+    openIn: [{ label: "Clouds", path: "/ui/apps/dynatrace.clouds/smartscape/services" }] },
+  "3. Predictive Forecasting": { owner: "Platform team", effort: "High", hardcoded: true },
+  "4. Release Impact Tracking": { owner: "App team", effort: "Medium",
+    openIn: [{ label: "Workflows", path: "/ui/apps/dynatrace.automations/workflows" }] },
+  "5. Error Budget Gating": { owner: "Platform team", effort: "High", hardcoded: true },
+
+  // L5 — Autonomous Reliability
+  "1. Repetitive Tasks Identified": { owner: "App team", effort: "Low",
+    openIn: [{ label: "Workflows", path: "/ui/apps/dynatrace.automations/workflows" }] },
+  "2. Workflow Automation": { owner: "App team", effort: "Low",
+    openIn: [{ label: "Workflows", path: "/ui/apps/dynatrace.automations/workflows" }] },
+  "3. E2E Remediation Automated": { owner: "Platform team", effort: "High", hardcoded: true },
+  "4. Incident Auto-Enrichment": { owner: "App team", effort: "Medium",
+    openIn: [{ label: "Problems", path: "/ui/apps/dynatrace.davis.problems/" }] },
+  "5. AI Postmortem / PTASK in ARD": { owner: "Platform team", effort: "High", hardcoded: true },
+};
+
+for (const [key, meta] of Object.entries(CHECK_REDESIGN_META)) {
+  if (CHECK_DETAIL_CONFIGS[key]) {
+    Object.assign(CHECK_DETAIL_CONFIGS[key], meta);
+  }
+}
