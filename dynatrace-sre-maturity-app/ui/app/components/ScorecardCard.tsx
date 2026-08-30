@@ -1,341 +1,247 @@
+// Per-level card in the Scorecards redesign. No longer fetches its own data
+// or owns modal state — ScorecardsPage fetches once and passes the resolved
+// record down, and a single shared CheckDetailModal lives at the
+// ScorecardsPage level so hero-banner cells and card-grid rows open the same
+// modal.
 import React from "react";
-import ReactDOM from "react-dom";
-import { Flex } from "@dynatrace/strato-components/layouts";
-import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
+import { Link } from "react-router-dom";
+import { Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
-import { useDqlWithCache } from "../hooks/useDqlWithCache";
-import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOverride";
 import { RefreshOverlay } from "./RefreshOverlay";
-import { CHECK_EXPLANATIONS } from "./checkExplanations";
-import { CheckDetailModal } from "./CheckDetailModal";
+import { LEVEL_META, CHECK_DETAIL_CONFIGS } from "./checkDetailConfigs";
+import { LevelId, getStatus, getFailingChecks, splitByOwnership, CheckResult } from "./checkStatus";
+import { CheckHoverPreview } from "./CheckHoverPreview";
+import { HardcodedBadge } from "./HardcodedBadge";
 
 interface Props {
+  level: LevelId;
   title: string;
-  query: string;
   accentColor: string;
-  appCI: string;
-  liveOverride?: LiveCheckOverride;
+  record: Record<string, unknown> | undefined;
+  isLoading: boolean;
+  isRefreshing: boolean;
+  error: Error | null | undefined;
+  mode: "engineer" | "executive";
+  onCheckOpen: (level: LevelId, key: string, value: string) => void;
 }
 
-function getStatus(value: string): "pass" | "fail" | "warn" | "na" {
-  const v = value.toLowerCase();
-  if (v.startsWith("pass")) return "pass";
-  if (v.startsWith("fail")) return "fail";
-  if (v.startsWith("warn")) return "warn";
-  if (v.startsWith("n/a")) return "na";
-  return "na";
-}
-
-function getStatusDisplay(value: string): string {
-  return value.replace(/^(pass|fail|warn|n\/a)\s*/i, "");
-}
-
-const statusStyles = {
-  pass: { bg: "rgba(40, 167, 69, 0.08)", border: "rgba(40, 167, 69, 0.3)", text: "#1a7f37", icon: "✅" },
-  fail: { bg: "rgba(220, 53, 69, 0.08)", border: "rgba(220, 53, 69, 0.3)", text: "#cf222e", icon: "🔴" },
-  warn: { bg: "rgba(255, 193, 7, 0.1)", border: "rgba(255, 193, 7, 0.4)", text: "#9a6700", icon: "⚠️" },
-  na: { bg: "rgba(128, 128, 128, 0.06)", border: "rgba(128, 128, 128, 0.2)", text: "#656d76", icon: "➖" },
+const STATUS_STYLES = {
+  pass: { bg: "rgba(30,158,90,.10)", border: "rgba(30,158,90,.34)", text: "var(--pass-ink, #17663C)" },
+  fail: { bg: "rgba(220,53,69,.11)", border: "rgba(220,53,69,.34)", text: "var(--fail-ink, #B3261E)" },
+  warn: { bg: "rgba(232,163,61,.14)", border: "rgba(232,163,61,.38)", text: "var(--warn-ink, #8A6100)" },
+  na: { bg: "rgba(143,160,188,.10)", border: "rgba(143,160,188,.32)", text: "var(--na-ink, #4C5B73)" },
 };
 
-function parseScore(scoreStr: string): { current: number; total: number } {
-  const match = String(scoreStr).match(/(\d+)\s*\/\s*(\d+)/);
-  if (match) return { current: parseInt(match[1]), total: parseInt(match[2]) };
-  return { current: 0, total: 1 };
+function parseScore(record: Record<string, unknown>): { current: number; total: number } {
+  const scoreKey = Object.keys(record).find((k) => k.toLowerCase().includes("score"));
+  if (!scoreKey) return { current: 0, total: 0 };
+  const match = String(record[scoreKey]).match(/(\d+)\s*\/\s*(\d+)/);
+  return match ? { current: parseInt(match[1], 10), total: parseInt(match[2], 10) } : { current: 0, total: 0 };
 }
 
-function ScoreRing({ current, total, color, size = 70 }: { current: number; total: number; color: string; size?: number }) {
-  const pct = total > 0 ? (current / total) * 100 : 0;
-  const radius = (size / 2) - 6;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (pct / 100) * circumference;
-
+function CardShell({ accentColor, children }: { accentColor: string; children: React.ReactNode }) {
   return (
-    <div style={{ position: "relative", width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke="rgba(128,128,128,0.15)" strokeWidth="5" />
-        <circle
-          cx={size/2} cy={size/2} r={radius} fill="none"
-          stroke={color} strokeWidth="5"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${size/2} ${size/2})`}
-          style={{ transition: "stroke-dashoffset 0.8s ease" }}
-        />
-      </svg>
-      <div style={{
-        position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
+    <div
+      style={{
+        background: "var(--card, #fff)",
+        border: "1px solid var(--line, #E3E6EB)",
+        borderRadius: 10,
+        overflow: "hidden",
+        boxShadow: "var(--shadow, 0 1px 2px rgba(26,36,64,.05))",
+        display: "flex",
         flexDirection: "column",
-      }}>
-        <span style={{ fontSize: 16, fontWeight: 800, color }}>{current}/{total}</span>
+      }}
+    >
+      <div style={{ height: 3, background: accentColor, flexShrink: 0 }} />
+      {children}
+    </div>
+  );
+}
+
+function CardHeader({ level, title, accentColor, current, total }: { level: LevelId; title: string; accentColor: string; current: number; total: number }) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  return (
+    <div style={{ padding: "11px 13px 10px", borderBottom: "1px solid var(--line, #E3E6EB)", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 17, fontWeight: 900, color: accentColor, fontVariantNumeric: "tabular-nums" }}>{level}</span>
+        <span style={{ fontSize: 13.5, fontWeight: 600 }}>{title}</span>
+        <Link to="/definitions" style={{ marginLeft: "auto", fontSize: 10, color: "var(--ink-2, #6F747F)" }}>
+          def ↗
+        </Link>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 8 }}>
+        <div style={{ flex: 1, height: 5, borderRadius: 3, background: "var(--panel, #F7F8FA)", overflow: "hidden" }}>
+          <div style={{ height: "100%", borderRadius: 3, width: `${pct}%`, background: accentColor }} />
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{current}/{total}</span>
+        <span style={{ fontSize: 11, color: "var(--ink-2, #6F747F)" }}>{pct}%</span>
       </div>
     </div>
   );
 }
 
-// Small circled "i" that reveals an explanation on hover via portal.
-function InfoTooltip({ text, color }: { text: string; color: string }) {
-  const ref = React.useRef<HTMLSpanElement>(null);
-  const [coords, setCoords] = React.useState<{ x: number; y: number } | null>(null);
-
-  const show = () => {
-    const r = ref.current?.getBoundingClientRect();
-    if (!r) return;
-    const half = 130;
-    const x = Math.max(half, Math.min(window.innerWidth - half, r.left + r.width / 2));
-    setCoords({ x, y: r.top });
-  };
-  const hide = () => setCoords(null);
-
-  return (
-    <>
-      <span
-        ref={ref}
-        onMouseEnter={show}
-        onMouseLeave={hide}
-        aria-label={text}
-        style={{
-          flexShrink: 0,
-          width: 12,
-          height: 12,
-          borderRadius: "50%",
-          border: `1px solid ${color}`,
-          color,
-          fontSize: 9,
-          fontWeight: 700,
-          fontStyle: "italic",
-          fontFamily: "Georgia, 'Times New Roman', serif",
-          lineHeight: "10px",
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "help",
-          opacity: 0.7,
-          userSelect: "none",
-        }}
-      >
-        i
-      </span>
-      {coords &&
-        ReactDOM.createPortal(
-          <div
-            style={{
-              position: "fixed",
-              left: coords.x,
-              top: coords.y - 8,
-              transform: "translate(-50%, -100%)",
-              maxWidth: 250,
-              width: "max-content",
-              padding: "8px 10px",
-              borderRadius: 6,
-              background: "#1f2328",
-              color: "#fff",
-              fontSize: 10.5,
-              fontWeight: 400,
-              lineHeight: 1.45,
-              letterSpacing: 0,
-              textAlign: "left",
-              zIndex: 9999,
-              boxShadow: "0 4px 14px rgba(0,0,0,0.3)",
-              pointerEvents: "none",
-            }}
-          >
-            {text}
-          </div>,
-          document.body
-        )}
-    </>
-  );
-}
-
-interface CheckItemProps {
-  label: string;
-  value: string;
-  onClick: () => void;
-}
-
-function CheckItem({ label, value, onClick }: CheckItemProps) {
+function EngineerRow({ level, checkKey, value, onCheckOpen }: { level: LevelId; checkKey: string; value: string; onCheckOpen: Props["onCheckOpen"] }) {
   const status = getStatus(value);
-  const display = getStatusDisplay(value);
-  const s = statusStyles[status];
-  const explanation = CHECK_EXPLANATIONS[label];
+  const s = STATUS_STYLES[status];
+  const display = value.replace(/^(pass|fail|warn|n\/a)\s*/i, "");
+  const hardcoded = CHECK_DETAIL_CONFIGS[checkKey]?.hardcoded ?? false;
   const [hovered, setHovered] = React.useState(false);
 
   return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(); }}
-      aria-label={`${label}: ${value}. Click for details.`}
-      style={{
-        padding: "8px 10px",
-        borderRadius: 6,
-        background: hovered ? s.bg.replace("0.08", "0.15").replace("0.06", "0.12").replace("0.1", "0.18") : s.bg,
-        border: `1px solid ${hovered ? s.border.replace("0.3", "0.6").replace("0.2", "0.45").replace("0.4", "0.65") : s.border}`,
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 6,
-        cursor: "pointer",
-        transition: "background 0.15s, border-color 0.15s, transform 0.1s",
-        transform: hovered ? "translateY(-1px)" : "none",
-        boxShadow: hovered ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
-        outline: "none",
-      }}
-    >
-      <span style={{ fontSize: 13, lineHeight: "16px", flexShrink: 0 }}>{s.icon}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 1 }}>
-          <span style={{ fontSize: 10, fontWeight: 600, color: s.text, letterSpacing: 0.2 }}>
-            {label}
-          </span>
-          {explanation && <InfoTooltip text={explanation} color={s.text} />}
-          {/* "expand" hint on hover */}
-          {hovered && (
-            <span style={{ marginLeft: "auto", fontSize: 9, color: s.text, opacity: 0.6, flexShrink: 0 }}>
-              details ↗
+    <CheckHoverPreview checkKey={checkKey} value={value} accentColor={LEVEL_META[level].color}>
+      <div
+        onClick={() => onCheckOpen(level, checkKey, value)}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onCheckOpen(level, checkKey, value); }}
+        style={{
+          padding: "8px 10px",
+          display: "flex",
+          gap: 8,
+          cursor: "pointer",
+          borderBottom: "1px solid var(--line-soft, #F2F4F7)",
+          background: hovered ? s.bg : "transparent",
+        }}
+      >
+        <div style={{ width: 4, flexShrink: 0, borderRadius: 2, background: s.border }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: s.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {checkKey.replace(/^\d+\.\s*/, "")}
             </span>
-          )}
-        </div>
-        <div style={{ fontSize: 11, color: "var(--sre-text-primary, #1f2328)", wordBreak: "break-word", lineHeight: 1.3 }}>
-          {display || (status === "na" ? "N/A" : status === "fail" ? "Not detected" : "Active")}
+            {hardcoded && <HardcodedBadge size="chip" />}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--ink, #1A2440)", lineHeight: 1.35, marginTop: 1 }}>
+            {display || (status === "na" ? "N/A" : status === "fail" ? "Not detected" : "Active")}
+          </div>
         </div>
       </div>
+    </CheckHoverPreview>
+  );
+}
+
+function ExecutiveOpenItem({ level, check, onCheckOpen }: { level: LevelId; check: CheckResult; onCheckOpen: Props["onCheckOpen"] }) {
+  const hardcoded = CHECK_DETAIL_CONFIGS[check.key]?.hardcoded ?? false;
+  return (
+    <div
+      onClick={() => onCheckOpen(level, check.key, check.value)}
+      style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", borderRadius: 6, cursor: "pointer" }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: check.status === "fail" ? "var(--fail-ink, #B3261E)" : "var(--warn-ink, #8A6100)" }} />
+      <span style={{ fontSize: 11, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+        {check.key.replace(/^\d+\.\s*/, "")}
+      </span>
+      {hardcoded && <HardcodedBadge size="chip" />}
     </div>
   );
 }
 
-export const ScorecardCard = ({ title, query, accentColor, appCI, liveOverride }: Props) => {
-  const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query });
-  const { apply: applyLiveOverride } = useLiveCheckOverride(appCI, liveOverride);
-  const [selectedCheck, setSelectedCheck] = React.useState<string | null>(null);
-  const [selectedValue, setSelectedValue] = React.useState<string>("");
-
-  const handleCheckClick = (key: string, value: string) => {
-    setSelectedCheck(key);
-    setSelectedValue(value);
-  };
-
-  const handleClose = () => {
-    setSelectedCheck(null);
-    setSelectedValue("");
-  };
-
+export const ScorecardCard = ({ level, title, accentColor, record, isLoading, isRefreshing, error, mode, onCheckOpen }: Props) => {
   if (isLoading) {
     return (
-      <div style={{
-        background: "var(--sre-surface, #fff)", borderRadius: 12,
-        border: "1px solid var(--sre-border, rgba(0,0,0,0.08))", padding: 24, display: "flex",
-        flexDirection: "column", alignItems: "center", gap: 12, minHeight: 300,
-        justifyContent: "center",
-      }}>
-        <ProgressCircle size="small" />
-        <Paragraph style={{ fontSize: 12 }}>Loading...</Paragraph>
-      </div>
+      <CardShell accentColor={accentColor}>
+        <div style={{ padding: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, minHeight: 300, justifyContent: "center" }}>
+          <ProgressCircle size="small" />
+          <Paragraph style={{ fontSize: 12 }}>Loading...</Paragraph>
+        </div>
+      </CardShell>
     );
   }
 
-  if (error) {
+  if (error || !record) {
     return (
-      <div style={{
-        background: "var(--sre-surface, #fff)", borderRadius: 12,
-        border: "1px solid rgba(220,53,69,0.2)", overflow: "hidden",
-      }}>
-        <div style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}dd)`, padding: "14px 16px" }}>
-          <Heading level={6} style={{ color: "#fff", margin: 0 }}>{title}</Heading>
-        </div>
+      <CardShell accentColor={accentColor}>
         <div style={{ padding: 16 }}>
-          <Paragraph style={{ color: "var(--dt-colors-text-critical-default)", fontSize: 11 }}>{error.message}</Paragraph>
+          <Paragraph style={{ color: "var(--fail-ink, #B3261E)", fontSize: 11 }}>
+            {error?.message ?? "No data available"}
+          </Paragraph>
         </div>
-      </div>
+      </CardShell>
     );
   }
 
-  if (!data?.records || data.records.length === 0) {
+  const { current, total } = parseScore(record);
+  const checkKeys = Object.keys(record).filter((k) => !k.toLowerCase().includes("score"));
+
+  if (mode === "engineer") {
     return (
-      <div style={{
-        background: "var(--sre-surface, #fff)", borderRadius: 12,
-        border: "1px solid var(--sre-border, rgba(0,0,0,0.08))", overflow: "hidden",
-      }}>
-        <div style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}dd)`, padding: "14px 16px" }}>
-          <Heading level={6} style={{ color: "#fff", margin: 0 }}>{title}</Heading>
-        </div>
-        <div style={{ padding: 16 }}>
-          <Paragraph style={{ opacity: 0.5, fontSize: 12 }}>No data available</Paragraph>
-        </div>
-      </div>
-    );
-  }
-
-  const record = applyLiveOverride(data.records[0] as Record<string, unknown>);
-  const keys = Object.keys(record);
-  const scoreKey = keys.find((k) => k.toLowerCase().includes("score"));
-  const scoreValue = scoreKey ? String(record[scoreKey]) : "0 / 0";
-  const { current, total } = parseScore(scoreValue);
-  const checkKeys = keys.filter((k) => !k.toLowerCase().includes("score"));
-
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-  const ringColor = pct >= 80 ? "#49C2B3" : pct >= 50 ? "#C93FDB" : "#dc3545";
-
-  return (
-    <>
       <RefreshOverlay isRefreshing={isRefreshing}>
-        <div style={{
-          background: "var(--sre-surface, #fff)",
-          borderRadius: 12,
-          border: "1px solid var(--sre-border, rgba(0,0,0,0.08))",
-          overflow: "hidden",
-          boxShadow: "0 1px 3px var(--sre-card-shadow)",
-          display: "flex",
-          flexDirection: "column",
-        }}>
-          {/* Header */}
-          <div style={{
-            background: `linear-gradient(135deg, ${accentColor}, ${accentColor}dd)`,
-            padding: "14px 16px",
-            textAlign: "center",
-          }}>
-            <Heading level={6} style={{ color: "#fff", margin: 0 }}>{title}</Heading>
-          </div>
-
-          {/* Score ring */}
-          <Flex flexDirection="column" alignItems="center" gap={4} padding={16} style={{ borderBottom: "1px solid var(--sre-border)" }}>
-            <ScoreRing current={current} total={total} color={ringColor} />
-            <span style={{ fontSize: 10, fontWeight: 700, color: ringColor, letterSpacing: 0.5 }}>
-              {pct}% COMPLETE
-            </span>
-          </Flex>
-
-          {/* Checks — each is clickable */}
-          <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
-            <div style={{ fontSize: 9, color: "var(--sre-text-secondary, #6F747F)", letterSpacing: 0.4, marginBottom: 2, fontStyle: "italic" }}>
-              Click any item for details and supporting data
-            </div>
+        <CardShell accentColor={accentColor}>
+          <CardHeader level={level} title={title} accentColor={accentColor} current={current} total={total} />
+          <div style={{ display: "flex", flexDirection: "column" }}>
             {checkKeys.map((key) => (
-              <CheckItem
-                key={key}
-                label={key}
-                value={String(record[key])}
-                onClick={() => handleCheckClick(key, String(record[key]))}
-              />
+              <EngineerRow key={key} level={level} checkKey={key} value={String(record[key])} onCheckOpen={onCheckOpen} />
             ))}
           </div>
-        </div>
+        </CardShell>
       </RefreshOverlay>
+    );
+  }
 
-      {/* Detail modal */}
-      {selectedCheck && (
-        <CheckDetailModal
-          checkKey={selectedCheck}
-          currentValue={selectedValue}
-          appCI={appCI}
-          accentColor={accentColor}
-          onClose={handleClose}
-        />
-      )}
-    </>
+  // Executive mode
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  const radius = 26;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (pct / 100) * circumference;
+  // Reuse checkStatus.ts's flattening/filtering instead of re-deriving
+  // CheckResult by hand here — flattenChecks/getFailingChecks already parse
+  // the leading "N." index and status the same way.
+  const failing = getFailingChecks([{ level, record }]);
+  const { quickWins, platformGaps } = splitByOwnership(failing);
+
+  return (
+    <RefreshOverlay isRefreshing={isRefreshing}>
+      <CardShell accentColor={accentColor}>
+        <div style={{ padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
+            <div style={{ position: "relative", width: 64, height: 64, flexShrink: 0 }}>
+              <svg width={64} height={64} viewBox="0 0 64 64">
+                <circle cx={32} cy={32} r={radius} fill="none" stroke="var(--line, #E3E6EB)" strokeWidth={7} />
+                <circle
+                  cx={32} cy={32} r={radius} fill="none" stroke={accentColor} strokeWidth={7}
+                  strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
+                  transform="rotate(-90 32 32)"
+                />
+              </svg>
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontSize: 14, fontWeight: 900, color: accentColor }}>{pct}%</span>
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+              <span style={{ fontSize: 22, fontWeight: 900, color: accentColor }}>{level}</span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{title}</span>
+              <span style={{ fontSize: 11, color: "var(--ink-2, #6F747F)" }}>{current}/{total} checks met</span>
+            </div>
+          </div>
+          <span style={{ fontSize: 11, lineHeight: 1.5, color: "var(--ink-2, #6F747F)" }}>{LEVEL_META[level].outcome}</span>
+          {failing.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 11, borderTop: "1px solid var(--line-soft, #F2F4F7)" }}>
+              {quickWins.length > 0 && (
+                <>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.7, color: "var(--ink-2, #6F747F)" }}>
+                    QUICK WINS ({quickWins.length})
+                  </span>
+                  {quickWins.map((c) => (
+                    <ExecutiveOpenItem key={c.key} level={level} check={c} onCheckOpen={onCheckOpen} />
+                  ))}
+                </>
+              )}
+              {platformGaps.length > 0 && (
+                <>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.7, color: "var(--ink-2, #6F747F)", marginTop: quickWins.length > 0 ? 6 : 0 }}>
+                    PLATFORM GAPS ({platformGaps.length})
+                  </span>
+                  {platformGaps.map((c) => (
+                    <ExecutiveOpenItem key={c.key} level={level} check={c} onCheckOpen={onCheckOpen} />
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </CardShell>
+    </RefreshOverlay>
   );
 };
