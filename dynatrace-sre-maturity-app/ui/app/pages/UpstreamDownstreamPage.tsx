@@ -6,7 +6,6 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { AppIdentityBar } from "../components/AppIdentityBar";
 import { ServiceGoldenSignalsTable } from "../components/ServiceGoldenSignalsTable";
 import { DependencyGraphPanel } from "../components/DependencyGraphPanel";
-import { DependencyLevelSlider } from "../components/DependencyLevelSlider";
 import { DependencySummaryPanel } from "../components/DependencySummaryPanel";
 import { useDependencyChain } from "../hooks/useDependencyChain";
 
@@ -74,21 +73,14 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                 <Heading level={5} style={{ marginBottom: 8 }}>
                   Upstream — {selectedServiceName}
                 </Heading>
-                <div style={{ marginBottom: 8 }}>
-                  <DependencyLevelSlider
-                    value={upstreamLevels}
-                    max={MAX_LEVELS}
-                    totalLevels={upstreamChain.totalLevels}
-                    capped={upstreamChain.capped}
-                    onChange={setUpstreamLevels}
-                  />
-                </div>
                 <DependencyGraphPanel
                   direction="backward"
                   originId={selectedServiceId}
                   originName={selectedServiceName}
                   chain={upstreamChain}
                   levels={upstreamLevels}
+                  maxLevels={MAX_LEVELS}
+                  onLevelsChange={setUpstreamLevels}
                 />
                 <div style={{ marginTop: 12 }}>
                   <DependencySummaryPanel direction="upstream" chain={upstreamChain} />
@@ -99,21 +91,14 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                 <Heading level={5} style={{ marginBottom: 8 }}>
                   Downstream — {selectedServiceName}
                 </Heading>
-                <div style={{ marginBottom: 8 }}>
-                  <DependencyLevelSlider
-                    value={downstreamLevels}
-                    max={MAX_LEVELS}
-                    totalLevels={downstreamChain.totalLevels}
-                    capped={downstreamChain.capped}
-                    onChange={setDownstreamLevels}
-                  />
-                </div>
                 <DependencyGraphPanel
                   direction="forward"
                   originId={selectedServiceId}
                   originName={selectedServiceName}
                   chain={downstreamChain}
                   levels={downstreamLevels}
+                  maxLevels={MAX_LEVELS}
+                  onLevelsChange={setDownstreamLevels}
                 />
                 <div style={{ marginTop: 12 }}>
                   <DependencySummaryPanel direction="downstream" chain={downstreamChain} />

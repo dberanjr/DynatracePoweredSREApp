@@ -18,6 +18,7 @@ export interface DependencyChainResult {
   totalLevels: number;
   capped: boolean;
   uniqueAppCIsAllLevels: string[];
+  appCICounts: Record<string, number>;
   isLoading: boolean;
   hasError: boolean;
 }
@@ -82,6 +83,7 @@ export function useDependencyChain(originId: string | null, direction: ChainDire
   const perLevelCounts: Record<number, number> = {};
   const seen = new Set<string>();
   const uniqueAppCIs = new Set<string>();
+  const appCICounts: Record<string, number> = {};
   let totalLevels = 0;
   let capped = false;
 
@@ -95,7 +97,10 @@ export function useDependencyChain(originId: string | null, direction: ChainDire
         if (!id || seen.has(id)) continue;
         seen.add(id);
         const appCIs = (Array.isArray(r.appciList) ? (r.appciList as unknown[]) : []).map((a) => String(a).toLowerCase());
-        appCIs.forEach((a) => uniqueAppCIs.add(a));
+        appCIs.forEach((a) => {
+          uniqueAppCIs.add(a);
+          appCICounts[a] = (appCICounts[a] || 0) + 1;
+        });
         newNodes.push({
           id,
           name: String(r.depName || id),
@@ -115,5 +120,14 @@ export function useDependencyChain(originId: string | null, direction: ChainDire
     }
   }
 
-  return { levels, perLevelCounts, totalLevels, capped, uniqueAppCIsAllLevels: Array.from(uniqueAppCIs).sort(), isLoading, hasError };
+  return {
+    levels,
+    perLevelCounts,
+    totalLevels,
+    capped,
+    uniqueAppCIsAllLevels: Array.from(uniqueAppCIs).sort(),
+    appCICounts,
+    isLoading,
+    hasError,
+  };
 }
