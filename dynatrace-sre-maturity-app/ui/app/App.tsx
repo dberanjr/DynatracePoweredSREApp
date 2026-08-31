@@ -13,6 +13,7 @@ import { GoldenSignalsPage } from "./pages/GoldenSignalsPage";
 import { AiOpsPage } from "./pages/AiOpsPage";
 import { ProactivePage } from "./pages/ProactivePage";
 import { ScorecardsPage } from "./pages/ScorecardsPage";
+import { UpstreamDownstreamPage } from "./pages/UpstreamDownstreamPage";
 import { PortfolioPage } from "./pages/PortfolioPage";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LandingPage } from "./pages/LandingPage";
@@ -49,6 +50,12 @@ const APPCI_FALLBACK_QUERY = `fetch dt.entity.service
 | fieldsAdd appName = ""
 | fields applicationci = appci, appName
 | limit 10000`;
+
+// Timeframe isn't a meaningful concept in this app yet (every page effectively
+// always looks at a fixed recent window in its own DQL), so the picker is
+// hidden from the header. The state/handler/prop threading stays in place —
+// flip this back to true to bring the control back once timeframe matters.
+const SHOW_TIMEFRAME_SELECTOR = false;
 
 export const App = () => {
   const [selectedAppCI, setSelectedAppCI] = useState<string | null>("ADH");
@@ -92,16 +99,18 @@ export const App = () => {
           </div>
           <Flex alignItems="center" gap={8} style={{ flexShrink: 0, paddingRight: 8 }}>
             <ThemeToggleButton />
-            <TimeframeSelector
-              value={timeframe}
-              onChange={(tf: any) => {
-                if (tf) {
-                  const from = typeof tf.from === "string" ? tf.from : tf.from?.value ?? "now()-24h";
-                  const to = typeof tf.to === "string" ? tf.to : tf.to?.value ?? "now()";
-                  setTimeframe({ from, to });
-                }
-              }}
-            />
+            {SHOW_TIMEFRAME_SELECTOR && (
+              <TimeframeSelector
+                value={timeframe}
+                onChange={(tf: any) => {
+                  if (tf) {
+                    const from = typeof tf.from === "string" ? tf.from : tf.from?.value ?? "now()-24h";
+                    const to = typeof tf.to === "string" ? tf.to : tf.to?.value ?? "now()";
+                    setTimeframe({ from, to });
+                  }
+                }}
+              />
+            )}
             <Heading level={6}>ApplicationCI:</Heading>
             <Select
               name="appci-selector"
@@ -135,6 +144,7 @@ export const App = () => {
             <Route path="/proactive" element={<ErrorBoundary><ProactivePage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
             <Route path="/problem-analytics" element={<ErrorBoundary><ProblemAnalyticsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
             <Route path="/scorecards" element={<ErrorBoundary><ScorecardsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/upstream-downstream" element={<ErrorBoundary><UpstreamDownstreamPage appCI={appCI} /></ErrorBoundary>} />
             <Route path="/definitions" element={<ErrorBoundary><DefinitionsPage /></ErrorBoundary>} />
             <Route path="/portfolio" element={<ErrorBoundary><PortfolioPage /></ErrorBoundary>} />
             <Route path="/data" element={<ErrorBoundary><Data /></ErrorBoundary>} />

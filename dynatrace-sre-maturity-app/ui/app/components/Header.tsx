@@ -4,6 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 const navItems = [
   { to: "/", label: "Home" },
   { to: "/scorecards", label: "Scorecards" },
+  { to: "/upstream-downstream", label: "Dependencies" },
   { to: "/definitions", label: "Definitions" },
   { to: "/about", label: "About" },
 ];

@@ -1,0 +1,119 @@
+import { useDql } from "@dynatrace-sdk/react-hooks";
+
+export type ChainDirection = "forward" | "backward";
+
+export interface DependencyNode {
+  id: string;
+  name: string;
+  parentId: string;
+  level: number;
+  appCIs: string[];
+  severity: string | null;
+  businessImpact: string | null;
+}
+
+export interface DependencyChainResult {
+  levels: Record<number, DependencyNode[]>;
+  perLevelCounts: Record<number, number>;
+  totalLevels: number;
+  capped: boolean;
+  uniqueAppCIsAllLevels: string[];
+  isLoading: boolean;
+  hasError: boolean;
+}
+
+const MAX_LEVELS = 8;
+const SKIP_QUERY = "data record(skip = true) | limit 0";
+
+// AppCI tags live on the classic dt.entity.service model, not on the
+// smartscapeNodes "SERVICE" representation of the same entity (verified live —
+// smartscapeNodes' tags field is empty for every service tested). Hence the
+// hybrid: traverse topology via smartscapeNodes, then join each result back
+// to dt.entity.service for its applicationci tag(s). A service can carry more
+// than one applicationci tag (shared/platform services) — all are collected.
+function buildLevelQuery(originId: string, direction: ChainDirection, hops: number): string {
+  const traverseLine = `| traverse edgeTypes: {calls}, targetTypes: {SERVICE}, direction: ${direction}`;
+  const traverses = Array(hops).fill(traverseLine).join("\n");
+  // dt.traverse.history[hops-1] is the previous hop's target node — i.e. the
+  // parent of this node in this specific traversal path. For the first hop
+  // there is no history entry; the parent is simply the origin.
+  const parentExpr = hops === 1 ? `"${originId}"` : `toString(dt.traverse.history[${hops - 1}][\`id\`])`;
+
+  return `smartscapeNodes "SERVICE"
+| filter id == toSmartscapeId("${originId}")
+${traverses}
+| dedup id
+| fieldsAdd depId = toString(id), depName = name, parentId = ${parentExpr}
+| lookup [fetch dt.entity.service | fields id, tags],
+    sourceField: depId, lookupField: id, fields: {lookupTags = tags}
+| fieldsAdd appciList = arrayDistinct(arrayRemoveNulls(iCollectArray(
+    if(matchesPhrase(lookupTags[], "applicationci:*"), splitString(lookupTags[], ":")[1])
+  )))
+| lookup [
+    load "/lookups/critical_services"
+    | filter entity_ids != "-"
+    | fieldsAdd idList = splitString(entity_ids, " ")
+    | expand idList
+    | fields idList, severity, business_impact
+  ], sourceField: depId, lookupField: idList, fields: {critSeverity = severity, critImpact = business_impact}
+| fields depId, depName, parentId, appciList, critSeverity, critImpact
+| limit 300`;
+}
+
+// Hooks must be called an unconditional, fixed number of times — the 8 level
+// queries are unrolled explicitly (not looped) to satisfy react-hooks/rules-of-hooks.
+export function useDependencyChain(originId: string | null, direction: ChainDirection): DependencyChainResult {
+  const q = (hops: number) => (originId ? buildLevelQuery(originId, direction, hops) : SKIP_QUERY);
+
+  const r1 = useDql({ query: q(1) });
+  const r2 = useDql({ query: q(2) });
+  const r3 = useDql({ query: q(3) });
+  const r4 = useDql({ query: q(4) });
+  const r5 = useDql({ query: q(5) });
+  const r6 = useDql({ query: q(6) });
+  const r7 = useDql({ query: q(7) });
+  const r8 = useDql({ query: q(8) });
+  const rawLevels = [r1, r2, r3, r4, r5, r6, r7, r8];
+
+  const isLoading = originId != null && rawLevels.some((r) => r.isLoading);
+  const hasError = rawLevels.some((r) => !!r.error);
+
+  const levels: Record<number, DependencyNode[]> = {};
+  const perLevelCounts: Record<number, number> = {};
+  const seen = new Set<string>();
+  const uniqueAppCIs = new Set<string>();
+  let totalLevels = 0;
+  let capped = false;
+
+  if (originId) {
+    for (let i = 0; i < MAX_LEVELS; i++) {
+      const levelNum = i + 1;
+      const records = (rawLevels[i].data?.records || []) as Record<string, unknown>[];
+      const newNodes: DependencyNode[] = [];
+      for (const r of records) {
+        const id = String(r.depId || "");
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const appCIs = (Array.isArray(r.appciList) ? (r.appciList as unknown[]) : []).map((a) => String(a).toLowerCase());
+        appCIs.forEach((a) => uniqueAppCIs.add(a));
+        newNodes.push({
+          id,
+          name: String(r.depName || id),
+          parentId: String(r.parentId || originId),
+          level: levelNum,
+          appCIs,
+          severity: r.critSeverity != null ? String(r.critSeverity) : null,
+          businessImpact: r.critImpact != null ? String(r.critImpact) : null,
+        });
+      }
+      if (newNodes.length > 0) {
+        levels[levelNum] = newNodes;
+        perLevelCounts[levelNum] = newNodes.length;
+        totalLevels = levelNum;
+        if (levelNum === MAX_LEVELS) capped = true;
+      }
+    }
+  }
+
+  return { levels, perLevelCounts, totalLevels, capped, uniqueAppCIsAllLevels: Array.from(uniqueAppCIs).sort(), isLoading, hasError };
+}
