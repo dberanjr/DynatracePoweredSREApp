@@ -254,7 +254,7 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                   rootMetrics={rootMetrics}
                 />
                 <div style={{ marginTop: 12 }}>
-                  <DependencySummaryPanel direction="upstream" chain={upstreamChain} onSelectService={handleSelect} />
+                  <DependencySummaryPanel direction="upstream" chain={upstreamChain} levels={upstreamLevels} onSelectService={handleSelect} />
                 </div>
               </div>
 
@@ -275,7 +275,7 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                   rootMetrics={rootMetrics}
                 />
                 <div style={{ marginTop: 12 }}>
-                  <DependencySummaryPanel direction="downstream" chain={downstreamChain} onSelectService={handleSelect} />
+                  <DependencySummaryPanel direction="downstream" chain={downstreamChain} levels={downstreamLevels} onSelectService={handleSelect} />
                 </div>
               </div>
             </div>

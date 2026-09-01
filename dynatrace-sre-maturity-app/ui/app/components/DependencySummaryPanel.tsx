@@ -9,6 +9,9 @@ interface Props {
 }
 
 interface SummaryPanelProps extends Props {
+  /** Currently-selected level count for this direction (the map's slider
+   * value) — one chip section is rendered per level from 1 up to this. */
+  levels: number;
   onSelectService: (serviceId: string, serviceName: string) => void;
 }
 
@@ -54,13 +57,13 @@ function AppCIWeightRow({ code, count, max }: { code: string; count: number; max
   );
 }
 
-// Compact chip for a single direct dependency: border color is always the
-// criticality color (or neutral if unrated); fill turns solid red only when
-// the service has an active problem right now, regardless of criticality —
-// live incident state is a separate signal from a static severity rating.
-// Clicking pivots the whole view to focus on that service (immediate reflow,
-// same as picking it from the table).
-function DirectDepChip({ node, onSelectService }: { node: DependencyNode; onSelectService: (id: string, name: string) => void }) {
+// Compact chip for a single dependency at any level: border color is always
+// the criticality color (or neutral if unrated); fill turns solid red only
+// when the service has an active problem right now (root cause or victim),
+// regardless of criticality — live incident state is a separate signal from
+// a static severity rating. Clicking pivots the whole view to focus on that
+// service (immediate reflow, same as picking it from the table).
+function DependencyChip({ node, onSelectService }: { node: DependencyNode; onSelectService: (id: string, name: string) => void }) {
   const borderColor = severityColor(node.severity) || "var(--sre-border, rgba(0,0,0,0.25))";
   const hasProblem = !!node.problemRole;
   return (
@@ -181,27 +184,36 @@ export function ChainShapeSummary({ direction, chain, selectedLevel, onLevelClic
   );
 }
 
-export const DependencySummaryPanel = ({ direction, chain, onSelectService }: SummaryPanelProps) => {
-  const directLevel = chain.levels[1] || [];
+function levelHeading(lvl: number, direction: "upstream" | "downstream"): string {
+  return lvl === 1 ? "Direct (level 1) dependencies" : `${lvl} levels deep ${direction}`;
+}
+
+export const DependencySummaryPanel = ({ direction, chain, levels, onSelectService }: SummaryPanelProps) => {
   const rankedAppCIs = Object.entries(chain.appCICounts).sort((a, b) => b[1] - a[1]);
   const maxAppCICount = Math.max(1, ...rankedAppCIs.map(([, c]) => c));
+  const levelNumbers = Array.from({ length: levels }, (_, i) => i + 1);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 12 }}>
-      <div>
-        <Heading level={6} style={{ marginBottom: 6 }}>
-          Direct (level 1) dependencies
-        </Heading>
-        {directLevel.length === 0 ? (
-          <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6, fontSize: 12 }}>None found</Paragraph>
-        ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {directLevel.map((n) => (
-              <DirectDepChip key={n.id} node={n} onSelectService={onSelectService} />
-            ))}
+      {levelNumbers.map((lvl) => {
+        const levelNodes = chain.levels[lvl] || [];
+        return (
+          <div key={lvl}>
+            <Heading level={6} style={{ marginBottom: 6 }}>
+              {levelHeading(lvl, direction)}
+            </Heading>
+            {levelNodes.length === 0 ? (
+              <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6, fontSize: 12 }}>None found</Paragraph>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {levelNodes.map((n) => (
+                  <DependencyChip key={n.id} node={n} onSelectService={onSelectService} />
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })}
 
       <div>
         <Heading level={6} style={{ marginBottom: 6 }}>
