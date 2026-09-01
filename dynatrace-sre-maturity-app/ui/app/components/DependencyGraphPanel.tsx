@@ -194,7 +194,12 @@ function layoutWithDagre(nodes: Node<NodeData>[], edges: Edge[], rankdir: "LR" |
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir, nodesep: 30, ranksep: 80 });
-  nodes.forEach((n) => g.setNode(n.id, footprint));
+  // Dagre writes each node's computed x/y directly onto the label object
+  // passed to setNode — a shared `footprint` reference across all nodes
+  // means every node's position ends up overwriting the same object, so
+  // every node collapses onto the last-processed node's coordinates. Each
+  // node needs its own object.
+  nodes.forEach((n) => g.setNode(n.id, { ...footprint }));
   edges.forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
   return nodes.map((n) => {
