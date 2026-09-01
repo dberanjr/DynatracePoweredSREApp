@@ -233,7 +233,7 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                 <Heading level={5} style={{ marginBottom: 8 }}>
                   Upstream — {selectedServiceName}
                 </Heading>
-                <ChainShapeSummary direction="upstream" chain={upstreamChain} />
+                <ChainShapeSummary direction="upstream" chain={upstreamChain} selectedLevel={upstreamLevels} onLevelClick={setUpstreamLevels} />
                 <DependencyGraphPanel
                   direction="backward"
                   originId={selectedServiceId}
@@ -254,7 +254,7 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                 <Heading level={5} style={{ marginBottom: 8 }}>
                   Downstream — {selectedServiceName}
                 </Heading>
-                <ChainShapeSummary direction="downstream" chain={downstreamChain} />
+                <ChainShapeSummary direction="downstream" chain={downstreamChain} selectedLevel={downstreamLevels} onLevelClick={setDownstreamLevels} />
                 <DependencyGraphPanel
                   direction="forward"
                   originId={selectedServiceId}

@@ -91,10 +91,15 @@ function DirectDepChip({ node, onSelectService }: { node: DependencyNode; onSele
   );
 }
 
-// The per-level "chain shape" — a small histogram of new-node count by level.
-// Rendered above the topology map (page-level placement), since it's the
-// summary a user wants to see before diving into the graph itself.
-export function ChainShapeSummary({ direction, chain }: Props) {
+interface ChainShapeProps extends Props {
+  selectedLevel: number;
+  onLevelClick: (level: number) => void;
+}
+
+// The per-level "chain shape" — a small histogram of new-node count by
+// level, rendered above the topology map. Each bar is clickable and sets
+// the map's level slider directly, so the chart doubles as a level picker.
+export function ChainShapeSummary({ direction, chain, selectedLevel, onLevelClick }: ChainShapeProps) {
   const barMaxHeight = 40;
   // Always render all 8 possible level slots (not just the levels that
   // actually have data) so the chart's shape/width is consistent across
@@ -117,15 +122,32 @@ export function ChainShapeSummary({ direction, chain }: Props) {
           {allLevels.map((lvl) => {
             const count = chain.perLevelCounts[lvl] || 0;
             const isEmpty = count === 0;
+            const isSelected = lvl === selectedLevel;
             const isLastAndCapped = chain.capped && lvl === MAX_LEVELS;
             const h = isEmpty ? 3 : Math.max(4, Math.round((count / max) * barMaxHeight));
             return (
-              <div key={lvl} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: "1 1 0", minWidth: 0 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: isEmpty ? "var(--sre-text-secondary)" : "var(--sre-text-secondary)", marginBottom: 3, opacity: isEmpty ? 0.4 : 1 }}>
+              <button
+                key={lvl}
+                type="button"
+                onClick={() => onLevelClick(lvl)}
+                title={isEmpty ? `Level ${lvl}: no dependencies — click to show up to this level` : `Level ${lvl}: ${count} new node${count === 1 ? "" : "s"} — click to show up to this level`}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  flex: "1 1 0",
+                  minWidth: 0,
+                  background: isSelected ? "rgba(25,102,255,0.08)" : "transparent",
+                  border: "none",
+                  borderRadius: 4,
+                  padding: "2px 0 0",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--sre-text-secondary)", marginBottom: 3, opacity: isEmpty ? 0.4 : 1 }}>
                   {count}
                 </span>
                 <div
-                  title={isEmpty ? `Level ${lvl}: no dependencies` : `Level ${lvl}: ${count} new node${count === 1 ? "" : "s"}`}
                   style={{
                     width: "100%",
                     maxWidth: 28,
@@ -138,11 +160,19 @@ export function ChainShapeSummary({ direction, chain }: Props) {
                         : ACCENT,
                   }}
                 />
-                <span style={{ fontSize: 9, color: "var(--sre-text-secondary)", marginTop: 3, opacity: isEmpty ? 0.4 : 0.7 }}>
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: isSelected ? 800 : 400,
+                    color: isSelected ? ACCENT : "var(--sre-text-secondary)",
+                    marginTop: 3,
+                    opacity: isEmpty && !isSelected ? 0.4 : 0.85,
+                  }}
+                >
                   L{lvl}
                   {isLastAndCapped ? "+" : ""}
                 </span>
-              </div>
+              </button>
             );
           })}
         </div>
