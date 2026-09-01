@@ -7,7 +7,7 @@ import { AppIdentityBar } from "../components/AppIdentityBar";
 import { SPINE_BACKGROUND } from "../components/MaturitySpine";
 import { ServiceGoldenSignalsTable, SeverityFilterValue } from "../components/ServiceGoldenSignalsTable";
 import { DependencyGraphPanel } from "../components/DependencyGraphPanel";
-import { DependencySummaryPanel } from "../components/DependencySummaryPanel";
+import { DependencySummaryPanel, ChainShapeSummary } from "../components/DependencySummaryPanel";
 import { useDependencyChain } from "../hooks/useDependencyChain";
 import { ActiveProblemLink } from "../components/SmartscapeViewMenu";
 
@@ -211,6 +211,7 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                 <Heading level={5} style={{ marginBottom: 8 }}>
                   Upstream — {selectedServiceName}
                 </Heading>
+                <ChainShapeSummary direction="upstream" chain={upstreamChain} />
                 <DependencyGraphPanel
                   direction="backward"
                   originId={selectedServiceId}
@@ -230,6 +231,7 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                 <Heading level={5} style={{ marginBottom: 8 }}>
                   Downstream — {selectedServiceName}
                 </Heading>
+                <ChainShapeSummary direction="downstream" chain={downstreamChain} />
                 <DependencyGraphPanel
                   direction="forward"
                   originId={selectedServiceId}
