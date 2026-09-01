@@ -6,10 +6,27 @@ import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { severityColor, severityLabel, severityRank, formatDurationUs } from "./dependencyUtils";
 
+export type SeverityFilterValue = "high" | "medium" | "low" | "none";
+
+function severityBucket(severity: string | null): SeverityFilterValue {
+  switch (severityRank(severity)) {
+    case 1:
+      return "high";
+    case 2:
+      return "medium";
+    case 3:
+      return "low";
+    default:
+      return "none";
+  }
+}
+
 interface Props {
   appCI: string;
   selectedServiceId: string | null;
   onSelect: (serviceId: string, serviceName: string) => void;
+  /** Empty set = no filtering (show all services). */
+  severityFilter: Set<SeverityFilterValue>;
 }
 
 // Adapts the existing L2 "Golden Signal SLIs" query (checkDetailConfigs.ts)
@@ -201,7 +218,7 @@ function SortableHeader({ col, sortKey, sortDir, onSort }: { col: { key: SortKey
   );
 }
 
-export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect }: Props) => {
+export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, severityFilter }: Props) => {
   const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query: buildQuery(appCI) });
   const [sortKey, setSortKey] = useState<SortKey>("errorRate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -216,10 +233,14 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect }
   };
 
   const records = useMemo(() => {
-    const rows = ((data?.records || []) as Record<string, unknown>[]).slice();
+    let rows = (data?.records || []) as Record<string, unknown>[];
+    if (severityFilter.size > 0) {
+      rows = rows.filter((r) => severityFilter.has(severityBucket(r.critSeverity != null ? String(r.critSeverity) : null)));
+    }
+    rows = rows.slice();
     rows.sort((a, b) => compareRows(a, b, sortKey) * (sortDir === "asc" ? 1 : -1));
     return rows;
-  }, [data, sortKey, sortDir]);
+  }, [data, sortKey, sortDir, severityFilter]);
 
   if (isLoading) {
     return (
@@ -232,7 +253,11 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect }
     return <Paragraph style={{ color: "var(--dt-colors-text-critical-default)", fontSize: 12 }}>{error.message}</Paragraph>;
   }
   if (records.length === 0) {
-    return <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6 }}>No services found for this AppCI.</Paragraph>;
+    return (
+      <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6 }}>
+        {severityFilter.size > 0 ? "No services match the selected severity filter." : "No services found for this AppCI."}
+      </Paragraph>
+    );
   }
 
   return (
