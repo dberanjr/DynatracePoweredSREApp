@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { useAppFunction } from "@dynatrace-sdk/react-hooks";
@@ -821,7 +822,21 @@ function DataPanel({
       : undefined
     : dqlResult.data;
 
-  const onRowClick = config?.serviceRowClick
+  const navigate = useNavigate();
+  const onRowClick = config?.dependenciesRowClick
+    ? (row: Record<string, unknown>) => {
+        const entityId = String(row.entityId ?? "");
+        if (!entityId) return;
+        // In-app navigation, not window.open — the Dependencies tab reads
+        // this via useLocation().state to pre-select the service. The
+        // ApplicationCI itself needs no explicit handoff: it's a single
+        // piece of state lifted to App.tsx and shared by every route, so
+        // it's already showing this app before, during, and after the nav.
+        navigate("/upstream-downstream", {
+          state: { initialServiceId: entityId, initialServiceName: String(row.service ?? entityId) },
+        });
+      }
+    : config?.serviceRowClick
     ? (row: Record<string, unknown>) => {
         const entityId = String(row.entityId ?? "");
         if (!entityId) return;
@@ -1063,11 +1078,11 @@ function DataPanel({
       onRowClick={onRowClick}
       rowActions={
         config?.smartscapeMenuRowClick
-          ? (row) => <SmartscapeViewMenu entityId={String(row.entityId ?? "")} />
+          ? (row) => <SmartscapeViewMenu entityId={String(row.entityId ?? "")} entityName={String(row.service ?? "")} />
           : undefined
       }
       hiddenCols={
-        config?.serviceRowClick || config?.hostEntityRowClick || config?.serviceMapRowClick || config?.cloudResourceRowClick
+        config?.serviceRowClick || config?.hostEntityRowClick || config?.serviceMapRowClick || config?.cloudResourceRowClick || config?.dependenciesRowClick
           ? ["entityId"]
           : config?.k8sClusterRowClick
             ? ["clusterName"]
@@ -1942,6 +1957,11 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                   — click a row to open in Services Map
                 </div>
               )}
+              {config?.dependenciesRowClick && (
+                <div style={{ fontSize: 10, color: "var(--sre-text-secondary, #6F747F)", fontStyle: "italic" }}>
+                  — click a row to open in the Dependencies tab
+                </div>
+              )}
               {config?.smartscapeMenuRowClick && (
                 <div style={{ fontSize: 10, color: "var(--sre-text-secondary, #6F747F)", fontStyle: "italic" }}>
                   — use the View menu for Smartscape topology views
@@ -1983,7 +2003,7 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                 </div>
               )}
             </div>
-            <DataPanel config={config} appCI={appCI} accentColor={accentColor} facet={facet ?? undefined} scrollable={!!config?.secondaryQuery || !!config?.secondaryAppFunction || !!config?.serviceMapRowClick || !!config?.cloudResourceRowClick} />
+            <DataPanel config={config} appCI={appCI} accentColor={accentColor} facet={facet ?? undefined} scrollable={!!config?.secondaryQuery || !!config?.secondaryAppFunction || !!config?.serviceMapRowClick || !!config?.cloudResourceRowClick || !!config?.dependenciesRowClick} />
             {(config?.secondaryQuery || config?.secondaryAppFunction) && (
               <>
                 <div

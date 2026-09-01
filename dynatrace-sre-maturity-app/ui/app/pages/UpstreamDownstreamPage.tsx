@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
@@ -127,8 +128,15 @@ interface Props {
 }
 
 export const UpstreamDownstreamPage = ({ appCI }: Props) => {
-  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
-  const [selectedServiceName, setSelectedServiceName] = useState<string>("");
+  // Set by CheckDetailModal's "4. Smartscape Discovery" row click (see
+  // dependenciesRowClick) via navigate("/upstream-downstream", {state}) — a
+  // one-time handoff for the initial service, read only on first mount.
+  // The ApplicationCI itself needs no handoff: it's shared App.tsx state
+  // already showing this app before, during, and after the navigation.
+  const location = useLocation();
+  const initialSelection = location.state as { initialServiceId?: string; initialServiceName?: string } | null;
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(() => initialSelection?.initialServiceId ?? null);
+  const [selectedServiceName, setSelectedServiceName] = useState<string>(() => initialSelection?.initialServiceName ?? "");
   const [upstreamLevels, setUpstreamLevels] = useState(1);
   const [downstreamLevels, setDownstreamLevels] = useState(1);
   const [severityFilter, setSeverityFilter] = useState<Set<SeverityFilterValue>>(new Set());
