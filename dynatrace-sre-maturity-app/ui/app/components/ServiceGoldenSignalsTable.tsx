@@ -41,8 +41,10 @@ interface Props {
 //    other AppCIs.
 //  - active (status == "ACTIVE") Davis problem enrichment, joined by
 //    exploding affected_entity_ids, with root-cause vs. victim distinguished
-//    by comparing to root_cause_entity_id. A service could theoretically be
-//    listed in more than one active problem — the root-cause role wins ties.
+//    by comparing to root_cause_entity_id. A service can be listed in more
+//    than one active problem simultaneously, so all matches are collected
+//    into an array (root-cause entries sorted first) rather than deduped
+//    down to one.
 const buildQuery = (appCI: string) => `fetch dt.entity.service
 | expand tags
 | parse tags, "'applicationci:' LD:appci"
@@ -87,10 +89,9 @@ const buildQuery = (appCI: string) => `fetch dt.entity.service
     | fieldsAdd role = if(affected_entity_ids == root_cause_entity_id, "Root cause", else: "Impacted")
     | fieldsAdd roleRank = if(role == "Root cause", 0, else: 1)
     | sort roleRank asc
-    | dedup affected_entity_ids
-    | fields affected_entity_ids, role, problemName = event.name, problemId = event.id
-  ], sourceField:id, lookupField:affected_entity_ids, fields:{problemRole = role, problemName, problemId}
-| fields service = entity.name, entityId = id, requests, errorRate, p95Us, critSeverity, downstream, upstream, problemRole, problemName, problemId
+    | summarize problems = collectArray(record(role = role, problemId = event.id, problemName = event.name)), by:{affected_entity_ids}
+  ], sourceField:id, lookupField:affected_entity_ids, fields:{problems}
+| fields service = entity.name, entityId = id, requests, errorRate, p95Us, critSeverity, downstream, upstream, problems
 | sort errorRate desc, requests desc
 | limit 200`;
 
@@ -134,6 +135,12 @@ function depCountBg(count: number) {
   return "transparent";
 }
 
+interface ProblemRef {
+  role: string;
+  problemId: string;
+  problemName: string;
+}
+
 function ProblemChip({ role, problemId }: { role: string; problemId: string }) {
   const isRootCause = role === "Root cause";
   return (
@@ -153,7 +160,6 @@ function ProblemChip({ role, problemId }: { role: string; problemId: string }) {
         borderRadius: 10,
         border: "none",
         cursor: "pointer",
-        marginLeft: 8,
         color: "#fff",
         background: isRootCause ? RED : AMBER,
       }}
@@ -164,16 +170,38 @@ function ProblemChip({ role, problemId }: { role: string; problemId: string }) {
   );
 }
 
+// Hollow ring = criticality (or neutral grey if unrated); solid red fill
+// only when the service currently has an active problem — live incident
+// state is a separate signal from a static criticality rating, matching
+// the convention used everywhere else in the Dependencies tab (chips,
+// topology nodes).
+function CriticalityDot({ severity, hasProblem }: { severity: string | null; hasProblem: boolean }) {
+  const ringColor = severityColor(severity) || "var(--sre-border, rgba(0,0,0,0.3))";
+  return (
+    <span
+      title={hasProblem ? "Active problem" : severityLabel(severity)}
+      style={{
+        display: "inline-block",
+        width: 9,
+        height: 9,
+        borderRadius: "50%",
+        border: `2px solid ${hasProblem ? RED : ringColor}`,
+        background: hasProblem ? RED : "transparent",
+      }}
+    />
+  );
+}
+
 type SortKey = "service" | "requests" | "errorRate" | "p95Us" | "upstream" | "downstream" | "critSeverity";
 
 const COLUMNS: { key: SortKey; label: string }[] = [
+  { key: "critSeverity", label: "Critical" },
   { key: "service", label: "Service" },
   { key: "requests", label: "Requests (1h)" },
   { key: "errorRate", label: "Error %" },
   { key: "p95Us", label: "P95" },
   { key: "upstream", label: "Upstream" },
   { key: "downstream", label: "Downstream" },
-  { key: "critSeverity", label: "Critical" },
 ];
 
 // Ascending is the natural reading order per column: alphabetical for
@@ -195,7 +223,7 @@ function SortableHeader({ col, sortKey, sortDir, onSort }: { col: { key: SortKey
     <th
       onClick={() => onSort(col.key)}
       style={{
-        textAlign: col.key === "service" ? "left" : "right",
+        textAlign: col.key === "service" || col.key === "critSeverity" ? "left" : "right",
         padding: "8px 12px",
         borderBottom: "2px solid var(--sre-table-border)",
         fontSize: 10,
@@ -279,9 +307,13 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
               const p95 = row.p95Us != null ? Number(row.p95Us) : null;
               const upstream = Number(row.upstream || 0);
               const downstream = Number(row.downstream || 0);
-              const dot = severityColor(row.critSeverity != null ? String(row.critSeverity) : null);
-              const problemRole = row.problemRole != null ? String(row.problemRole) : null;
-              const problemId = row.problemId != null ? String(row.problemId) : null;
+              const severity = row.critSeverity != null ? String(row.critSeverity) : null;
+              const problems = (Array.isArray(row.problems) ? (row.problems as unknown[]) : []).map((p) => {
+                const rec = p as Record<string, unknown>;
+                return { role: String(rec.role || ""), problemId: String(rec.problemId || ""), problemName: String(rec.problemName || "") } as ProblemRef;
+              });
+              const hasProblem = problems.length > 0;
+              const isRootCause = problems.some((p) => p.role === "Root cause");
 
               return (
                 <tr
@@ -292,9 +324,16 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
                     background: isSelected ? "rgba(25,102,255,0.08)" : i % 2 === 0 ? "transparent" : "var(--sre-table-stripe)",
                   }}
                 >
-                  <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--sre-table-border)", fontWeight: 600 }}>
-                    {String(row.service || "—")}
-                    {problemRole && problemId && <ProblemChip role={problemRole} problemId={problemId} />}
+                  <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--sre-table-border)" }}>
+                    <CriticalityDot severity={severity} hasProblem={hasProblem} />
+                  </td>
+                  <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--sre-table-border)", fontWeight: 600, color: isRootCause ? RED : "var(--sre-text-primary)" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {String(row.service || "—")}
+                      {problems.map((p) => (
+                        <ProblemChip key={p.problemId} role={p.role} problemId={p.problemId} />
+                      ))}
+                    </span>
                   </td>
                   <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--sre-table-border)", textAlign: "right" }}>
                     {Number(row.requests || 0).toLocaleString()}
@@ -346,16 +385,6 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
                     }}
                   >
                     {downstream}
-                  </td>
-                  <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--sre-table-border)", textAlign: "right" }}>
-                    {dot ? (
-                      <span
-                        title={severityLabel(row.critSeverity != null ? String(row.critSeverity) : null)}
-                        style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: dot }}
-                      />
-                    ) : (
-                      "—"
-                    )}
                   </td>
                 </tr>
               );
