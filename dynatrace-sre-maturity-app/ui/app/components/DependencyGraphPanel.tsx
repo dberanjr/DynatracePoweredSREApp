@@ -3,6 +3,7 @@ import ReactFlow, {
   Background,
   Controls,
   Handle,
+  MarkerType,
   Position,
   ReactFlowProvider,
   useReactFlow,
@@ -53,6 +54,31 @@ function activeProblemOf(data: NodeData): ActiveProblemLink | null {
   return data.problemRole && data.problemId ? { role: data.problemRole, problemId: data.problemId } : null;
 }
 
+// One source + target handle on each of the 4 sides, all invisible. Which
+// pair a given edge actually uses is decided after layout (see
+// assignEdgeHandles) based on where the other node actually sits — fixed
+// left/right-only handles force every edge to loop around when the target
+// isn't roughly to the right, which is what caused the wraparound curves.
+const HANDLE_SIDES: { id: string; position: Position }[] = [
+  { id: "top", position: Position.Top },
+  { id: "right", position: Position.Right },
+  { id: "bottom", position: Position.Bottom },
+  { id: "left", position: Position.Left },
+];
+
+function DirectionalHandles() {
+  return (
+    <>
+      {HANDLE_SIDES.map(({ id, position }) => (
+        <React.Fragment key={id}>
+          <Handle type="source" position={position} id={`${id}-source`} style={{ opacity: 0 }} />
+          <Handle type="target" position={position} id={`${id}-target`} style={{ opacity: 0 }} />
+        </React.Fragment>
+      ))}
+    </>
+  );
+}
+
 // "Tiles" node — a small info card. Border priority: an active problem (red)
 // always wins over severity coloring, since a live incident is more urgent
 // than a static criticality rating; a bold blue halo marks the selected
@@ -77,7 +103,7 @@ function DependencyNodeCard({ data }: NodeProps<NodeData>) {
         cursor: "pointer",
       }}
     >
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <DirectionalHandles />
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
         {sevColor && !data.problemRole && (
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: sevColor, flexShrink: 0 }} />
@@ -112,7 +138,6 @@ function DependencyNodeCard({ data }: NodeProps<NodeData>) {
       {data.problemRole && (
         <div style={{ marginTop: 4, fontSize: 10, fontWeight: 700, color: PROBLEM_RED }}>● {data.problemRole}</div>
       )}
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
   return <SmartscapeViewMenu entityId={data.smartscapeId} trigger={card} activeProblem={activeProblemOf(data)} />;
@@ -132,7 +157,7 @@ function DependencyNodeCircle({ data }: NodeProps<NodeData>) {
 
   const circle = (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: BASE_CIRCLE_BOX, cursor: "pointer" }}>
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <DirectionalHandles />
       <div
         title={`${data.name}${data.appCIs.length ? ` — ${data.appCIs.join(", ")}` : ""}${data.problemRole ? ` — ${data.problemRole}` : ""}`}
         style={{
@@ -172,7 +197,6 @@ function DependencyNodeCircle({ data }: NodeProps<NodeData>) {
         {data.name}
       </span>
       {data.problemRole && <span style={{ fontSize: 8, fontWeight: 700, color: PROBLEM_RED, marginTop: 2 }}>● {data.problemRole}</span>}
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
   return <SmartscapeViewMenu entityId={data.smartscapeId} trigger={circle} activeProblem={activeProblemOf(data)} />;
@@ -194,7 +218,7 @@ function footprintFor(renderStyle: RenderStyle, viewMode: ViewMode): { width: nu
 function layoutWithDagre(nodes: Node<NodeData>[], edges: Edge[], rankdir: "LR" | "TB", footprint: { width: number; height: number }): Node<NodeData>[] {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir, nodesep: 30, ranksep: 80 });
+  g.setGraph({ rankdir, nodesep: 24, ranksep: 64 });
   // Dagre writes each node's computed x/y directly onto the label object
   // passed to setNode — a shared `footprint` reference across all nodes
   // means every node's position ends up overwriting the same object, so
@@ -244,6 +268,34 @@ function computeLayout(nodes: Node<NodeData>[], edges: Edge[], mode: LayoutMode,
   return layoutWithDagre(nodes, edges, "LR", footprint);
 }
 
+// Runs after layout, once every node's final position is known. Rather than
+// always exiting/entering from fixed left/right handles (which forces a
+// long loop-around whenever the target isn't roughly to the right — e.g. in
+// Force layout, or a dagre back-edge), each edge picks whichever of the 4
+// handle sides actually faces the other node, based on the dominant axis
+// between the two node centers.
+function assignEdgeHandles(nodes: Node<NodeData>[], edges: Edge[], footprint: { width: number; height: number }): Edge[] {
+  const centerById = new Map(
+    nodes.map((n) => [n.id, { x: n.position.x + footprint.width / 2, y: n.position.y + footprint.height / 2 }]),
+  );
+  return edges.map((e) => {
+    const s = centerById.get(e.source);
+    const t = centerById.get(e.target);
+    if (!s || !t) return e;
+    const dx = t.x - s.x;
+    const dy = t.y - s.y;
+    const [sourceSide, targetSide] =
+      Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? ["right", "left"] : ["left", "right"]) : dy >= 0 ? ["bottom", "top"] : ["top", "bottom"];
+    return {
+      ...e,
+      sourceHandle: `${sourceSide}-source`,
+      targetHandle: `${targetSide}-target`,
+      type: "straight",
+      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#9aa1ac" },
+    };
+  });
+}
+
 function SegmentedControl<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { key: T; label: string }[] }) {
   return (
     <div style={{ display: "flex", border: "1px solid var(--sre-border)", borderRadius: 6, overflow: "hidden" }}>
@@ -269,13 +321,25 @@ function SegmentedControl<T extends string>({ value, onChange, options }: { valu
   );
 }
 
-// Re-fits the viewport whenever the node set, layout, or fullscreen state
-// changes — must live inside <ReactFlowProvider> to access useReactFlow().
+// Re-fits the viewport whenever the node set, layout, render/view mode, or
+// fullscreen state changes (nodes is a new array on every one of those —
+// see the parent useMemo's dependency list) — must live inside
+// <ReactFlowProvider> to access useReactFlow(). Waits two animation frames
+// rather than one: node/handle DOM measurement (especially when switching
+// Tiles<->Nodes or resizing for Perf mode) can still be settling on the
+// frame right after a re-render, and fitting too early produces a
+// bounding box based on stale dimensions.
 function FlowCanvas({ nodes, edges, isExpanded }: { nodes: Node<NodeData>[]; edges: Edge[]; isExpanded: boolean }) {
   const { fitView } = useReactFlow();
   useEffect(() => {
-    const raf = requestAnimationFrame(() => fitView({ padding: 0.2, duration: 250 }));
-    return () => cancelAnimationFrame(raf);
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => fitView({ padding: 0.2, duration: 200 }));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
   }, [fitView, nodes, isExpanded]);
 
   return (
@@ -420,7 +484,8 @@ export const DependencyGraphPanel = ({ direction, originId, originName, chain, l
     }
 
     const footprint = footprintFor(renderStyle, viewMode);
-    return { nodes: computeLayout(nodeList, edgeList, layoutMode, footprint), edges: edgeList };
+    const laidOutNodes = computeLayout(nodeList, edgeList, layoutMode, footprint);
+    return { nodes: laidOutNodes, edges: assignEdgeHandles(laidOutNodes, edgeList, footprint) };
   }, [direction, originId, originName, chain, levels, layoutMode, nodeType, renderStyle, viewMode, rootProblem, rootMetrics]);
 
   const toolbar = (
