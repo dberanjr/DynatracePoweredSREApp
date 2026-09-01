@@ -10,6 +10,9 @@ export interface DependencyNode {
   appCIs: string[];
   severity: string | null;
   businessImpact: string | null;
+  problemRole: string | null; // "Root cause" | "Impacted" | null
+  problemId: string | null;
+  problemName: string | null;
 }
 
 export interface DependencyChainResult {
@@ -26,19 +29,36 @@ export interface DependencyChainResult {
 const MAX_LEVELS = 8;
 const SKIP_QUERY = "data record(skip = true) | limit 0";
 
+// Active-problem join, reused from ServiceGoldenSignalsTable's pattern.
+// Only appended for levels currently rendered (see includeProblems) — joining
+// this into all 8 levels x 2 directions on every selection would add a full
+// dt.davis.problems scan to queries the user hasn't asked to see yet.
+const PROBLEM_JOIN = `
+| lookup [
+    fetch dt.davis.problems, from:now()-30d
+    | filter event.status == "ACTIVE"
+    | expand affected_entity_ids
+    | fieldsAdd role = if(affected_entity_ids == root_cause_entity_id, "Root cause", else: "Impacted")
+    | fieldsAdd roleRank = if(role == "Root cause", 0, else: 1)
+    | sort roleRank asc
+    | dedup affected_entity_ids
+    | fields affected_entity_ids, role, problemName = event.name, problemId = event.id
+  ], sourceField: depId, lookupField: affected_entity_ids, fields: {problemRole = role, problemName, problemId}`;
+
 // AppCI tags live on the classic dt.entity.service model, not on the
 // smartscapeNodes "SERVICE" representation of the same entity (verified live —
 // smartscapeNodes' tags field is empty for every service tested). Hence the
 // hybrid: traverse topology via smartscapeNodes, then join each result back
 // to dt.entity.service for its applicationci tag(s). A service can carry more
 // than one applicationci tag (shared/platform services) — all are collected.
-function buildLevelQuery(originId: string, direction: ChainDirection, hops: number): string {
+function buildLevelQuery(originId: string, direction: ChainDirection, hops: number, includeProblems: boolean): string {
   const traverseLine = `| traverse edgeTypes: {calls}, targetTypes: {SERVICE}, direction: ${direction}`;
   const traverses = Array(hops).fill(traverseLine).join("\n");
   // dt.traverse.history[hops-1] is the previous hop's target node — i.e. the
   // parent of this node in this specific traversal path. For the first hop
   // there is no history entry; the parent is simply the origin.
   const parentExpr = hops === 1 ? `"${originId}"` : `toString(dt.traverse.history[${hops - 1}][\`id\`])`;
+  const extraFields = includeProblems ? ", problemRole, problemName, problemId" : "";
 
   return `smartscapeNodes "SERVICE"
 | filter id == toSmartscapeId("${originId}")
@@ -56,15 +76,18 @@ ${traverses}
     | fieldsAdd idList = splitString(entity_ids, " ")
     | expand idList
     | fields idList, severity, business_impact
-  ], sourceField: depId, lookupField: idList, fields: {critSeverity = severity, critImpact = business_impact}
-| fields depId, depName, parentId, appciList, critSeverity, critImpact
+  ], sourceField: depId, lookupField: idList, fields: {critSeverity = severity, critImpact = business_impact}${includeProblems ? PROBLEM_JOIN : ""}
+| fields depId, depName, parentId, appciList, critSeverity, critImpact${extraFields}
 | limit 300`;
 }
 
 // Hooks must be called an unconditional, fixed number of times — the 8 level
 // queries are unrolled explicitly (not looped) to satisfy react-hooks/rules-of-hooks.
-export function useDependencyChain(originId: string | null, direction: ChainDirection): DependencyChainResult {
-  const q = (hops: number) => (originId ? buildLevelQuery(originId, direction, hops) : SKIP_QUERY);
+// `levelsShown` scopes the (expensive) active-problem join to only the levels
+// currently rendered — deeper, not-yet-revealed levels skip it until the user
+// expands the slider that far.
+export function useDependencyChain(originId: string | null, direction: ChainDirection, levelsShown: number): DependencyChainResult {
+  const q = (hops: number) => (originId ? buildLevelQuery(originId, direction, hops, hops <= levelsShown) : SKIP_QUERY);
 
   const r1 = useDql({ query: q(1) });
   const r2 = useDql({ query: q(2) });
@@ -109,6 +132,9 @@ export function useDependencyChain(originId: string | null, direction: ChainDire
           appCIs,
           severity: r.critSeverity != null ? String(r.critSeverity) : null,
           businessImpact: r.critImpact != null ? String(r.critImpact) : null,
+          problemRole: r.problemRole != null ? String(r.problemRole) : null,
+          problemId: r.problemId != null ? String(r.problemId) : null,
+          problemName: r.problemName != null ? String(r.problemName) : null,
         });
       }
       if (newNodes.length > 0) {

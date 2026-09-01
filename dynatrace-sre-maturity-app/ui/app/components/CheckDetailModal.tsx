@@ -6,6 +6,7 @@ import { useAppFunction } from "@dynatrace-sdk/react-hooks";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { CHECK_DETAIL_CONFIGS, LEVEL_META, CheckDetailConfig } from "./checkDetailConfigs";
 import { HardcodedBadge } from "./HardcodedBadge";
+import { SmartscapeViewMenu } from "./SmartscapeViewMenu";
 
 interface Props {
   checkKey: string;
@@ -62,11 +63,16 @@ function DataTable({
   maxHeight,
   onRowClick,
   hiddenCols = [],
+  rowActions,
 }: {
   records: Record<string, unknown>[];
   maxHeight?: string;
   onRowClick?: (row: Record<string, unknown>) => void;
   hiddenCols?: string[];
+  /** Renders extra interactive content in a trailing column for each row
+   *  (e.g. a menu of drilldown links). The renderer is responsible for
+   *  stopping click propagation so it doesn't also trigger onRowClick. */
+  rowActions?: (row: Record<string, unknown>) => React.ReactNode;
 }) {
   if (!records.length) return null;
   const allCols = Object.keys(records[0]);
@@ -98,6 +104,17 @@ function DataTable({
                 {col}
               </th>
             ))}
+            {rowActions && (
+              <th
+                style={{
+                  borderBottom: "2px solid var(--sre-border, rgba(0,0,0,0.1))",
+                  background: "var(--sre-surface, #fff)",
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 1,
+                }}
+              />
+            )}
           </tr>
         </thead>
         <tbody>
@@ -126,6 +143,18 @@ function DataTable({
                   {formatValue(row[col])}
                 </td>
               ))}
+              {rowActions && (
+                <td
+                  style={{
+                    padding: "5px 10px",
+                    borderBottom: "1px solid var(--sre-border, rgba(0,0,0,0.06))",
+                    textAlign: "right",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {rowActions(row)}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -806,8 +835,12 @@ function DataPanel({
       }
     : config?.logHostRowClick
       ? (row: Record<string, unknown>) => {
-          const host = String(row.host ?? "");
-          if (!host) return;
+          const source = String(row.source ?? "");
+          if (!source) return;
+          // "type" tells us whether this row's source came from host.name (real
+          // host — classic/Cloud Native Full Stack) or container_name (Firehose/
+          // OpenPipeline-ingested PaaS logs), so we filter on the right field.
+          const field = row.type === "Service" ? "container_name" : "host.name";
           const envUrl = getEnvironmentUrl().replace(/\/$/, "");
           const payload = {
             version: 2,
@@ -818,7 +851,7 @@ function DataPanel({
             },
             analysisMode: "logs",
             showDqlEditor: false,
-            filterFieldQuery: `host.name = *"${host}"* `,
+            filterFieldQuery: `${field} = *"${source}"* `,
             facetsCollapse: true,
           };
           const url = `${envUrl}/ui/apps/dynatrace.logs/#${encodeURIComponent(JSON.stringify(payload))}`;
@@ -1028,6 +1061,11 @@ function DataPanel({
       records={records}
       maxHeight={scrollable ? TABLE_HEIGHT : undefined}
       onRowClick={onRowClick}
+      rowActions={
+        config?.smartscapeMenuRowClick
+          ? (row) => <SmartscapeViewMenu entityId={String(row.entityId ?? "")} />
+          : undefined
+      }
       hiddenCols={
         config?.serviceRowClick || config?.hostEntityRowClick || config?.serviceMapRowClick || config?.cloudResourceRowClick
           ? ["entityId"]
@@ -1902,6 +1940,11 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
               {config?.serviceMapRowClick && (
                 <div style={{ fontSize: 10, color: "var(--sre-text-secondary, #6F747F)", fontStyle: "italic" }}>
                   — click a row to open in Services Map
+                </div>
+              )}
+              {config?.smartscapeMenuRowClick && (
+                <div style={{ fontSize: 10, color: "var(--sre-text-secondary, #6F747F)", fontStyle: "italic" }}>
+                  — use the View menu for Smartscape topology views
                 </div>
               )}
               {config?.k8sClusterRowClick && (

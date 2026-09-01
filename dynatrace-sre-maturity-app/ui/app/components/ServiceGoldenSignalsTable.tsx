@@ -1,10 +1,10 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { RefreshOverlay } from "./RefreshOverlay";
-import { severityColor, severityLabel } from "./dependencyUtils";
+import { severityColor, severityLabel, severityRank, formatDurationUs } from "./dependencyUtils";
 
 interface Props {
   appCI: string;
@@ -42,7 +42,7 @@ const buildQuery = (appCI: string) => `fetch dt.entity.service
   ], sourceField:id, lookupField:dt.entity.service, fields:{req, fail, p95}
 | fieldsAdd requests = if(isNull(req), 0, else: toLong(req))
 | fieldsAdd errorRate = if(isNotNull(req) and req > 0, round(fail * 100.0 / req, decimals:2), else: 0)
-| fieldsAdd p95Ms = if(isNotNull(p95), round(p95 / 1000.0, decimals:1), else: null)
+| fieldsAdd p95Us = p95
 | lookup [
     load "/lookups/critical_services"
     | filter lower(appci) == lower("${appCI}")
@@ -73,7 +73,7 @@ const buildQuery = (appCI: string) => `fetch dt.entity.service
     | dedup affected_entity_ids
     | fields affected_entity_ids, role, problemName = event.name, problemId = event.id
   ], sourceField:id, lookupField:affected_entity_ids, fields:{problemRole = role, problemName, problemId}
-| fields service = entity.name, entityId = id, requests, errorRate, p95Ms, critSeverity, downstream, upstream, problemRole, problemName, problemId
+| fields service = entity.name, entityId = id, requests, errorRate, p95Us, critSeverity, downstream, upstream, problemRole, problemName, problemId
 | sort errorRate desc, requests desc
 | limit 200`;
 
@@ -96,14 +96,14 @@ function errorRateBg(pct: number) {
   if (pct >= 1) return amberBg;
   return "transparent";
 }
-function latencyColor(ms: number) {
-  if (ms >= 1000) return RED;
-  if (ms >= 500) return AMBER;
+function latencyColor(us: number) {
+  if (us >= 1000000) return RED;
+  if (us >= 500000) return AMBER;
   return "var(--sre-text-primary)";
 }
-function latencyBg(ms: number) {
-  if (ms >= 1000) return redBg;
-  if (ms >= 500) return amberBg;
+function latencyBg(us: number) {
+  if (us >= 1000000) return redBg;
+  if (us >= 500000) return amberBg;
   return "transparent";
 }
 function depCountColor(count: number) {
@@ -147,9 +147,79 @@ function ProblemChip({ role, problemId }: { role: string; problemId: string }) {
   );
 }
 
+type SortKey = "service" | "requests" | "errorRate" | "p95Us" | "upstream" | "downstream" | "critSeverity";
+
+const COLUMNS: { key: SortKey; label: string }[] = [
+  { key: "service", label: "Service" },
+  { key: "requests", label: "Requests (1h)" },
+  { key: "errorRate", label: "Error %" },
+  { key: "p95Us", label: "P95" },
+  { key: "upstream", label: "Upstream" },
+  { key: "downstream", label: "Downstream" },
+  { key: "critSeverity", label: "Critical" },
+];
+
+// Ascending is the natural reading order per column: alphabetical for
+// service, most-severe-first for critical (severityRank is already
+// low-number-is-worse), smallest-first for everything else. Numeric/critical
+// columns default to descending on first click since "biggest/worst first"
+// is usually what's wanted; service defaults ascending (A-Z).
+function compareRows(a: Record<string, unknown>, b: Record<string, unknown>, key: SortKey): number {
+  if (key === "service") return String(a.service || "").localeCompare(String(b.service || ""));
+  if (key === "critSeverity") {
+    return severityRank(a.critSeverity != null ? String(a.critSeverity) : null) - severityRank(b.critSeverity != null ? String(b.critSeverity) : null);
+  }
+  return Number(a[key] || 0) - Number(b[key] || 0);
+}
+
+function SortableHeader({ col, sortKey, sortDir, onSort }: { col: { key: SortKey; label: string }; sortKey: SortKey; sortDir: "asc" | "desc"; onSort: (k: SortKey) => void }) {
+  const isActive = sortKey === col.key;
+  return (
+    <th
+      onClick={() => onSort(col.key)}
+      style={{
+        textAlign: col.key === "service" ? "left" : "right",
+        padding: "8px 12px",
+        borderBottom: "2px solid var(--sre-table-border)",
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: 0.5,
+        color: isActive ? "#1966FF" : "var(--sre-text-secondary)",
+        textTransform: "uppercase",
+        position: "sticky",
+        top: 0,
+        background: "var(--sre-surface)",
+        cursor: "pointer",
+        userSelect: "none",
+        whiteSpace: "nowrap",
+      }}
+      title="Click to sort"
+    >
+      {col.label}
+      {isActive && <span style={{ marginLeft: 4 }}>{sortDir === "asc" ? "▲" : "▼"}</span>}
+    </th>
+  );
+}
+
 export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect }: Props) => {
   const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query: buildQuery(appCI) });
-  const records = (data?.records || []) as Record<string, unknown>[];
+  const [sortKey, setSortKey] = useState<SortKey>("errorRate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "service" ? "asc" : "desc");
+    }
+  };
+
+  const records = useMemo(() => {
+    const rows = ((data?.records || []) as Record<string, unknown>[]).slice();
+    rows.sort((a, b) => compareRows(a, b, sortKey) * (sortDir === "asc" ? 1 : -1));
+    return rows;
+  }, [data, sortKey, sortDir]);
 
   if (isLoading) {
     return (
@@ -171,25 +241,8 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect }
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr>
-              {["Service", "Requests (1h)", "Error %", "P95 (ms)", "Upstream", "Downstream", "Critical"].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    textAlign: h === "Service" ? "left" : "right",
-                    padding: "8px 12px",
-                    borderBottom: "2px solid var(--sre-table-border)",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: 0.5,
-                    color: "var(--sre-text-secondary)",
-                    textTransform: "uppercase",
-                    position: "sticky",
-                    top: 0,
-                    background: "var(--sre-surface)",
-                  }}
-                >
-                  {h}
-                </th>
+              {COLUMNS.map((col) => (
+                <SortableHeader key={col.key} col={col} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
               ))}
             </tr>
           </thead>
@@ -198,7 +251,7 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect }
               const entityId = String(row.entityId || "");
               const isSelected = entityId === selectedServiceId;
               const errPct = Number(row.errorRate || 0);
-              const p95 = row.p95Ms != null ? Number(row.p95Ms) : null;
+              const p95 = row.p95Us != null ? Number(row.p95Us) : null;
               const upstream = Number(row.upstream || 0);
               const downstream = Number(row.downstream || 0);
               const dot = severityColor(row.critSeverity != null ? String(row.critSeverity) : null);
@@ -243,7 +296,7 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect }
                       background: p95 != null ? latencyBg(p95) : "transparent",
                     }}
                   >
-                    {p95 != null ? p95.toLocaleString() : "—"}
+                    {p95 != null ? formatDurationUs(p95) : "—"}
                   </td>
                   <td
                     style={{

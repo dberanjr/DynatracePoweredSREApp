@@ -34,3 +34,12 @@ export function severityLabel(severity: string | null): string {
       return "—";
   }
 }
+
+// Auto-formats a microsecond duration into the smallest sensible unit —
+// mirrors GoldenSignalsPage.tsx's formatDurationUs, using "s"/"ms" abbreviations.
+export function formatDurationUs(us: number): string {
+  if (us >= 60 * 1000000) return `${(us / (60 * 1000000)).toFixed(1)} min`;
+  if (us >= 1000000) return `${(us / 1000000).toFixed(2)} s`;
+  if (us >= 1000) return `${(us / 1000).toFixed(0)} ms`;
+  return `${Math.round(us)} μs`;
+}
