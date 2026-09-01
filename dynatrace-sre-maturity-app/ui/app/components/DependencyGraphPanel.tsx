@@ -20,6 +20,7 @@ import { ChainDirection, DependencyChainResult } from "../hooks/useDependencyCha
 import { DependencyLevelSlider } from "./DependencyLevelSlider";
 import { SmartscapeViewMenu, ActiveProblemLink } from "./SmartscapeViewMenu";
 import { severityColor, severityRank } from "./dependencyUtils";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 type LayoutMode = "horizontal" | "vertical" | "force";
 type RenderStyle = "tiles" | "nodes";
@@ -377,12 +378,22 @@ export const DependencyGraphPanel = ({ direction, originId, originName, chain, l
       },
       position: { x: 0, y: 0 },
     }));
-    let edgeList: Edge[] = rawEdges.map((e) => ({
-      id: `${e.source}->${e.target}`,
-      source: e.source,
-      target: e.target,
-      style: { stroke: "var(--sre-border, #999)" },
-    }));
+    // Each level is fetched as its own independent, async query against a
+    // *dynamic* (live-observed, not static) "calls" edge set — two levels
+    // can occasionally see slightly different topology snapshots a moment
+    // apart, leaving a child's recorded parentId pointing at a node that
+    // isn't actually in this render's node set. React Flow throws ("node
+    // not found") on a dangling edge reference, so this is filtered
+    // defensively rather than trusted blindly.
+    const knownNodeIds = new Set(rawNodes.map((n) => n.id));
+    let edgeList: Edge[] = rawEdges
+      .filter((e) => knownNodeIds.has(e.source) && knownNodeIds.has(e.target))
+      .map((e) => ({
+        id: `${e.source}->${e.target}`,
+        source: e.source,
+        target: e.target,
+        style: { stroke: "var(--sre-border, #999)" },
+      }));
 
     if (viewMode === "critical") {
       const filtered = filterToCritical(nodeList, edgeList, originId);
@@ -492,9 +503,15 @@ export const DependencyGraphPanel = ({ direction, originId, originName, chain, l
   } else {
     body = (
       <div style={{ height: canvasHeight, border: "1px solid var(--sre-border, rgba(0,0,0,0.12))", borderRadius: 8, overflow: "hidden" }}>
-        <ReactFlowProvider>
-          <FlowCanvas nodes={nodes} edges={edges} isExpanded={isExpanded} />
-        </ReactFlowProvider>
+        {/* Scoped locally so a rendering failure (React Flow/dagre/d3-force)
+            only replaces this one panel, not the whole page — the shared
+            ErrorBoundary wrapping the route would otherwise take out the
+            table, header, and the other direction's panel too. */}
+        <ErrorBoundary compact>
+          <ReactFlowProvider>
+            <FlowCanvas nodes={nodes} edges={edges} isExpanded={isExpanded} />
+          </ReactFlowProvider>
+        </ErrorBoundary>
       </div>
     );
   }
