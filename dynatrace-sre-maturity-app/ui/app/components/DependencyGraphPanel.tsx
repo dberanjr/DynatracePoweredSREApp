@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactFlow, {
+  BaseEdge,
   Background,
   Controls,
+  EdgeProps,
+  getStraightPath,
   Handle,
   MarkerType,
   Position,
   ReactFlowProvider,
   useReactFlow,
+  useStore,
   Node,
   Edge,
   NodeProps,
@@ -140,7 +144,7 @@ function DependencyNodeCard({ data }: NodeProps<NodeData>) {
       )}
     </div>
   );
-  return <SmartscapeViewMenu entityId={data.smartscapeId} trigger={card} activeProblem={activeProblemOf(data)} />;
+  return <SmartscapeViewMenu entityId={data.smartscapeId} entityName={data.name} trigger={card} activeProblem={activeProblemOf(data)} />;
 }
 
 // "Nodes" (compact circle) view — always-visible label chip below the circle
@@ -199,7 +203,7 @@ function DependencyNodeCircle({ data }: NodeProps<NodeData>) {
       {data.problemRole && <span style={{ fontSize: 8, fontWeight: 700, color: PROBLEM_RED, marginTop: 2 }}>● {data.problemRole}</span>}
     </div>
   );
-  return <SmartscapeViewMenu entityId={data.smartscapeId} trigger={circle} activeProblem={activeProblemOf(data)} />;
+  return <SmartscapeViewMenu entityId={data.smartscapeId} entityName={data.name} trigger={circle} activeProblem={activeProblemOf(data)} />;
 }
 
 const NODE_TYPES = { "dep-tile": DependencyNodeCard, "dep-circle": DependencyNodeCircle };
@@ -268,30 +272,79 @@ function computeLayout(nodes: Node<NodeData>[], edges: Edge[], mode: LayoutMode,
   return layoutWithDagre(nodes, edges, "LR", footprint);
 }
 
-// Runs after layout, once every node's final position is known. Rather than
-// always exiting/entering from fixed left/right handles (which forces a
-// long loop-around whenever the target isn't roughly to the right — e.g. in
-// Force layout, or a dagre back-edge), each edge picks whichever of the 4
-// handle sides actually faces the other node, based on the dominant axis
-// between the two node centers.
-function assignEdgeHandles(nodes: Node<NodeData>[], edges: Edge[], footprint: { width: number; height: number }): Edge[] {
-  const centerById = new Map(
-    nodes.map((n) => [n.id, { x: n.position.x + footprint.width / 2, y: n.position.y + footprint.height / 2 }]),
-  );
+// True "floating edge" geometry: rather than exiting/entering from one of a
+// fixed set of discrete handle positions (which only lines up with the
+// other node's center when both nodes happen to share an axis — rarely true
+// in Force layout, and never guaranteed once node sizes vary in Perf mode),
+// this computes the exact point where the straight line between the two
+// node *centers* crosses each node's own boundary. The specific
+// sourceHandle/targetHandle referenced on the edge no longer affects the
+// rendered path at all (FloatingEdge below ignores React Flow's
+// handle-derived coordinates and recomputes its own) — they're kept only
+// because React Flow's connection model expects some valid handle id.
+function getBoundaryPoint(node: Node<NodeData> | undefined, towards: { x: number; y: number }, isCircle: boolean, fallback: { width: number; height: number }): { x: number; y: number } {
+  if (!node) return towards;
+  const width = node.width ?? fallback.width;
+  const height = node.height ?? fallback.height;
+  const pos = node.positionAbsolute ?? node.position;
+  const cx = pos.x + width / 2;
+  const cy = pos.y + height / 2;
+  const dx = towards.x - cx;
+  const dy = towards.y - cy;
+  if (isCircle) {
+    const radius = (BASE_CIRCLE_DIAMETER * (node.data?.sizeScale ?? 1)) / 2;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    return { x: cx + (dx / dist) * radius, y: cy + (dy / dist) * radius };
+  }
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const halfW = width / 2;
+  const halfH = height / 2;
+  const scaleX = dx !== 0 ? halfW / Math.abs(dx) : Infinity;
+  const scaleY = dy !== 0 ? halfH / Math.abs(dy) : Infinity;
+  const scale = Math.min(scaleX, scaleY);
+  return { x: cx + dx * scale, y: cy + dy * scale };
+}
+
+function FloatingEdge({ id, source, target, style, markerEnd, data }: EdgeProps<{ isCircle: boolean; fallback: { width: number; height: number } }>) {
+  const sourceNode = useStore((s) => s.nodeInternals.get(source)) as Node<NodeData> | undefined;
+  const targetNode = useStore((s) => s.nodeInternals.get(target)) as Node<NodeData> | undefined;
+  if (!sourceNode || !targetNode) return null;
+
+  const isCircle = !!data?.isCircle;
+  const fallback = data?.fallback ?? { width: BASE_TILE_WIDTH, height: BASE_TILE_HEIGHT };
+  const sourceFallbackPos = sourceNode.positionAbsolute ?? sourceNode.position;
+  const targetFallbackPos = targetNode.positionAbsolute ?? targetNode.position;
+  const targetCenter = { x: (targetFallbackPos.x) + (targetNode.width ?? fallback.width) / 2, y: (targetFallbackPos.y) + (targetNode.height ?? fallback.height) / 2 };
+  const sourceCenter = { x: (sourceFallbackPos.x) + (sourceNode.width ?? fallback.width) / 2, y: (sourceFallbackPos.y) + (sourceNode.height ?? fallback.height) / 2 };
+
+  const start = getBoundaryPoint(sourceNode, targetCenter, isCircle, fallback);
+  const end = getBoundaryPoint(targetNode, sourceCenter, isCircle, fallback);
+  const [path] = getStraightPath({ sourceX: start.x, sourceY: start.y, targetX: end.x, targetY: end.y });
+
+  return <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} />;
+}
+
+const EDGE_TYPES = { floating: FloatingEdge };
+
+// Finalizes appearance after layout: a fixed handle pair (ignored visually —
+// see FloatingEdge above), an arrow marker, and — in Perf mode — line
+// thickness AND arrowhead size both scaled together by the same throughput
+// ratio, so a thick edge doesn't end in a marker sized for a thin one.
+function finalizeEdges(edges: Edge[], viewMode: ViewMode, isCircle: boolean, fallback: { width: number; height: number }): Edge[] {
+  const maxTraffic = Math.max(1, ...edges.map((e) => Number((e.data as any)?.throughput) || 0));
   return edges.map((e) => {
-    const s = centerById.get(e.source);
-    const t = centerById.get(e.target);
-    if (!s || !t) return e;
-    const dx = t.x - s.x;
-    const dy = t.y - s.y;
-    const [sourceSide, targetSide] =
-      Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? ["right", "left"] : ["left", "right"]) : dy >= 0 ? ["bottom", "top"] : ["top", "bottom"];
+    const throughput = Number((e.data as any)?.throughput) || 0;
+    const t = viewMode === "perf" ? Math.min(1, throughput / maxTraffic) : 0;
+    const strokeWidth = 1.5 + t * 6; // [1.5, 7.5]
+    const markerSize = 12 + t * 12; // [12, 24] — scales in lockstep with strokeWidth
     return {
       ...e,
-      sourceHandle: `${sourceSide}-source`,
-      targetHandle: `${targetSide}-target`,
-      type: "straight",
-      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#9aa1ac" },
+      type: "floating",
+      sourceHandle: "right-source",
+      targetHandle: "left-target",
+      data: { ...e.data, isCircle, fallback },
+      style: { stroke: "#9aa1ac", strokeWidth },
+      markerEnd: { type: MarkerType.ArrowClosed, width: markerSize, height: markerSize, color: "#9aa1ac" },
     };
   });
 }
@@ -343,7 +396,15 @@ function FlowCanvas({ nodes, edges, isExpanded }: { nodes: Node<NodeData>[]; edg
   }, [fitView, nodes, isExpanded]);
 
   return (
-    <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} proOptions={{ hideAttribution: true }} nodesDraggable={false} nodesConnectable={false}>
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={NODE_TYPES}
+      edgeTypes={EDGE_TYPES}
+      proOptions={{ hideAttribution: true }}
+      nodesDraggable={false}
+      nodesConnectable={false}
+    >
       <Background gap={16} />
       <Controls showInteractive={false} />
     </ReactFlow>
@@ -379,9 +440,9 @@ function filterToCritical(nodeList: Node<NodeData>[], edgeList: Edge[], originId
 }
 
 export const DependencyGraphPanel = ({ direction, originId, originName, chain, levels, maxLevels, onLevelsChange, rootProblem, rootMetrics }: Props) => {
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>("horizontal");
-  const [renderStyle, setRenderStyle] = useState<RenderStyle>("tiles");
-  const [viewMode, setViewMode] = useState<ViewMode>("standard");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("force");
+  const [renderStyle, setRenderStyle] = useState<RenderStyle>("nodes");
+  const [viewMode, setViewMode] = useState<ViewMode>("perf");
   const [isExpanded, setIsExpanded] = useState(false);
   const nodeType = renderStyle === "tiles" ? "dep-tile" : "dep-circle";
 
@@ -456,7 +517,7 @@ export const DependencyGraphPanel = ({ direction, originId, originName, chain, l
         id: `${e.source}->${e.target}`,
         source: e.source,
         target: e.target,
-        style: { stroke: "var(--sre-border, #999)" },
+        data: { throughput: e.throughput },
       }));
 
     if (viewMode === "critical") {
@@ -467,25 +528,18 @@ export const DependencyGraphPanel = ({ direction, originId, originName, chain, l
 
     if (viewMode === "perf") {
       const p95ById = new Map(rawNodes.map((n) => [n.id, n.p95Us]));
-      const trafficById = new Map(rawNodes.map((n) => [n.id, n.requestCount]));
       const maxP95 = Math.max(1, ...rawNodes.map((n) => n.p95Us || 0));
-      const maxTraffic = Math.max(1, ...rawEdges.map((e) => e.throughput || 0));
-
       nodeList = nodeList.map((n) => {
         const p95 = p95ById.get(n.id) || 0;
         const scale = 0.75 + Math.min(1, p95 / maxP95) * 0.95; // ~[0.75, 1.7]
         return { ...n, data: { ...n.data, sizeScale: scale } };
       });
-      edgeList = edgeList.map((e) => {
-        const throughput = trafficById.get(e.target) || 0;
-        const strokeWidth = 1 + Math.min(1, throughput / maxTraffic) * 6; // [1, 7]
-        return { ...e, style: { ...e.style, strokeWidth } };
-      });
     }
 
     const footprint = footprintFor(renderStyle, viewMode);
     const laidOutNodes = computeLayout(nodeList, edgeList, layoutMode, footprint);
-    return { nodes: laidOutNodes, edges: assignEdgeHandles(laidOutNodes, edgeList, footprint) };
+    const finalEdges = finalizeEdges(edgeList, viewMode, renderStyle === "nodes", footprint);
+    return { nodes: laidOutNodes, edges: finalEdges };
   }, [direction, originId, originName, chain, levels, layoutMode, nodeType, renderStyle, viewMode, rootProblem, rootMetrics]);
 
   const toolbar = (
