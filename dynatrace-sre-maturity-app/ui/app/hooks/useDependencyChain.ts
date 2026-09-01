@@ -13,6 +13,8 @@ export interface DependencyNode {
   problemRole: string | null; // "Root cause" | "Impacted" | null
   problemId: string | null;
   problemName: string | null;
+  requestCount: number | null; // 1h request count — used as an edge-throughput proxy in Perf mode
+  p95Us: number | null; // 1h p95 response time, microseconds — used for node sizing in Perf mode
 }
 
 export interface DependencyChainResult {
@@ -26,7 +28,7 @@ export interface DependencyChainResult {
   hasError: boolean;
 }
 
-const MAX_LEVELS = 8;
+export const MAX_LEVELS = 8;
 const SKIP_QUERY = "data record(skip = true) | limit 0";
 
 // Active-problem join, reused from ServiceGoldenSignalsTable's pattern.
@@ -44,6 +46,19 @@ const PROBLEM_JOIN = `
     | dedup affected_entity_ids
     | fields affected_entity_ids, role, problemName = event.name, problemId = event.id
   ], sourceField: depId, lookupField: affected_entity_ids, fields: {problemRole = role, problemName, problemId}`;
+
+// Golden-signal join for Perf-mode sizing — same timeseries shape as
+// ServiceGoldenSignalsTable. Note: this is per-NODE traffic (the target
+// service's own total request volume), used as a proxy for "how heavily
+// used is the path into this dependency" — not a true caller->callee
+// edge-level metric, which isn't available as a simple dimensional lookup.
+const METRICS_JOIN = `
+| lookup [
+    timeseries {
+      req = sum(dt.service.request.count, rollup: sum, scalar:true),
+      p95 = percentile(dt.service.request.response_time, 95, rollup: avg, scalar:true)
+    }, by:{dt.entity.service}, from:now()-1h
+  ], sourceField: depId, lookupField: dt.entity.service, fields: {reqCount = req, p95Us = p95}`;
 
 // AppCI tags live on the classic dt.entity.service model, not on the
 // smartscapeNodes "SERVICE" representation of the same entity (verified live —
@@ -76,8 +91,8 @@ ${traverses}
     | fieldsAdd idList = splitString(entity_ids, " ")
     | expand idList
     | fields idList, severity, business_impact
-  ], sourceField: depId, lookupField: idList, fields: {critSeverity = severity, critImpact = business_impact}${includeProblems ? PROBLEM_JOIN : ""}
-| fields depId, depName, parentId, appciList, critSeverity, critImpact${extraFields}
+  ], sourceField: depId, lookupField: idList, fields: {critSeverity = severity, critImpact = business_impact}${METRICS_JOIN}${includeProblems ? PROBLEM_JOIN : ""}
+| fields depId, depName, parentId, appciList, critSeverity, critImpact, reqCount, p95Us${extraFields}
 | limit 300`;
 }
 
@@ -135,6 +150,8 @@ export function useDependencyChain(originId: string | null, direction: ChainDire
           problemRole: r.problemRole != null ? String(r.problemRole) : null,
           problemId: r.problemId != null ? String(r.problemId) : null,
           problemName: r.problemName != null ? String(r.problemName) : null,
+          requestCount: r.reqCount != null ? Number(r.reqCount) : null,
+          p95Us: r.p95Us != null ? Number(r.p95Us) : null,
         });
       }
       if (newNodes.length > 0) {

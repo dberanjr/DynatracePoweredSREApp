@@ -6,8 +6,9 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { AppIdentityBar } from "../components/AppIdentityBar";
 import { SPINE_BACKGROUND } from "../components/MaturitySpine";
 import { ServiceGoldenSignalsTable, SeverityFilterValue } from "../components/ServiceGoldenSignalsTable";
-import { DependencyGraphPanel } from "../components/DependencyGraphPanel";
+import { DependencyGraphPanel, NodeMetrics } from "../components/DependencyGraphPanel";
 import { DependencySummaryPanel, ChainShapeSummary } from "../components/DependencySummaryPanel";
+import { SeverityLegend } from "../components/SeverityLegend";
 import { useDependencyChain } from "../hooks/useDependencyChain";
 import { ActiveProblemLink } from "../components/SmartscapeViewMenu";
 
@@ -30,6 +31,16 @@ const ROOT_PROBLEM_QUERY = (serviceId: string) => `fetch dt.davis.problems, from
 | fieldsAdd roleRank = if(role == "Root cause", 0, else: 1)
 | sort roleRank asc
 | fields role, problemId = event.id
+| limit 1`;
+
+// Root's own traffic/latency for Perf-mode node sizing — same golden-signal
+// shape used per-level in useDependencyChain, scoped to one known id.
+const ROOT_METRICS_QUERY = (serviceId: string) => `timeseries {
+    req = sum(dt.service.request.count, rollup: sum, scalar:true),
+    p95 = percentile(dt.service.request.response_time, 95, rollup: avg, scalar:true)
+  }, by:{dt.entity.service}, from:now()-1h
+| filter dt.entity.service == "${serviceId}"
+| fields reqCount = req, p95Us = p95
 | limit 1`;
 
 // Headline counts for the header card — a cheaper, count-only variant of
@@ -149,6 +160,14 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
     ? { role: String(rootProblemRow.role || ""), problemId: String(rootProblemRow.problemId || "") }
     : null;
 
+  const { data: rootMetricsData } = useDql({
+    query: selectedServiceId ? ROOT_METRICS_QUERY(selectedServiceId) : "data record(skip = true) | limit 0",
+  });
+  const rootMetricsRow = rootMetricsData?.records?.[0] as Record<string, unknown> | undefined;
+  const rootMetrics: NodeMetrics | null = rootMetricsRow
+    ? { requestCount: rootMetricsRow.reqCount != null ? Number(rootMetricsRow.reqCount) : null, p95Us: rootMetricsRow.p95Us != null ? Number(rootMetricsRow.p95Us) : null }
+    : null;
+
   const handleSelect = (serviceId: string, serviceName: string) => {
     setSelectedServiceId(serviceId);
     setSelectedServiceName(serviceName);
@@ -194,10 +213,13 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
       ) : (
         <>
           <div>
-            <Flex justifyContent="space-between" alignItems="center" style={{ marginBottom: 8 }}>
+            <Flex justifyContent="space-between" alignItems="center" style={{ marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
               <Heading level={5}>Services</Heading>
               <SeverityFilterToggle active={severityFilter} onToggle={toggleSeverity} />
             </Flex>
+            <div style={{ marginBottom: 8 }}>
+              <SeverityLegend />
+            </div>
             <ServiceGoldenSignalsTable appCI={appCI} selectedServiceId={selectedServiceId} onSelect={handleSelect} severityFilter={severityFilter} />
           </div>
 
@@ -221,9 +243,10 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                   maxLevels={MAX_LEVELS}
                   onLevelsChange={setUpstreamLevels}
                   rootProblem={rootProblem}
+                  rootMetrics={rootMetrics}
                 />
                 <div style={{ marginTop: 12 }}>
-                  <DependencySummaryPanel direction="upstream" chain={upstreamChain} />
+                  <DependencySummaryPanel direction="upstream" chain={upstreamChain} onSelectService={handleSelect} />
                 </div>
               </div>
 
@@ -241,9 +264,10 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                   maxLevels={MAX_LEVELS}
                   onLevelsChange={setDownstreamLevels}
                   rootProblem={rootProblem}
+                  rootMetrics={rootMetrics}
                 />
                 <div style={{ marginTop: 12 }}>
-                  <DependencySummaryPanel direction="downstream" chain={downstreamChain} />
+                  <DependencySummaryPanel direction="downstream" chain={downstreamChain} onSelectService={handleSelect} />
                 </div>
               </div>
             </div>

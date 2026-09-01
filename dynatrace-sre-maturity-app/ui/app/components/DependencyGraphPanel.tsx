@@ -19,10 +19,16 @@ import { MaximizeIcon, MinimizeIcon } from "@dynatrace/strato-icons";
 import { ChainDirection, DependencyChainResult } from "../hooks/useDependencyChain";
 import { DependencyLevelSlider } from "./DependencyLevelSlider";
 import { SmartscapeViewMenu, ActiveProblemLink } from "./SmartscapeViewMenu";
-import { severityColor } from "./dependencyUtils";
+import { severityColor, severityRank } from "./dependencyUtils";
 
 type LayoutMode = "horizontal" | "vertical" | "force";
 type RenderStyle = "tiles" | "nodes";
+type ViewMode = "standard" | "perf" | "critical";
+
+export interface NodeMetrics {
+  requestCount: number | null;
+  p95Us: number | null;
+}
 
 interface NodeData {
   name: string;
@@ -32,10 +38,15 @@ interface NodeData {
   smartscapeId: string;
   problemRole: string | null;
   problemId: string | null;
+  sizeScale: number; // 1 = base size; only varies from 1 in Perf mode
 }
 
 const PROBLEM_RED = "#dc3545";
 const ROOT_BLUE = "#1966FF";
+const BASE_TILE_WIDTH = 190;
+const BASE_TILE_HEIGHT = 64;
+const BASE_CIRCLE_DIAMETER = 52;
+const BASE_CIRCLE_BOX = 88;
 
 function activeProblemOf(data: NodeData): ActiveProblemLink | null {
   return data.problemRole && data.problemId ? { role: data.problemRole, problemId: data.problemId } : null;
@@ -45,9 +56,12 @@ function activeProblemOf(data: NodeData): ActiveProblemLink | null {
 // always wins over severity coloring, since a live incident is more urgent
 // than a static criticality rating; a bold blue halo marks the selected
 // service regardless, layered outside so it never fights with the border.
+// Card width/height scale with data.sizeScale in Perf mode.
 function DependencyNodeCard({ data }: NodeProps<NodeData>) {
   const sevColor = severityColor(data.severity);
   const borderColor = data.problemRole ? PROBLEM_RED : data.isRoot ? ROOT_BLUE : "var(--sre-border, rgba(0,0,0,0.15))";
+  const width = Math.round(BASE_TILE_WIDTH * data.sizeScale);
+  const height = Math.round(BASE_TILE_HEIGHT * data.sizeScale);
   const card = (
     <div
       style={{
@@ -56,7 +70,8 @@ function DependencyNodeCard({ data }: NodeProps<NodeData>) {
         borderRadius: 8,
         padding: "8px 10px",
         background: "var(--sre-surface, #fff)",
-        width: 190,
+        width,
+        minHeight: height,
         fontSize: 12,
         cursor: "pointer",
       }}
@@ -104,21 +119,24 @@ function DependencyNodeCard({ data }: NodeProps<NodeData>) {
 
 // "Nodes" (compact circle) view — always-visible label chip below the circle
 // (per user preference), AppCI shown inside the circle itself. Same
-// problem/selection color priority as the tile card.
+// problem/selection color priority as the tile card. Circle diameter scales
+// with data.sizeScale in Perf mode; the outer bounding box stays a fixed
+// size (large enough for the biggest circle) so layout spacing never varies.
 function DependencyNodeCircle({ data }: NodeProps<NodeData>) {
   const sevColor = severityColor(data.severity);
   const ringColor = data.problemRole ? PROBLEM_RED : sevColor || "var(--sre-border, rgba(0,0,0,0.25))";
   const primaryAppCI = data.appCIs[0] ? data.appCIs[0].toUpperCase() : "?";
   const extraAppCIs = data.appCIs.length > 1 ? `+${data.appCIs.length - 1}` : "";
+  const diameter = Math.round(BASE_CIRCLE_DIAMETER * data.sizeScale);
 
   const circle = (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 88, cursor: "pointer" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: BASE_CIRCLE_BOX, cursor: "pointer" }}>
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <div
         title={`${data.name}${data.appCIs.length ? ` — ${data.appCIs.join(", ")}` : ""}${data.problemRole ? ` — ${data.problemRole}` : ""}`}
         style={{
-          width: 52,
-          height: 52,
+          width: diameter,
+          height: diameter,
           borderRadius: "50%",
           border: `${data.problemRole || data.isRoot ? 3 : 2}px solid ${ringColor}`,
           boxShadow: data.isRoot ? `0 0 0 4px ${ROOT_BLUE}4d` : undefined,
@@ -141,7 +159,7 @@ function DependencyNodeCircle({ data }: NodeProps<NodeData>) {
           fontSize: 9,
           fontWeight: 600,
           color: "var(--sre-text-secondary)",
-          maxWidth: 88,
+          maxWidth: BASE_CIRCLE_BOX,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -160,26 +178,35 @@ function DependencyNodeCircle({ data }: NodeProps<NodeData>) {
 }
 
 const NODE_TYPES = { "dep-tile": DependencyNodeCard, "dep-circle": DependencyNodeCircle };
-const NODE_WIDTH = 190;
-const NODE_HEIGHT = 64;
 
-function layoutWithDagre(nodes: Node<NodeData>[], edges: Edge[], rankdir: "LR" | "TB"): Node<NodeData>[] {
+// Layout footprint is a uniform assumption fed to dagre/force so spacing
+// never overlaps — in Perf mode this is deliberately the size of the
+// *largest possible* node (rather than tracking real per-node dimensions),
+// trading a little wasted whitespace around smaller nodes for zero overlap risk.
+function footprintFor(renderStyle: RenderStyle, viewMode: ViewMode): { width: number; height: number } {
+  if (renderStyle === "tiles") {
+    return viewMode === "perf" ? { width: 270, height: 112 } : { width: BASE_TILE_WIDTH, height: BASE_TILE_HEIGHT };
+  }
+  return viewMode === "perf" ? { width: 110, height: 110 } : { width: BASE_CIRCLE_BOX, height: BASE_CIRCLE_BOX };
+}
+
+function layoutWithDagre(nodes: Node<NodeData>[], edges: Edge[], rankdir: "LR" | "TB", footprint: { width: number; height: number }): Node<NodeData>[] {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir, nodesep: 30, ranksep: 80 });
-  nodes.forEach((n) => g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT }));
+  nodes.forEach((n) => g.setNode(n.id, footprint));
   edges.forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
   return nodes.map((n) => {
     const pos = g.node(n.id);
-    return { ...n, position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 } };
+    return { ...n, position: { x: pos.x - footprint.width / 2, y: pos.y - footprint.height / 2 } };
   });
 }
 
 // Force-directed layout: settled once via synchronous ticks rather than an
 // animated, ongoing simulation — a static snapshot is simpler to reason
 // about and matches how the dagre layouts behave (computed once per render).
-function layoutWithForce(nodes: Node<NodeData>[], edges: Edge[]): Node<NodeData>[] {
+function layoutWithForce(nodes: Node<NodeData>[], edges: Edge[], footprint: { width: number; height: number }): Node<NodeData>[] {
   const simNodes = nodes.map((n, i) => ({
     id: n.id,
     x: Math.cos((i / nodes.length) * Math.PI * 2) * 200 + 300,
@@ -196,7 +223,7 @@ function layoutWithForce(nodes: Node<NodeData>[], edges: Edge[]): Node<NodeData>
     )
     .force("charge", forceManyBody().strength(-400))
     .force("center", forceCenter(300, 200))
-    .force("collide", forceCollide(NODE_WIDTH / 1.6))
+    .force("collide", forceCollide(Math.max(footprint.width, footprint.height) / 1.6))
     .stop();
 
   for (let i = 0; i < 300; i++) simulation.tick();
@@ -205,10 +232,10 @@ function layoutWithForce(nodes: Node<NodeData>[], edges: Edge[]): Node<NodeData>
   return nodes.map((n) => ({ ...n, position: posById.get(n.id) || { x: 0, y: 0 } }));
 }
 
-function computeLayout(nodes: Node<NodeData>[], edges: Edge[], mode: LayoutMode): Node<NodeData>[] {
-  if (mode === "vertical") return layoutWithDagre(nodes, edges, "TB");
-  if (mode === "force") return layoutWithForce(nodes, edges);
-  return layoutWithDagre(nodes, edges, "LR");
+function computeLayout(nodes: Node<NodeData>[], edges: Edge[], mode: LayoutMode, footprint: { width: number; height: number }): Node<NodeData>[] {
+  if (mode === "vertical") return layoutWithDagre(nodes, edges, "TB", footprint);
+  if (mode === "force") return layoutWithForce(nodes, edges, footprint);
+  return layoutWithDagre(nodes, edges, "LR", footprint);
 }
 
 function SegmentedControl<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { key: T; label: string }[] }) {
@@ -262,58 +289,123 @@ interface Props {
   maxLevels: number;
   onLevelsChange: (n: number) => void;
   rootProblem: ActiveProblemLink | null;
+  rootMetrics: NodeMetrics | null;
 }
 
-export const DependencyGraphPanel = ({ direction, originId, originName, chain, levels, maxLevels, onLevelsChange, rootProblem }: Props) => {
+// Keeps a node if it's critical itself, is the root, or sits directly
+// adjacent (one edge away) to a critical node — "critical services and
+// their direct dependencies."
+function filterToCritical(nodeList: Node<NodeData>[], edgeList: Edge[], originId: string): { nodes: Node<NodeData>[]; edges: Edge[] } {
+  const criticalIds = new Set(nodeList.filter((n) => severityRank(n.data.severity) <= 3).map((n) => n.id));
+  const keep = new Set<string>([originId, ...criticalIds]);
+  edgeList.forEach((e) => {
+    if (criticalIds.has(e.source)) keep.add(e.target);
+    if (criticalIds.has(e.target)) keep.add(e.source);
+  });
+  return {
+    nodes: nodeList.filter((n) => keep.has(n.id)),
+    edges: edgeList.filter((e) => keep.has(e.source) && keep.has(e.target)),
+  };
+}
+
+export const DependencyGraphPanel = ({ direction, originId, originName, chain, levels, maxLevels, onLevelsChange, rootProblem, rootMetrics }: Props) => {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("horizontal");
   const [renderStyle, setRenderStyle] = useState<RenderStyle>("tiles");
+  const [viewMode, setViewMode] = useState<ViewMode>("standard");
   const [isExpanded, setIsExpanded] = useState(false);
   const nodeType = renderStyle === "tiles" ? "dep-tile" : "dep-circle";
 
   const { nodes, edges } = useMemo(() => {
-    const nodeList: Node<NodeData>[] = [
+    type RawNode = { id: string; isRoot?: boolean; name: string; appCIs: string[]; severity: string | null; problemRole: string | null; problemId: string | null; requestCount: number | null; p95Us: number | null };
+    const rawNodes: RawNode[] = [
       {
         id: originId,
-        type: nodeType,
-        data: {
-          name: originName,
-          appCIs: [],
-          severity: null,
-          isRoot: true,
-          smartscapeId: originId,
-          problemRole: rootProblem?.role || null,
-          problemId: rootProblem?.problemId || null,
-        },
-        position: { x: 0, y: 0 },
+        isRoot: true,
+        name: originName,
+        appCIs: [],
+        severity: null,
+        problemRole: rootProblem?.role || null,
+        problemId: rootProblem?.problemId || null,
+        requestCount: rootMetrics?.requestCount ?? null,
+        p95Us: rootMetrics?.p95Us ?? null,
       },
     ];
-    const edgeList: Edge[] = [];
+    let rawEdges: { source: string; target: string; throughput: number | null }[] = [];
     for (let lvl = 1; lvl <= levels; lvl++) {
       const levelNodes = chain.levels[lvl] || [];
       for (const n of levelNodes) {
-        nodeList.push({
+        rawNodes.push({
           id: n.id,
-          type: nodeType,
-          data: {
-            name: n.name,
-            appCIs: n.appCIs,
-            severity: n.severity,
-            smartscapeId: n.id,
-            problemRole: n.problemRole,
-            problemId: n.problemId,
-          },
-          position: { x: 0, y: 0 },
+          name: n.name,
+          appCIs: n.appCIs,
+          severity: n.severity,
+          problemRole: n.problemRole,
+          problemId: n.problemId,
+          requestCount: n.requestCount,
+          p95Us: n.p95Us,
         });
         // Real-world "calls" direction is always caller -> callee. Forward
         // (downstream) traversal already walks that direction, so
         // parent -> node is correct. Backward (upstream) traversal walks
         // callee -> caller, so the arrow is reversed to preserve semantics.
         const [source, target] = direction === "forward" ? [n.parentId, n.id] : [n.id, n.parentId];
-        edgeList.push({ id: `${source}->${target}`, source, target, style: { stroke: "var(--sre-border, #999)" } });
+        // Edge throughput proxy: the dependency (non-root) endpoint's own
+        // total request volume — a true caller->callee edge metric isn't
+        // available as a simple dimensional lookup, so this approximates
+        // "how much traffic touches this path" via the node it leads to.
+        rawEdges.push({ source, target, throughput: n.requestCount });
       }
     }
-    return { nodes: computeLayout(nodeList, edgeList, layoutMode), edges: edgeList };
-  }, [direction, originId, originName, chain, levels, layoutMode, nodeType, rootProblem]);
+
+    let nodeList: Node<NodeData>[] = rawNodes.map((n) => ({
+      id: n.id,
+      type: nodeType,
+      data: {
+        name: n.name,
+        appCIs: n.appCIs,
+        severity: n.severity,
+        isRoot: n.isRoot,
+        smartscapeId: n.id,
+        problemRole: n.problemRole,
+        problemId: n.problemId,
+        sizeScale: 1,
+      },
+      position: { x: 0, y: 0 },
+    }));
+    let edgeList: Edge[] = rawEdges.map((e) => ({
+      id: `${e.source}->${e.target}`,
+      source: e.source,
+      target: e.target,
+      style: { stroke: "var(--sre-border, #999)" },
+    }));
+
+    if (viewMode === "critical") {
+      const filtered = filterToCritical(nodeList, edgeList, originId);
+      nodeList = filtered.nodes;
+      edgeList = filtered.edges;
+    }
+
+    if (viewMode === "perf") {
+      const p95ById = new Map(rawNodes.map((n) => [n.id, n.p95Us]));
+      const trafficById = new Map(rawNodes.map((n) => [n.id, n.requestCount]));
+      const maxP95 = Math.max(1, ...rawNodes.map((n) => n.p95Us || 0));
+      const maxTraffic = Math.max(1, ...rawEdges.map((e) => e.throughput || 0));
+
+      nodeList = nodeList.map((n) => {
+        const p95 = p95ById.get(n.id) || 0;
+        const scale = 0.75 + Math.min(1, p95 / maxP95) * 0.95; // ~[0.75, 1.7]
+        return { ...n, data: { ...n.data, sizeScale: scale } };
+      });
+      edgeList = edgeList.map((e) => {
+        const throughput = trafficById.get(e.target) || 0;
+        const strokeWidth = 1 + Math.min(1, throughput / maxTraffic) * 6; // [1, 7]
+        return { ...e, style: { ...e.style, strokeWidth } };
+      });
+    }
+
+    const footprint = footprintFor(renderStyle, viewMode);
+    return { nodes: computeLayout(nodeList, edgeList, layoutMode, footprint), edges: edgeList };
+  }, [direction, originId, originName, chain, levels, layoutMode, nodeType, renderStyle, viewMode, rootProblem, rootMetrics]);
 
   const toolbar = (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
@@ -335,6 +427,15 @@ export const DependencyGraphPanel = ({ direction, originId, originName, chain, l
           { key: "horizontal", label: "Horizontal" },
           { key: "vertical", label: "Vertical" },
           { key: "force", label: "Force" },
+        ]}
+      />
+      <SegmentedControl<ViewMode>
+        value={viewMode}
+        onChange={setViewMode}
+        options={[
+          { key: "standard", label: "Standard" },
+          { key: "perf", label: "Perf" },
+          { key: "critical", label: "Critical" },
         ]}
       />
       <button
@@ -375,6 +476,12 @@ export const DependencyGraphPanel = ({ direction, originId, originName, chain, l
         <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6 }}>
           No {direction === "forward" ? "downstream" : "upstream"} dependencies found
         </Paragraph>
+      </div>
+    );
+  } else if (nodes.length <= 1) {
+    body = (
+      <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6 }}>No critical services in this chain</Paragraph>
       </div>
     );
   } else {

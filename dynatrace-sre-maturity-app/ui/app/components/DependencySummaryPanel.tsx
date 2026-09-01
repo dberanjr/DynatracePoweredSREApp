@@ -1,11 +1,15 @@
 import React from "react";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
-import { DependencyChainResult, DependencyNode } from "../hooks/useDependencyChain";
+import { DependencyChainResult, DependencyNode, MAX_LEVELS } from "../hooks/useDependencyChain";
 import { severityColor } from "./dependencyUtils";
 
 interface Props {
   direction: "upstream" | "downstream";
   chain: DependencyChainResult;
+}
+
+interface SummaryPanelProps extends Props {
+  onSelectService: (serviceId: string, serviceName: string) => void;
 }
 
 const ACCENT = "#1966FF";
@@ -54,12 +58,16 @@ function AppCIWeightRow({ code, count, max }: { code: string; count: number; max
 // criticality color (or neutral if unrated); fill turns solid red only when
 // the service has an active problem right now, regardless of criticality —
 // live incident state is a separate signal from a static severity rating.
-function DirectDepChip({ node }: { node: DependencyNode }) {
+// Clicking pivots the whole view to focus on that service (immediate reflow,
+// same as picking it from the table).
+function DirectDepChip({ node, onSelectService }: { node: DependencyNode; onSelectService: (id: string, name: string) => void }) {
   const borderColor = severityColor(node.severity) || "var(--sre-border, rgba(0,0,0,0.25))";
   const hasProblem = !!node.problemRole;
   return (
-    <span
-      title={`${node.name}${node.appCIs.length ? ` — ${node.appCIs.join(", ")}` : ""}${hasProblem ? ` — ${node.problemRole}` : ""}`}
+    <button
+      type="button"
+      onClick={() => onSelectService(node.id, node.name)}
+      title={`${node.name}${node.appCIs.length ? ` — ${node.appCIs.join(", ")}` : ""}${hasProblem ? ` — ${node.problemRole}` : ""} — click to focus`}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -72,13 +80,14 @@ function DirectDepChip({ node }: { node: DependencyNode }) {
         background: hasProblem ? PROBLEM_RED : "var(--sre-table-stripe, rgba(0,0,0,0.03))",
         color: hasProblem ? "#fff" : "var(--sre-text-primary)",
         maxWidth: 220,
+        cursor: "pointer",
       }}
     >
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.name}</span>
       {node.appCIs.length > 0 && (
         <span style={{ fontWeight: 800, opacity: hasProblem ? 0.95 : 0.6, flexShrink: 0 }}>{node.appCIs.join(",")}</span>
       )}
-    </span>
+    </button>
   );
 }
 
@@ -86,56 +95,63 @@ function DirectDepChip({ node }: { node: DependencyNode }) {
 // Rendered above the topology map (page-level placement), since it's the
 // summary a user wants to see before diving into the graph itself.
 export function ChainShapeSummary({ direction, chain }: Props) {
-  const levelNumbers = Object.keys(chain.perLevelCounts)
-    .map(Number)
-    .sort((a, b) => a - b);
   const barMaxHeight = 40;
+  // Always render all 8 possible level slots (not just the levels that
+  // actually have data) so the chart's shape/width is consistent across
+  // services — a chain that dead-ends at level 3 visibly shows 5 empty
+  // slots after it, rather than the chart just being narrower.
+  const allLevels = Array.from({ length: MAX_LEVELS }, (_, i) => i + 1);
+  const max = Math.max(1, ...allLevels.map((l) => chain.perLevelCounts[l] || 0));
 
   return (
     <div style={{ marginBottom: 8 }}>
       <Heading level={6} style={{ marginBottom: 6 }}>
         Chain shape — {chain.capped ? "8+ (capped)" : chain.totalLevels} level{chain.totalLevels === 1 ? "" : "s"}
       </Heading>
-      {levelNumbers.length === 0 ? (
+      {chain.totalLevels === 0 ? (
         <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6, fontSize: 11 }}>
           No {direction} dependencies found
         </Paragraph>
       ) : (
         <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: barMaxHeight + 26 }}>
-          {(() => {
-            const max = Math.max(1, ...levelNumbers.map((l) => chain.perLevelCounts[l]));
-            return levelNumbers.map((lvl) => {
-              const count = chain.perLevelCounts[lvl];
-              const isLastAndCapped = chain.capped && lvl === levelNumbers[levelNumbers.length - 1];
-              const h = Math.max(4, Math.round((count / max) * barMaxHeight));
-              return (
-                <div key={lvl} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: "1 1 0", minWidth: 0 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--sre-text-secondary)", marginBottom: 3 }}>{count}</span>
-                  <div
-                    title={`Level ${lvl}: ${count} new node${count === 1 ? "" : "s"}`}
-                    style={{
-                      width: "100%",
-                      maxWidth: 28,
-                      height: h,
-                      borderRadius: "4px 4px 0 0",
-                      background: isLastAndCapped ? `repeating-linear-gradient(135deg, ${ACCENT}, ${ACCENT} 3px, ${ACCENT}55 3px, ${ACCENT}55 6px)` : ACCENT,
-                    }}
-                  />
-                  <span style={{ fontSize: 9, color: "var(--sre-text-secondary)", marginTop: 3, opacity: 0.7 }}>
-                    L{lvl}
-                    {isLastAndCapped ? "+" : ""}
-                  </span>
-                </div>
-              );
-            });
-          })()}
+          {allLevels.map((lvl) => {
+            const count = chain.perLevelCounts[lvl] || 0;
+            const isEmpty = count === 0;
+            const isLastAndCapped = chain.capped && lvl === MAX_LEVELS;
+            const h = isEmpty ? 3 : Math.max(4, Math.round((count / max) * barMaxHeight));
+            return (
+              <div key={lvl} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: "1 1 0", minWidth: 0 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: isEmpty ? "var(--sre-text-secondary)" : "var(--sre-text-secondary)", marginBottom: 3, opacity: isEmpty ? 0.4 : 1 }}>
+                  {count}
+                </span>
+                <div
+                  title={isEmpty ? `Level ${lvl}: no dependencies` : `Level ${lvl}: ${count} new node${count === 1 ? "" : "s"}`}
+                  style={{
+                    width: "100%",
+                    maxWidth: 28,
+                    height: h,
+                    borderRadius: "4px 4px 0 0",
+                    background: isEmpty
+                      ? "var(--sre-border, rgba(0,0,0,0.12))"
+                      : isLastAndCapped
+                        ? `repeating-linear-gradient(135deg, ${ACCENT}, ${ACCENT} 3px, ${ACCENT}55 3px, ${ACCENT}55 6px)`
+                        : ACCENT,
+                  }}
+                />
+                <span style={{ fontSize: 9, color: "var(--sre-text-secondary)", marginTop: 3, opacity: isEmpty ? 0.4 : 0.7 }}>
+                  L{lvl}
+                  {isLastAndCapped ? "+" : ""}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-export const DependencySummaryPanel = ({ direction, chain }: Props) => {
+export const DependencySummaryPanel = ({ direction, chain, onSelectService }: SummaryPanelProps) => {
   const directLevel = chain.levels[1] || [];
   const rankedAppCIs = Object.entries(chain.appCICounts).sort((a, b) => b[1] - a[1]);
   const maxAppCICount = Math.max(1, ...rankedAppCIs.map(([, c]) => c));
@@ -151,7 +167,7 @@ export const DependencySummaryPanel = ({ direction, chain }: Props) => {
         ) : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
             {directLevel.map((n) => (
-              <DirectDepChip key={n.id} node={n} />
+              <DirectDepChip key={n.id} node={n} onSelectService={onSelectService} />
             ))}
           </div>
         )}
