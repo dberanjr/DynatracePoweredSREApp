@@ -144,7 +144,7 @@ export const App = () => {
             <Route path="/proactive" element={<ErrorBoundary><ProactivePage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
             <Route path="/problem-analytics" element={<ErrorBoundary><ProblemAnalyticsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
             <Route path="/scorecards" element={<ErrorBoundary><ScorecardsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/upstream-downstream" element={<ErrorBoundary><UpstreamDownstreamPage appCI={appCI} /></ErrorBoundary>} />
+            <Route path="/upstream-downstream" element={<ErrorBoundary><UpstreamDownstreamPage appCI={appCI} onAppCIChange={setSelectedAppCI} /></ErrorBoundary>} />
             <Route path="/definitions" element={<ErrorBoundary><DefinitionsPage /></ErrorBoundary>} />
             <Route path="/portfolio" element={<ErrorBoundary><PortfolioPage /></ErrorBoundary>} />
             <Route path="/data" element={<ErrorBoundary><Data /></ErrorBoundary>} />

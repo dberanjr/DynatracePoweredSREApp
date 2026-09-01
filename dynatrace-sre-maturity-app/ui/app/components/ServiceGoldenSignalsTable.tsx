@@ -27,6 +27,11 @@ interface Props {
   onSelect: (serviceId: string, serviceName: string) => void;
   /** Empty set = no filtering (show all services). */
   severityFilter: Set<SeverityFilterValue>;
+  /** When set, shows only these specific entity ids (e.g. "the problematic
+   * services" handed off from an AppCI click in the Unique AppCIs list) —
+   * a separate, additive restriction on top of severityFilter. Null/undefined
+   * = no restriction. */
+  restrictToServiceIds?: Set<string> | null;
 }
 
 // Adapts the existing L2 "Golden Signal SLIs" query (checkDetailConfigs.ts)
@@ -246,7 +251,7 @@ function SortableHeader({ col, sortKey, sortDir, onSort }: { col: { key: SortKey
   );
 }
 
-export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, severityFilter }: Props) => {
+export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, severityFilter, restrictToServiceIds }: Props) => {
   const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query: buildQuery(appCI) });
   const [sortKey, setSortKey] = useState<SortKey>("errorRate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -265,10 +270,13 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
     if (severityFilter.size > 0) {
       rows = rows.filter((r) => severityFilter.has(severityBucket(r.critSeverity != null ? String(r.critSeverity) : null)));
     }
+    if (restrictToServiceIds && restrictToServiceIds.size > 0) {
+      rows = rows.filter((r) => restrictToServiceIds.has(String(r.entityId || "")));
+    }
     rows = rows.slice();
     rows.sort((a, b) => compareRows(a, b, sortKey) * (sortDir === "asc" ? 1 : -1));
     return rows;
-  }, [data, sortKey, sortDir, severityFilter]);
+  }, [data, sortKey, sortDir, severityFilter, restrictToServiceIds]);
 
   if (isLoading) {
     return (
@@ -283,7 +291,11 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
   if (records.length === 0) {
     return (
       <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6 }}>
-        {severityFilter.size > 0 ? "No services match the selected severity filter." : "No services found for this AppCI."}
+        {restrictToServiceIds && restrictToServiceIds.size > 0
+          ? "None of the flagged services matched this AppCI's service list."
+          : severityFilter.size > 0
+            ? "No services match the selected severity filter."
+            : "No services found for this AppCI."}
       </Paragraph>
     );
   }

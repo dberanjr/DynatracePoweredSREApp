@@ -125,9 +125,10 @@ function SeverityFilterToggle({ active, onToggle }: { active: Set<SeverityFilter
 
 interface Props {
   appCI: string;
+  onAppCIChange: (appCI: string) => void;
 }
 
-export const UpstreamDownstreamPage = ({ appCI }: Props) => {
+export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
   // Set by CheckDetailModal's "4. Smartscape Discovery" row click (see
   // dependenciesRowClick) via navigate("/upstream-downstream", {state}) — a
   // one-time handoff for the initial service, read only on first mount.
@@ -140,6 +141,12 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
   const [upstreamLevels, setUpstreamLevels] = useState(1);
   const [downstreamLevels, setDownstreamLevels] = useState(1);
   const [severityFilter, setSeverityFilter] = useState<Set<SeverityFilterValue>>(new Set());
+  // Set when an AppCI badge in "Unique AppCIs" is clicked. Keyed by which
+  // AppCI it was computed for — if the user later switches AppCI through the
+  // ordinary dropdown, this simply stops matching (rather than needing an
+  // effect to explicitly clear it, which would race with the same-render
+  // state updates below when this feature itself changes the AppCI).
+  const [problemServiceFilter, setProblemServiceFilter] = useState<{ appCI: string; ids: Set<string> } | null>(null);
 
   const toggleSeverity = (v: SeverityFilterValue) => {
     setSeverityFilter((prev) => {
@@ -182,6 +189,23 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
     setUpstreamLevels(1);
     setDownstreamLevels(1);
   };
+
+  // From an AppCI badge click in "Unique AppCIs": switch the global AppCI
+  // filter, restrict the service table to just the flagged services, and
+  // either auto-select the one service or leave it to the user to pick
+  // among several.
+  const handleSelectAppCI = (targetAppCI: string, problematicServices: { id: string; name: string }[]) => {
+    onAppCIChange(targetAppCI);
+    setProblemServiceFilter({ appCI: targetAppCI, ids: new Set(problematicServices.map((s) => s.id)) });
+    if (problematicServices.length === 1) {
+      handleSelect(problematicServices[0].id, problematicServices[0].name);
+    } else {
+      setSelectedServiceId(null);
+      setSelectedServiceName("");
+    }
+  };
+
+  const activeProblemFilterIds = problemServiceFilter?.appCI === appCI ? problemServiceFilter.ids : null;
 
   return (
     <Flex flexDirection="column" gap={20} padding={16}>
@@ -228,7 +252,31 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
             <div style={{ marginBottom: 8 }}>
               <SeverityLegend />
             </div>
-            <ServiceGoldenSignalsTable appCI={appCI} selectedServiceId={selectedServiceId} onSelect={handleSelect} severityFilter={severityFilter} />
+            {activeProblemFilterIds && (
+              <Flex
+                alignItems="center"
+                justifyContent="space-between"
+                style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 6, background: "rgba(220,53,69,0.08)", border: "1px solid rgba(220,53,69,0.3)" }}
+              >
+                <Paragraph style={{ fontSize: 12, color: "var(--sre-text-primary)", margin: 0 }}>
+                  Showing {activeProblemFilterIds.size} problematic service{activeProblemFilterIds.size === 1 ? "" : "s"} for <strong>{appCI}</strong>
+                </Paragraph>
+                <button
+                  type="button"
+                  onClick={() => setProblemServiceFilter(null)}
+                  style={{ fontSize: 11, fontWeight: 700, color: "#dc3545", background: "transparent", border: "none", cursor: "pointer" }}
+                >
+                  Show all services
+                </button>
+              </Flex>
+            )}
+            <ServiceGoldenSignalsTable
+              appCI={appCI}
+              selectedServiceId={selectedServiceId}
+              onSelect={handleSelect}
+              severityFilter={severityFilter}
+              restrictToServiceIds={activeProblemFilterIds}
+            />
           </div>
 
           {!selectedServiceId ? (
@@ -254,7 +302,7 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                   rootMetrics={rootMetrics}
                 />
                 <div style={{ marginTop: 12 }}>
-                  <DependencySummaryPanel direction="upstream" chain={upstreamChain} levels={upstreamLevels} onSelectService={handleSelect} />
+                  <DependencySummaryPanel direction="upstream" chain={upstreamChain} levels={upstreamLevels} onSelectService={handleSelect} onSelectAppCI={handleSelectAppCI} />
                 </div>
               </div>
 
@@ -275,7 +323,7 @@ export const UpstreamDownstreamPage = ({ appCI }: Props) => {
                   rootMetrics={rootMetrics}
                 />
                 <div style={{ marginTop: 12 }}>
-                  <DependencySummaryPanel direction="downstream" chain={downstreamChain} levels={downstreamLevels} onSelectService={handleSelect} />
+                  <DependencySummaryPanel direction="downstream" chain={downstreamChain} levels={downstreamLevels} onSelectService={handleSelect} onSelectAppCI={handleSelectAppCI} />
                 </div>
               </div>
             </div>
