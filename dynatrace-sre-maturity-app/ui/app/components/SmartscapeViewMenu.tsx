@@ -17,6 +17,10 @@ export const SMARTSCAPE_VIEWS: { label: string; view: string }[] = [
 export interface ActiveProblemLink {
   role: string; // "Root cause" | "Impacted"
   problemId: string;
+  /** The human-readable "P-XXXX" problem identifier — shown to the user
+   * instead of the generic role word. Null on the rare row where Davis
+   * hasn't populated it yet. */
+  problemDisplayId: string | null;
 }
 
 interface Props {
@@ -36,7 +40,10 @@ function openSmartscapeView(entityId: string, view: string) {
   window.open(`${envUrl}/ui/apps/dynatrace.smartscape/view/dynatrace.smartscape.${view}/${entityId}#from=now()-2h&to=now()`, "_blank");
 }
 
-function openProblem(problemId: string) {
+// Shared by every "open this problem" affordance in the Dependencies tab
+// (this menu, the topology node labels, the table's problem chips) so the
+// URL-building logic — and its gotcha — lives in exactly one place.
+export function openProblem(problemId: string) {
   // Problems app takes the internal event.id UUID, NOT the display_id
   // (P-XXXX) — display_id renders a blank page.
   const envUrl = getEnvironmentUrl().replace(/\/$/, "");
@@ -121,7 +128,7 @@ export function SmartscapeViewMenu({ entityId, entityName, trigger, activeProble
           ))}
           {activeProblem && (
             <Menu.Item onSelect={() => openProblem(activeProblem.problemId)}>
-              Go to problem ({activeProblem.role})
+              Go to problem ({activeProblem.problemDisplayId || activeProblem.role})
             </Menu.Item>
           )}
         </Menu.Content>

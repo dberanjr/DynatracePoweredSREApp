@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 
 export type ChainDirection = "forward" | "backward";
@@ -13,6 +14,7 @@ export interface DependencyNode {
   problemRole: string | null; // "Root cause" | "Impacted" | null
   problemId: string | null;
   problemName: string | null;
+  problemDisplayId: string | null; // human-readable "P-XXXX", for display only — never for the problem-app URL
   requestCount: number | null; // 1h request count — used as an edge-throughput proxy in Perf mode
   p95Us: number | null; // 1h p95 response time, microseconds — used for node sizing in Perf mode
 }
@@ -44,8 +46,8 @@ const PROBLEM_JOIN = `
     | fieldsAdd roleRank = if(role == "Root cause", 0, else: 1)
     | sort roleRank asc
     | dedup affected_entity_ids
-    | fields affected_entity_ids, role, problemName = event.name, problemId = event.id
-  ], sourceField: depId, lookupField: affected_entity_ids, fields: {problemRole = role, problemName, problemId}`;
+    | fields affected_entity_ids, role, problemName = event.name, problemId = event.id, problemDisplayId = display_id
+  ], sourceField: depId, lookupField: affected_entity_ids, fields: {problemRole = role, problemName, problemId, problemDisplayId}`;
 
 // Golden-signal join for Perf-mode sizing — same timeseries shape as
 // ServiceGoldenSignalsTable. Note: this is per-NODE traffic (the target
@@ -73,7 +75,7 @@ function buildLevelQuery(originId: string, direction: ChainDirection, hops: numb
   // parent of this node in this specific traversal path. For the first hop
   // there is no history entry; the parent is simply the origin.
   const parentExpr = hops === 1 ? `"${originId}"` : `toString(dt.traverse.history[${hops - 1}][\`id\`])`;
-  const extraFields = includeProblems ? ", problemRole, problemName, problemId" : "";
+  const extraFields = includeProblems ? ", problemRole, problemName, problemId, problemDisplayId" : "";
 
   return `smartscapeNodes "SERVICE"
 | filter id == toSmartscapeId("${originId}")
@@ -117,60 +119,74 @@ export function useDependencyChain(originId: string | null, direction: ChainDire
   const isLoading = originId != null && rawLevels.some((r) => r.isLoading);
   const hasError = rawLevels.some((r) => !!r.error);
 
-  const levels: Record<number, DependencyNode[]> = {};
-  const perLevelCounts: Record<number, number> = {};
-  const seen = new Set<string>();
-  const uniqueAppCIs = new Set<string>();
-  const appCICounts: Record<string, number> = {};
-  let totalLevels = 0;
-  let capped = false;
+  // Without this memo, every render of this hook (which happens on *any*
+  // unrelated re-render of the parent page, not just when new data arrives)
+  // built brand-new levels/appCICounts/etc. objects — a new `chain` object
+  // every time, cascading into a new `nodes` array in DependencyGraphPanel's
+  // own useMemo, which retriggers its fitView() effect. In fullscreen, that
+  // meant panning could get yanked back to "fit" mid-drag whenever an
+  // unrelated re-render happened to land while the user was interacting.
+  // Keyed on the 8 useDql results' own data references (assumed stable
+  // across re-renders when nothing actually changed) plus originId, so the
+  // returned object's identity only changes when the underlying data does.
+  return useMemo(() => {
+    const levels: Record<number, DependencyNode[]> = {};
+    const perLevelCounts: Record<number, number> = {};
+    const seen = new Set<string>();
+    const uniqueAppCIs = new Set<string>();
+    const appCICounts: Record<string, number> = {};
+    let totalLevels = 0;
+    let capped = false;
 
-  if (originId) {
-    for (let i = 0; i < MAX_LEVELS; i++) {
-      const levelNum = i + 1;
-      const records = (rawLevels[i].data?.records || []) as Record<string, unknown>[];
-      const newNodes: DependencyNode[] = [];
-      for (const r of records) {
-        const id = String(r.depId || "");
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        const appCIs = (Array.isArray(r.appciList) ? (r.appciList as unknown[]) : []).map((a) => String(a).toLowerCase());
-        appCIs.forEach((a) => {
-          uniqueAppCIs.add(a);
-          appCICounts[a] = (appCICounts[a] || 0) + 1;
-        });
-        newNodes.push({
-          id,
-          name: String(r.depName || id),
-          parentId: String(r.parentId || originId),
-          level: levelNum,
-          appCIs,
-          severity: r.critSeverity != null ? String(r.critSeverity) : null,
-          businessImpact: r.critImpact != null ? String(r.critImpact) : null,
-          problemRole: r.problemRole != null ? String(r.problemRole) : null,
-          problemId: r.problemId != null ? String(r.problemId) : null,
-          problemName: r.problemName != null ? String(r.problemName) : null,
-          requestCount: r.reqCount != null ? Number(r.reqCount) : null,
-          p95Us: r.p95Us != null ? Number(r.p95Us) : null,
-        });
-      }
-      if (newNodes.length > 0) {
-        levels[levelNum] = newNodes;
-        perLevelCounts[levelNum] = newNodes.length;
-        totalLevels = levelNum;
-        if (levelNum === MAX_LEVELS) capped = true;
+    if (originId) {
+      for (let i = 0; i < MAX_LEVELS; i++) {
+        const levelNum = i + 1;
+        const records = (rawLevels[i].data?.records || []) as Record<string, unknown>[];
+        const newNodes: DependencyNode[] = [];
+        for (const r of records) {
+          const id = String(r.depId || "");
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          const appCIs = (Array.isArray(r.appciList) ? (r.appciList as unknown[]) : []).map((a) => String(a).toLowerCase());
+          appCIs.forEach((a) => {
+            uniqueAppCIs.add(a);
+            appCICounts[a] = (appCICounts[a] || 0) + 1;
+          });
+          newNodes.push({
+            id,
+            name: String(r.depName || id),
+            parentId: String(r.parentId || originId),
+            level: levelNum,
+            appCIs,
+            severity: r.critSeverity != null ? String(r.critSeverity) : null,
+            businessImpact: r.critImpact != null ? String(r.critImpact) : null,
+            problemRole: r.problemRole != null ? String(r.problemRole) : null,
+            problemId: r.problemId != null ? String(r.problemId) : null,
+            problemName: r.problemName != null ? String(r.problemName) : null,
+            problemDisplayId: r.problemDisplayId != null ? String(r.problemDisplayId) : null,
+            requestCount: r.reqCount != null ? Number(r.reqCount) : null,
+            p95Us: r.p95Us != null ? Number(r.p95Us) : null,
+          });
+        }
+        if (newNodes.length > 0) {
+          levels[levelNum] = newNodes;
+          perLevelCounts[levelNum] = newNodes.length;
+          totalLevels = levelNum;
+          if (levelNum === MAX_LEVELS) capped = true;
+        }
       }
     }
-  }
 
-  return {
-    levels,
-    perLevelCounts,
-    totalLevels,
-    capped,
-    uniqueAppCIsAllLevels: Array.from(uniqueAppCIs).sort(),
-    appCICounts,
-    isLoading,
-    hasError,
-  };
+    return {
+      levels,
+      perLevelCounts,
+      totalLevels,
+      capped,
+      uniqueAppCIsAllLevels: Array.from(uniqueAppCIs).sort(),
+      appCICounts,
+      isLoading,
+      hasError,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originId, isLoading, hasError, r1.data, r2.data, r3.data, r4.data, r5.data, r6.data, r7.data, r8.data]);
 }

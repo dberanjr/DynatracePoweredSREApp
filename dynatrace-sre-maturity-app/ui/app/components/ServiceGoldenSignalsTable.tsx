@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
-import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { severityColor, severityLabel, severityRank, formatDurationUs } from "./dependencyUtils";
+import { openProblem } from "./SmartscapeViewMenu";
 
 export type SeverityFilterValue = "high" | "medium" | "low" | "none";
 
@@ -94,7 +94,7 @@ const buildQuery = (appCI: string) => `fetch dt.entity.service
     | fieldsAdd role = if(affected_entity_ids == root_cause_entity_id, "Root cause", else: "Impacted")
     | fieldsAdd roleRank = if(role == "Root cause", 0, else: 1)
     | sort roleRank asc
-    | summarize problems = collectArray(record(role = role, problemId = event.id, problemName = event.name)), by:{affected_entity_ids}
+    | summarize problems = collectArray(record(role = role, problemId = event.id, problemName = event.name, problemDisplayId = display_id)), by:{affected_entity_ids}
   ], sourceField:id, lookupField:affected_entity_ids, fields:{problems}
 | fields service = entity.name, entityId = id, requests, errorRate, p95Us, critSeverity, downstream, upstream, problems
 | sort errorRate desc, requests desc
@@ -144,24 +144,26 @@ interface ProblemRef {
   role: string;
   problemId: string;
   problemName: string;
+  problemDisplayId: string;
 }
 
-function ProblemChip({ role, problemId }: { role: string; problemId: string }) {
+// Shows the actual "P-XXXX" problem id rather than the generic role word —
+// with several simultaneous problems on one service, "Impacted"/"Impacted"
+// gave no way to tell them apart. Role is still color-coded (root cause vs.
+// impacted) and available on hover.
+function ProblemChip({ role, problemId, problemDisplayId }: { role: string; problemId: string; problemDisplayId: string }) {
   const isRootCause = role === "Root cause";
   return (
     <button
       type="button"
       onClick={(e) => {
         e.stopPropagation();
-        // Problems app takes the internal event.id UUID, NOT the display_id
-        // (P-XXXX) — display_id renders a blank page.
-        const envUrl = getEnvironmentUrl().replace(/\/$/, "");
-        window.open(`${envUrl}/ui/apps/dynatrace.davis.problems/problem/${encodeURIComponent(problemId)}`, "_blank");
+        openProblem(problemId);
       }}
       style={{
-        fontSize: 10,
+        fontSize: 9,
         fontWeight: 700,
-        padding: "2px 7px",
+        padding: "1px 6px",
         borderRadius: 10,
         border: "none",
         cursor: "pointer",
@@ -170,7 +172,7 @@ function ProblemChip({ role, problemId }: { role: string; problemId: string }) {
       }}
       title={`Open active problem: ${role}`}
     >
-      {isRootCause ? "Root cause" : "Impacted"}
+      {problemDisplayId || (isRootCause ? "Root cause" : "Impacted")}
     </button>
   );
 }
@@ -229,7 +231,7 @@ function SortableHeader({ col, sortKey, sortDir, onSort }: { col: { key: SortKey
       onClick={() => onSort(col.key)}
       style={{
         textAlign: col.key === "service" || col.key === "critSeverity" ? "left" : "right",
-        padding: "8px 12px",
+        padding: "4px 9px",
         borderBottom: "2px solid var(--sre-table-border)",
         fontSize: 10,
         fontWeight: 700,
@@ -303,7 +305,7 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
   return (
     <RefreshOverlay isRefreshing={isRefreshing}>
       <div style={{ maxHeight: 340, overflowY: "auto", border: "1px solid var(--sre-border)", borderRadius: 8 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead>
             <tr>
               {COLUMNS.map((col) => (
@@ -322,7 +324,12 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
               const severity = row.critSeverity != null ? String(row.critSeverity) : null;
               const problems = (Array.isArray(row.problems) ? (row.problems as unknown[]) : []).map((p) => {
                 const rec = p as Record<string, unknown>;
-                return { role: String(rec.role || ""), problemId: String(rec.problemId || ""), problemName: String(rec.problemName || "") } as ProblemRef;
+                return {
+                  role: String(rec.role || ""),
+                  problemId: String(rec.problemId || ""),
+                  problemName: String(rec.problemName || ""),
+                  problemDisplayId: String(rec.problemDisplayId || ""),
+                } as ProblemRef;
               });
               const hasProblem = problems.length > 0;
               const isRootCause = problems.some((p) => p.role === "Root cause");
@@ -336,23 +343,23 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
                     background: isSelected ? "rgba(25,102,255,0.08)" : i % 2 === 0 ? "transparent" : "var(--sre-table-stripe)",
                   }}
                 >
-                  <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--sre-table-border)" }}>
+                  <td style={{ padding: "4px 9px", borderBottom: "1px solid var(--sre-table-border)" }}>
                     <CriticalityDot severity={severity} hasProblem={hasProblem} />
                   </td>
-                  <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--sre-table-border)", fontWeight: 600, color: isRootCause ? RED : "var(--sre-text-primary)" }}>
+                  <td style={{ padding: "4px 9px", borderBottom: "1px solid var(--sre-table-border)", fontWeight: 600, color: isRootCause ? RED : "var(--sre-text-primary)" }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                       {String(row.service || "—")}
                       {problems.map((p) => (
-                        <ProblemChip key={p.problemId} role={p.role} problemId={p.problemId} />
+                        <ProblemChip key={p.problemId} role={p.role} problemId={p.problemId} problemDisplayId={p.problemDisplayId} />
                       ))}
                     </span>
                   </td>
-                  <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--sre-table-border)", textAlign: "right" }}>
+                  <td style={{ padding: "4px 9px", borderBottom: "1px solid var(--sre-table-border)", textAlign: "right" }}>
                     {Number(row.requests || 0).toLocaleString()}
                   </td>
                   <td
                     style={{
-                      padding: "8px 12px",
+                      padding: "4px 9px",
                       borderBottom: "1px solid var(--sre-table-border)",
                       textAlign: "right",
                       fontWeight: 700,
@@ -364,7 +371,7 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
                   </td>
                   <td
                     style={{
-                      padding: "8px 12px",
+                      padding: "4px 9px",
                       borderBottom: "1px solid var(--sre-table-border)",
                       textAlign: "right",
                       fontWeight: 700,
@@ -376,7 +383,7 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
                   </td>
                   <td
                     style={{
-                      padding: "8px 12px",
+                      padding: "4px 9px",
                       borderBottom: "1px solid var(--sre-table-border)",
                       textAlign: "right",
                       fontWeight: 700,
@@ -388,7 +395,7 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
                   </td>
                   <td
                     style={{
-                      padding: "8px 12px",
+                      padding: "4px 9px",
                       borderBottom: "1px solid var(--sre-table-border)",
                       textAlign: "right",
                       fontWeight: 700,

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { Flex } from "@dynatrace/strato-components/layouts";
@@ -8,7 +8,7 @@ import { AppIdentityBar } from "../components/AppIdentityBar";
 import { SPINE_BACKGROUND } from "../components/MaturitySpine";
 import { ServiceGoldenSignalsTable, SeverityFilterValue } from "../components/ServiceGoldenSignalsTable";
 import { DependencyGraphPanel, NodeMetrics } from "../components/DependencyGraphPanel";
-import { DependencySummaryPanel, ChainShapeSummary } from "../components/DependencySummaryPanel";
+import { DependencySummaryPanel, ChainShapeSummary, DirectDependencyRail } from "../components/DependencySummaryPanel";
 import { SeverityLegend } from "../components/SeverityLegend";
 import { useDependencyChain } from "../hooks/useDependencyChain";
 import { ActiveProblemLink } from "../components/SmartscapeViewMenu";
@@ -31,7 +31,7 @@ const ROOT_PROBLEM_QUERY = (serviceId: string) => `fetch dt.davis.problems, from
 | fieldsAdd role = if(affected_entity_ids == root_cause_entity_id, "Root cause", else: "Impacted")
 | fieldsAdd roleRank = if(role == "Root cause", 0, else: 1)
 | sort roleRank asc
-| fields role, problemId = event.id
+| fields role, problemId = event.id, problemDisplayId = display_id
 | limit 1`;
 
 // Root's own traffic/latency for Perf-mode node sizing — same golden-signal
@@ -173,17 +173,36 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
     query: selectedServiceId ? ROOT_PROBLEM_QUERY(selectedServiceId) : "data record(skip = true) | limit 0",
   });
   const rootProblemRow = rootProblemData?.records?.[0] as Record<string, unknown> | undefined;
-  const rootProblem: ActiveProblemLink | null = rootProblemRow
-    ? { role: String(rootProblemRow.role || ""), problemId: String(rootProblemRow.problemId || "") }
-    : null;
+  // Memoized on the underlying record reference (stable across unrelated
+  // re-renders when the query result itself hasn't changed) rather than
+  // rebuilt as a fresh object literal every render — the same fix applied
+  // to useDependencyChain, needed here too since this object flows into
+  // DependencyGraphPanel's own useMemo and would otherwise retrigger its
+  // fitView() effect (yanking a panned fullscreen map back to "fit") on any
+  // unrelated re-render of this page.
+  const rootProblem: ActiveProblemLink | null = useMemo(
+    () =>
+      rootProblemRow
+        ? {
+            role: String(rootProblemRow.role || ""),
+            problemId: String(rootProblemRow.problemId || ""),
+            problemDisplayId: rootProblemRow.problemDisplayId != null ? String(rootProblemRow.problemDisplayId) : null,
+          }
+        : null,
+    [rootProblemRow],
+  );
 
   const { data: rootMetricsData } = useDql({
     query: selectedServiceId ? ROOT_METRICS_QUERY(selectedServiceId) : "data record(skip = true) | limit 0",
   });
   const rootMetricsRow = rootMetricsData?.records?.[0] as Record<string, unknown> | undefined;
-  const rootMetrics: NodeMetrics | null = rootMetricsRow
-    ? { requestCount: rootMetricsRow.reqCount != null ? Number(rootMetricsRow.reqCount) : null, p95Us: rootMetricsRow.p95Us != null ? Number(rootMetricsRow.p95Us) : null }
-    : null;
+  const rootMetrics: NodeMetrics | null = useMemo(
+    () =>
+      rootMetricsRow
+        ? { requestCount: rootMetricsRow.reqCount != null ? Number(rootMetricsRow.reqCount) : null, p95Us: rootMetricsRow.p95Us != null ? Number(rootMetricsRow.p95Us) : null }
+        : null,
+    [rootMetricsRow],
+  );
 
   const handleSelect = (serviceId: string, serviceName: string) => {
     setSelectedServiceId(serviceId);
@@ -291,20 +310,36 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
                 <Heading level={5} style={{ marginBottom: 8 }}>
                   Upstream — {selectedServiceName}
                 </Heading>
-                <ChainShapeSummary direction="upstream" chain={upstreamChain} selectedLevel={upstreamLevels} onLevelClick={setUpstreamLevels} />
-                <DependencyGraphPanel
-                  direction="backward"
-                  originId={selectedServiceId}
-                  originName={selectedServiceName}
-                  chain={upstreamChain}
-                  levels={upstreamLevels}
-                  maxLevels={MAX_LEVELS}
-                  onLevelsChange={setUpstreamLevels}
-                  rootProblem={rootProblem}
-                  rootMetrics={rootMetrics}
-                />
-                <div style={{ marginTop: 12 }}>
-                  <DependencySummaryPanel direction="upstream" chain={upstreamChain} levels={upstreamLevels} onSelectService={handleSelect} onSelectAppCI={handleSelectAppCI} />
+                {/* Direct (level-1) dependencies sit in a narrow rail to the
+                    left of the map instead of stacked below it — the rest
+                    of DependencySummaryPanel (hideLevel1) picks up at level 2. */}
+                <div style={{ display: "flex", gap: 12 }}>
+                  <DirectDependencyRail direction="upstream" chain={upstreamChain} onSelectService={handleSelect} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <ChainShapeSummary direction="upstream" chain={upstreamChain} selectedLevel={upstreamLevels} onLevelClick={setUpstreamLevels} />
+                    <DependencyGraphPanel
+                      direction="backward"
+                      originId={selectedServiceId}
+                      originName={selectedServiceName}
+                      originAppCI={appCI}
+                      chain={upstreamChain}
+                      levels={upstreamLevels}
+                      maxLevels={MAX_LEVELS}
+                      onLevelsChange={setUpstreamLevels}
+                      rootProblem={rootProblem}
+                      rootMetrics={rootMetrics}
+                    />
+                    <div style={{ marginTop: 12 }}>
+                      <DependencySummaryPanel
+                        direction="upstream"
+                        chain={upstreamChain}
+                        levels={upstreamLevels}
+                        onSelectService={handleSelect}
+                        onSelectAppCI={handleSelectAppCI}
+                        hideLevel1
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -312,20 +347,33 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
                 <Heading level={5} style={{ marginBottom: 8 }}>
                   Downstream — {selectedServiceName}
                 </Heading>
-                <ChainShapeSummary direction="downstream" chain={downstreamChain} selectedLevel={downstreamLevels} onLevelClick={setDownstreamLevels} />
-                <DependencyGraphPanel
-                  direction="forward"
-                  originId={selectedServiceId}
-                  originName={selectedServiceName}
-                  chain={downstreamChain}
-                  levels={downstreamLevels}
-                  maxLevels={MAX_LEVELS}
-                  onLevelsChange={setDownstreamLevels}
-                  rootProblem={rootProblem}
-                  rootMetrics={rootMetrics}
-                />
-                <div style={{ marginTop: 12 }}>
-                  <DependencySummaryPanel direction="downstream" chain={downstreamChain} levels={downstreamLevels} onSelectService={handleSelect} onSelectAppCI={handleSelectAppCI} />
+                <div style={{ display: "flex", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <ChainShapeSummary direction="downstream" chain={downstreamChain} selectedLevel={downstreamLevels} onLevelClick={setDownstreamLevels} />
+                    <DependencyGraphPanel
+                      direction="forward"
+                      originId={selectedServiceId}
+                      originName={selectedServiceName}
+                      originAppCI={appCI}
+                      chain={downstreamChain}
+                      levels={downstreamLevels}
+                      maxLevels={MAX_LEVELS}
+                      onLevelsChange={setDownstreamLevels}
+                      rootProblem={rootProblem}
+                      rootMetrics={rootMetrics}
+                    />
+                    <div style={{ marginTop: 12 }}>
+                      <DependencySummaryPanel
+                        direction="downstream"
+                        chain={downstreamChain}
+                        levels={downstreamLevels}
+                        onSelectService={handleSelect}
+                        onSelectAppCI={handleSelectAppCI}
+                        hideLevel1
+                      />
+                    </div>
+                  </div>
+                  <DirectDependencyRail direction="downstream" chain={downstreamChain} onSelectService={handleSelect} />
                 </div>
               </div>
             </div>

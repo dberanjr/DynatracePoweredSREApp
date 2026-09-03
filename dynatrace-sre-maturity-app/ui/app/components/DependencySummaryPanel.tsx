@@ -23,6 +23,10 @@ interface SummaryPanelProps extends Props {
    * decides what to do with the service list (auto-select if there's
    * exactly one, otherwise let the user pick). */
   onSelectAppCI: (appCI: string, problematicServices: ProblematicService[]) => void;
+  /** Skip the level-1 section — used when the caller renders direct
+   * dependencies separately via DirectDependencyRail (the narrow column
+   * beside the map) instead of in this stacked list. */
+  hideLevel1?: boolean;
 }
 
 const ACCENT = "#1966FF";
@@ -113,7 +117,17 @@ function AppCIWeightRow({
 // regardless of criticality — live incident state is a separate signal from
 // a static severity rating. Clicking pivots the whole view to focus on that
 // service (immediate reflow, same as picking it from the table).
-function DependencyChip({ node, onSelectService }: { node: DependencyNode; onSelectService: (id: string, name: string) => void }) {
+function DependencyChip({
+  node,
+  onSelectService,
+  fullWidth,
+}: {
+  node: DependencyNode;
+  onSelectService: (id: string, name: string) => void;
+  /** Stacked, block-level layout for the narrow DirectDependencyRail column,
+   * instead of the default inline chip that wraps alongside its siblings. */
+  fullWidth?: boolean;
+}) {
   const borderColor = severityColor(node.severity) || "var(--sre-border, rgba(0,0,0,0.25))";
   const hasProblem = !!node.problemRole;
   return (
@@ -122,25 +136,54 @@ function DependencyChip({ node, onSelectService }: { node: DependencyNode; onSel
       onClick={() => onSelectService(node.id, node.name)}
       title={`${node.name}${node.appCIs.length ? ` — ${node.appCIs.join(", ")}` : ""}${hasProblem ? ` — ${node.problemRole}` : ""} — click to focus`}
       style={{
-        display: "inline-flex",
+        display: fullWidth ? "flex" : "inline-flex",
+        width: fullWidth ? "100%" : undefined,
         alignItems: "center",
         gap: 5,
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: 600,
-        padding: "3px 9px",
-        borderRadius: 12,
+        padding: "2px 8px",
+        borderRadius: 10,
         border: `2px solid ${borderColor}`,
         background: hasProblem ? PROBLEM_RED : "var(--sre-table-stripe, rgba(0,0,0,0.03))",
         color: hasProblem ? "#fff" : "var(--sre-text-primary)",
-        maxWidth: 220,
+        maxWidth: fullWidth ? "100%" : 200,
         cursor: "pointer",
       }}
     >
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.name}</span>
       {node.appCIs.length > 0 && (
-        <span style={{ fontWeight: 800, opacity: hasProblem ? 0.95 : 0.6, flexShrink: 0 }}>{node.appCIs.join(",")}</span>
+        <span style={{ fontWeight: 800, opacity: hasProblem ? 0.95 : 0.6, flexShrink: 0, marginLeft: "auto" }}>{node.appCIs.join(",")}</span>
       )}
     </button>
+  );
+}
+
+// Narrow vertical rail of level-1 ("direct") dependency chips, meant to sit
+// beside the map itself — left of Upstream, right of Downstream — rather
+// than stacked below it with the rest of the levels. Direct dependencies are
+// the ones most worth keeping visible at a glance while scanning the graph.
+// alignSelf: flex-start keeps it from stretching to the height of its much
+// taller flex sibling (chain shape + map + remaining-levels panel).
+export function DirectDependencyRail({ direction, chain, onSelectService }: Props & { onSelectService: (id: string, name: string) => void }) {
+  const levelNodes = chain.levels[1] || [];
+  return (
+    <div style={{ width: 136, flexShrink: 0, alignSelf: "flex-start" }}>
+      <Heading level={6} style={{ marginBottom: 6 }}>
+        Direct ({levelNodes.length})
+      </Heading>
+      {levelNodes.length === 0 ? (
+        <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6, fontSize: 11 }}>
+          No direct {direction} dependencies
+        </Paragraph>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 500, overflowY: "auto", paddingRight: 4 }}>
+          {levelNodes.map((n) => (
+            <DependencyChip key={n.id} node={n} onSelectService={onSelectService} fullWidth />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -261,25 +304,25 @@ function computeAppCIProblems(chain: DependencyChainResult, levels: number) {
   return byAppCI;
 }
 
-export const DependencySummaryPanel = ({ direction, chain, levels, onSelectService, onSelectAppCI }: SummaryPanelProps) => {
+export const DependencySummaryPanel = ({ direction, chain, levels, onSelectService, onSelectAppCI, hideLevel1 }: SummaryPanelProps) => {
   const rankedAppCIs = Object.entries(chain.appCICounts).sort((a, b) => b[1] - a[1]);
   const maxAppCICount = Math.max(1, ...rankedAppCIs.map(([, c]) => c));
-  const levelNumbers = Array.from({ length: levels }, (_, i) => i + 1);
+  const levelNumbers = Array.from({ length: levels }, (_, i) => i + 1).filter((l) => !hideLevel1 || l > 1);
   const appCIProblems = computeAppCIProblems(chain, levels);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12 }}>
       {levelNumbers.map((lvl) => {
         const levelNodes = chain.levels[lvl] || [];
         return (
           <div key={lvl}>
-            <Heading level={6} style={{ marginBottom: 6 }}>
+            <Heading level={6} style={{ marginBottom: 4 }}>
               {levelHeading(lvl, direction)}
             </Heading>
             {levelNodes.length === 0 ? (
               <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6, fontSize: 12 }}>None found</Paragraph>
             ) : (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                 {levelNodes.map((n) => (
                   <DependencyChip key={n.id} node={n} onSelectService={onSelectService} />
                 ))}

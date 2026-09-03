@@ -23,7 +23,7 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { MaximizeIcon, MinimizeIcon } from "@dynatrace/strato-icons";
 import { ChainDirection, DependencyChainResult } from "../hooks/useDependencyChain";
 import { DependencyLevelSlider } from "./DependencyLevelSlider";
-import { SmartscapeViewMenu, ActiveProblemLink } from "./SmartscapeViewMenu";
+import { SmartscapeViewMenu, ActiveProblemLink, openProblem } from "./SmartscapeViewMenu";
 import { severityColor, severityRank } from "./dependencyUtils";
 import { ErrorBoundary } from "./ErrorBoundary";
 
@@ -44,6 +44,7 @@ interface NodeData {
   smartscapeId: string;
   problemRole: string | null;
   problemId: string | null;
+  problemDisplayId: string | null;
   sizeScale: number; // 1 = base size; only varies from 1 in Perf mode
 }
 
@@ -55,7 +56,9 @@ const BASE_CIRCLE_DIAMETER = 52;
 const BASE_CIRCLE_BOX = 88;
 
 function activeProblemOf(data: NodeData): ActiveProblemLink | null {
-  return data.problemRole && data.problemId ? { role: data.problemRole, problemId: data.problemId } : null;
+  return data.problemRole && data.problemId
+    ? { role: data.problemRole, problemId: data.problemId, problemDisplayId: data.problemDisplayId }
+    : null;
 }
 
 // One source + target handle on each of the 4 sides, all invisible. Which
@@ -139,8 +142,18 @@ function DependencyNodeCard({ data }: NodeProps<NodeData>) {
           <span style={{ fontSize: 10, color: "var(--sre-text-secondary)", fontStyle: "italic" }}>Unresolved AppCI</span>
         )}
       </div>
-      {data.problemRole && (
-        <div style={{ marginTop: 4, fontSize: 10, fontWeight: 700, color: PROBLEM_RED }}>● {data.problemRole}</div>
+      {data.problemRole && data.problemId && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openProblem(data.problemId!);
+          }}
+          title={`Open active problem — ${data.problemRole}`}
+          style={{ marginTop: 4, fontSize: 10, fontWeight: 700, color: PROBLEM_RED, background: "transparent", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}
+        >
+          ● {data.problemDisplayId || data.problemRole}
+        </button>
       )}
     </div>
   );
@@ -200,7 +213,19 @@ function DependencyNodeCircle({ data }: NodeProps<NodeData>) {
       >
         {data.name}
       </span>
-      {data.problemRole && <span style={{ fontSize: 8, fontWeight: 700, color: PROBLEM_RED, marginTop: 2 }}>● {data.problemRole}</span>}
+      {data.problemRole && data.problemId && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openProblem(data.problemId!);
+          }}
+          title={`Open active problem — ${data.problemRole}`}
+          style={{ fontSize: 8, fontWeight: 700, color: PROBLEM_RED, marginTop: 2, background: "transparent", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}
+        >
+          ● {data.problemDisplayId || data.problemRole}
+        </button>
+      )}
     </div>
   );
   return <SmartscapeViewMenu entityId={data.smartscapeId} entityName={data.name} trigger={circle} activeProblem={activeProblemOf(data)} />;
@@ -415,6 +440,11 @@ interface Props {
   direction: ChainDirection;
   originId: string;
   originName: string;
+  /** The selected service's own AppCI, shown in the center node instead of
+   * "?" — chain nodes carry their own appCIs from the traversal data, but
+   * the root/origin isn't part of that data, so it has nothing to show
+   * unless told explicitly. */
+  originAppCI: string;
   chain: DependencyChainResult;
   levels: number;
   maxLevels: number;
@@ -439,24 +469,25 @@ function filterToCritical(nodeList: Node<NodeData>[], edgeList: Edge[], originId
   };
 }
 
-export const DependencyGraphPanel = ({ direction, originId, originName, chain, levels, maxLevels, onLevelsChange, rootProblem, rootMetrics }: Props) => {
+export const DependencyGraphPanel = ({ direction, originId, originName, originAppCI, chain, levels, maxLevels, onLevelsChange, rootProblem, rootMetrics }: Props) => {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("force");
   const [renderStyle, setRenderStyle] = useState<RenderStyle>("nodes");
-  const [viewMode, setViewMode] = useState<ViewMode>("perf");
+  const [viewMode, setViewMode] = useState<ViewMode>("standard");
   const [isExpanded, setIsExpanded] = useState(false);
   const nodeType = renderStyle === "tiles" ? "dep-tile" : "dep-circle";
 
   const { nodes, edges } = useMemo(() => {
-    type RawNode = { id: string; isRoot?: boolean; name: string; appCIs: string[]; severity: string | null; problemRole: string | null; problemId: string | null; requestCount: number | null; p95Us: number | null };
+    type RawNode = { id: string; isRoot?: boolean; name: string; appCIs: string[]; severity: string | null; problemRole: string | null; problemId: string | null; problemDisplayId: string | null; requestCount: number | null; p95Us: number | null };
     const rawNodes: RawNode[] = [
       {
         id: originId,
         isRoot: true,
         name: originName,
-        appCIs: [],
+        appCIs: originAppCI ? [originAppCI.toLowerCase()] : [],
         severity: null,
         problemRole: rootProblem?.role || null,
         problemId: rootProblem?.problemId || null,
+        problemDisplayId: rootProblem?.problemDisplayId || null,
         requestCount: rootMetrics?.requestCount ?? null,
         p95Us: rootMetrics?.p95Us ?? null,
       },
@@ -472,6 +503,7 @@ export const DependencyGraphPanel = ({ direction, originId, originName, chain, l
           severity: n.severity,
           problemRole: n.problemRole,
           problemId: n.problemId,
+          problemDisplayId: n.problemDisplayId,
           requestCount: n.requestCount,
           p95Us: n.p95Us,
         });
@@ -499,6 +531,7 @@ export const DependencyGraphPanel = ({ direction, originId, originName, chain, l
         smartscapeId: n.id,
         problemRole: n.problemRole,
         problemId: n.problemId,
+        problemDisplayId: n.problemDisplayId,
         sizeScale: 1,
       },
       position: { x: 0, y: 0 },
@@ -540,7 +573,7 @@ export const DependencyGraphPanel = ({ direction, originId, originName, chain, l
     const laidOutNodes = computeLayout(nodeList, edgeList, layoutMode, footprint);
     const finalEdges = finalizeEdges(edgeList, viewMode, renderStyle === "nodes", footprint);
     return { nodes: laidOutNodes, edges: finalEdges };
-  }, [direction, originId, originName, chain, levels, layoutMode, nodeType, renderStyle, viewMode, rootProblem, rootMetrics]);
+  }, [direction, originId, originName, originAppCI, chain, levels, layoutMode, nodeType, renderStyle, viewMode, rootProblem, rootMetrics]);
 
   const toolbar = (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
