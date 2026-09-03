@@ -86,10 +86,12 @@ function SummaryChip({ label, value, valueColor }: { label: string; value: strin
   );
 }
 
+// Matches severityColor()'s violet ordinal ramp (dependencyUtils.ts) — one
+// hue, monotone lightness, not signal colors.
 const SEVERITY_OPTIONS: { key: SeverityFilterValue; label: string; color: string }[] = [
-  { key: "high", label: "High", color: "#dc3545" },
-  { key: "medium", label: "Medium", color: "#f0ad4e" },
-  { key: "low", label: "Low", color: "#3BACF0" },
+  { key: "high", label: "High", color: "#4c1d95" },
+  { key: "medium", label: "Medium", color: "#7c3aed" },
+  { key: "low", label: "Low", color: "#a78bfa" },
   { key: "none", label: "None", color: "var(--sre-text-secondary)" },
 ];
 

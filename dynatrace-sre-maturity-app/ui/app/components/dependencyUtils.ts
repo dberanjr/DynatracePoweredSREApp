@@ -9,16 +9,28 @@ export function severityRank(severity: string | null): number {
   return 4;
 }
 
+// Criticality is an ORDINAL scale (High > Medium > Low), not a set of
+// independent categories — so it gets one hue at monotone lightness steps
+// (dark = most severe, light = least) rather than distinct "signal" hues.
+// Red and amber are deliberately not reused here: this app already gives
+// them fixed meaning elsewhere in this same view (red = active problem /
+// root cause, amber = impacted/victim) — reusing them for criticality too
+// would make one color mean two different things depending on context.
+// Violet was picked as a hue not already claimed by another status in this
+// view (blue is the generic UI/selection accent). Values are the light-mode
+// ramp; validated with the dataviz skill's ordinal checks (monotone
+// lightness, single hue, light-end contrast >= 2:1 against this app's
+// --sre-surface).
 export function severityColor(severity: string | null): string | null {
   switch (severityRank(severity)) {
     case 1:
-      return "#dc3545";
+      return "#4c1d95"; // High — deep violet
     case 2:
-      return "#f0ad4e";
+      return "#7c3aed"; // Medium — mid violet
     case 3:
-      return "#3BACF0";
+      return "#a78bfa"; // Low — light violet
     default:
-      return null;
+      return null; // None — neutral grey, rendered by callers
   }
 }
 

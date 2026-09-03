@@ -1,9 +1,14 @@
 import React from "react";
 
+// Criticality (High/Medium/Low/None) uses one hue (violet) at monotone
+// lightness steps — an ordinal scale, not independent "signal" categories —
+// matching dependencyUtils.ts's severityColor(). "Active problem" keeps red:
+// that's a genuinely different, appropriately alarm-colored concept (a live
+// incident), not a criticality rating.
 const ITEMS = [
-  { label: "High", color: "#dc3545", shape: "ring" as const },
-  { label: "Medium", color: "#f0ad4e", shape: "ring" as const },
-  { label: "Low", color: "#3BACF0", shape: "ring" as const },
+  { label: "High", color: "#4c1d95", shape: "ring" as const },
+  { label: "Medium", color: "#7c3aed", shape: "ring" as const },
+  { label: "Low", color: "#a78bfa", shape: "ring" as const },
   { label: "None", color: "var(--sre-border, rgba(0,0,0,0.3))", shape: "ring" as const },
   { label: "Active problem", color: "#dc3545", shape: "fill" as const },
 ];
