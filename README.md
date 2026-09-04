@@ -19,16 +19,27 @@ Dynatrace data — no spreadsheets, no manual assessment.
 - **Definitions tab** — a self-documenting reference rendering the description, pass logic,
   remediation guidance, and the exact **scorecard DQL** for all 30 checks, grouped by level.
   Generated from the same config the modals use, so it cannot drift from the UI.
+- **Dependencies tab** — an interactive upstream/downstream call-chain explorer for any service
+  in the selected AppCI, up to 8 levels deep in each direction. A sortable services table
+  (golden signals, criticality, live problems, dependency counts) drives two topology maps —
+  Tiles or compact Nodes render styles, Horizontal/Vertical/Force-directed layout, and
+  Standard/Perf (traffic- and latency-scaled edges/nodes)/Critical (filtered to critical
+  services and their direct neighbors) view modes, each expandable to fullscreen. A per-level
+  chip list and a narrow "direct dependencies" rail sit beside each map; live Davis problems
+  render as clickable `P-*` links straight to the Problems app. Criticality (High/Medium/Low)
+  is a single-hue violet ordinal ramp everywhere on this tab — deliberately not red/amber/green,
+  since those are reserved for live incident state (root cause vs. impacted) elsewhere in the
+  same view.
 - **Golden Signals** — latency, traffic, errors, and saturation, including a normalized
   four-signal overlay chart.
 - **About page** — build-time version, git commit hash, and commit date, kept in sync
   automatically by `scripts/sync-version.mjs`.
 
-The primary navigation is deliberately scoped to **Home, Golden Signals, Scorecards,
-Definitions, and About**. Several earlier pages — Overview, AI Ops, Proactive, Problem
+The primary navigation is deliberately scoped to **Home, Scorecards, Dependencies, Definitions,
+and About**. Several earlier pages — Overview, Golden Signals, AI Ops, Proactive, Problem
 Analytics, Portfolio, and Explore Data — are still built and routable
-(`/overview`, `/ai-ops`, `/proactive`, `/problem-analytics`, `/portfolio`, `/data`)
-but are no longer linked from the header. Re-add them in
+(`/overview`, `/golden-signals`, `/ai-ops`, `/proactive`, `/problem-analytics`, `/portfolio`,
+`/data`) but are no longer linked from the header. Re-add them in
 `ui/app/components/Header.tsx` if you want them surfaced.
 
 ## SRE maturity model
@@ -72,6 +83,10 @@ The Definitions tab documents these per check; the important ones:
   this tenant has zero runbook notebooks. Unlike the two deliberate fails above, this is not
   structural: it reads the Documents API live (see App functions below) and will start passing
   for any AppCI the moment a matching notebook exists.
+- **Dependencies tab, Perf mode edge/node sizing** uses each dependency's own total request
+  volume and p95 as a proxy for "how much traffic touches this path" — there is no simple
+  dimensional lookup for a true caller→callee edge-level metric, so a service with high overall
+  traffic looks heavily used on every edge that leads to it, not just the busiest one.
 
 ## Data sources
 
@@ -149,10 +164,14 @@ Guardian `SDLC_EVENT` validations directly from Grail. Any CI/CD platform report
     └── ui/app/
         ├── components/           # CheckDetailModal, checkDetailConfigs (single source of
         │                         #   truth for modals + Definitions), checkExplanations
-        │                         #   (tooltips), MaturityLeaderboard, ScorecardCard, ...
-        ├── pages/                # Scorecards, Definitions, GoldenSignals, ProblemAnalytics,
-        │                         #   AiOps, Proactive, Portfolio, About, Landing, ...
-        └── hooks/                # useDqlWithCache, useSloApi, useLiveCheckOverride
+        │                         #   (tooltips), MaturityLeaderboard, ScorecardCard,
+        │                         #   DependencyGraphPanel + DependencySummaryPanel
+        │                         #   (Dependencies tab topology + chips), ...
+        ├── pages/                # Scorecards, Definitions, UpstreamDownstream (Dependencies),
+        │                         #   GoldenSignals, ProblemAnalytics, AiOps, Proactive,
+        │                         #   Portfolio, About, Landing, ...
+        └── hooks/                # useDqlWithCache, useSloApi, useLiveCheckOverride,
+                                  #   useDependencyChain
 ```
 
 ### Keeping checks consistent
