@@ -1,0 +1,629 @@
+# workflows/sre-maturity-daily-snapshot.yaml
+#
+# Snapshots every AppCI's L1-L5 maturity score into Grail as a
+# "workflow.summary.sre_maturity" bizevent, once daily, so ScorecardsPage's
+# MaturityTrendChart has real history to plot (see ui/app/components/
+# MaturityTrendChart.tsx and the trendQuery in ui/app/pages/ScorecardsPage.tsx).
+#
+# The 5 DQL query strings embedded in the script below are reused VERBATIM
+# from ui/app/components/MaturityLeaderboard.tsx's BULK_L1_QUERY..
+# BULK_L5_QUERY (which already compute every app's score in one shot, with
+# no per-app filter, and are already proven safe/working in this tenant via
+# the leaderboard page). Keep these two in sync the same way
+# MaturityLeaderboard.tsx is already kept in sync with ScorecardsPage.tsx's
+# per-app l1Query..l5Query — if one changes, update the other.
+#
+# Known, accepted gap: L3 excludes the Documents-API-driven "Runbooks
+# Linked" check (resolved client-side today via getAllRunbookCounts /
+# getRunbookDetail, which this workflow has no clean way to call) — this
+# can under-count L3 by 1/30 for apps whose only missing L3 signal is
+# runbooks. The live per-app scorecard stays authoritative; this only
+# affects the trend line.
+#
+# Single run-javascript task, not 5 native execute-dql-query tasks feeding a
+# merge task: the native dynatrace.automations:execute-dql-query action was
+# tried first and does NOT forward a maxResultRecords-style input through
+# to the underlying Grail query — verified live against this tenant (a
+# "Your result has been limited to 1000" API warning still fired with that
+# field set on the task input). Calling queryExecutionClient directly from
+# one script, as this workflow now does, is the one place maxResultRecords
+# is actually honored, which matters here: this tenant has ~1,987 non-
+# retired AppCIs, comfortably past the silent 1000-record default cap.
+#
+# FIXED (2026-08-30): the L5 query's "workflow automation" signal previously
+# counted any bizevent whose event.type merely contained the substring
+# "workflow" — that matched near-universal noise (ServiceNow CMDB import
+# events, other teams' cost/cloud-inventory reporting workflows, and even
+# this workflow's OWN sre_maturity snapshot bizevent feeding back into
+# itself), inflating the first run's app count from ~1,417 to ~3,819 real
+# distinct AppCI-shaped codes — most of which don't actually have any real
+# automation. Fixed identically in ScorecardsPage.tsx's l5Query and
+# MaturityLeaderboard.tsx's BULK_L5_QUERY: L5 now requires an actual
+# Automation Engine WORKFLOW_EXECUTION whose title starts with the app's
+# 3-letter code, the same convention the L3 ITSM Integration check uses.
+#
+# Apply with: dtctl apply -f workflows/sre-maturity-daily-snapshot.yaml
+# (this file already carries its id: from the first apply, so this updates
+# the existing workflow in place instead of creating a duplicate.)
+
+id: a08b2ffb-6b88-4941-b413-18739f5fbee3
+title: SRE Maturity Daily Snapshot
+description: >
+  Computes every AppCI's L1-L5 maturity score daily and ingests one
+  workflow.summary.sre_maturity bizevent per app for trend charting on the
+  Scorecards page's Executive-mode hero.
+isPrivate: false
+schemaVersion: 4
+type: STANDARD
+triggerType: Schedule
+hourlyExecutionLimit: 1000
+trigger:
+  schedule:
+    timezone: UTC
+    trigger:
+      cron: "15 6 * * *"
+      type: cron
+
+tasks:
+  mergeAndIngest:
+    name: mergeAndIngest
+    action: dynatrace.automations:run-javascript
+    description: Run L1-L5 bulk queries directly (maxResultRecords-controlled), merge by applicationci, ingest one bizevent per app
+    conditions:
+      states: {}
+    position:
+      x: 0
+      "y": 1
+    predecessors: []
+    input:
+      script: |
+        import { queryExecutionClient } from '@dynatrace-sdk/client-query';
+        import { businessEventsClient } from '@dynatrace-sdk/client-classic-environment-v2';
+
+        // Reused VERBATIM from ui/app/components/MaturityLeaderboard.tsx's
+        // BULK_L1_QUERY..BULK_L5_QUERY (already compute every app's score in one
+        // shot, with no per-app filter, and are already proven safe/working in
+        // this tenant via the leaderboard page). Keep these two in sync — if one
+        // changes, update the other.
+        const QUERIES = {
+          l1: `fetch dt.entity.service
+        | fieldsAdd applicationci = arrayDistinct(
+            iCollectArray(
+              splitString(
+                arrayRemoveNulls(
+                  iCollectArray(
+                    if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                  )
+                )[], ":"
+              )[1]
+            )
+          )
+        | fieldsAdd applicationci = arrayDistinct(
+            iCollectArray(splitString(applicationci[], ",")[0])
+          )
+        | expand applicationci
+        | filter stringLength(applicationci) <= 3
+        | summarize serviceCount = count(), by:{applicationci}
+        | lookup [
+            fetch dt.entity.host
+            | limit 100000
+            | filter lifetime[end] > asTimestamp(now()-2h)
+            | fieldsAdd applicationci = arrayDistinct(
+                iCollectArray(
+                  splitString(
+                    arrayRemoveNulls(
+                      iCollectArray(
+                        if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                      )
+                    )[], ":"
+                  )[1]
+                )
+              )
+            | fieldsAdd applicationci = arrayDistinct(
+                iCollectArray(splitString(applicationci[], ",")[0])
+              )
+            | expand applicationci
+            | summarize
+                hostCount = count(),
+                fullStackCount = countIf(monitoringMode == "FULL_STACK"),
+                by:{applicationci}
+          ], sourceField:applicationci, lookupField:applicationci, fields:{hostCount, fullStackCount}
+        | lookup [
+            fetch dt.entity.cloud_application
+            | fieldsAdd applicationci = arrayDistinct(
+                iCollectArray(
+                  splitString(
+                    arrayRemoveNulls(
+                      iCollectArray(
+                        if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                      )
+                    )[], ":"
+                  )[1]
+                )
+              )
+            | fieldsAdd applicationci = arrayDistinct(
+                iCollectArray(splitString(applicationci[], ",")[0])
+              )
+            | expand applicationci
+            | summarize k8sCount = count(), by:{applicationci}
+          ], sourceField:applicationci, lookupField:applicationci, fields:{k8sCount}
+        | lookup [
+            smartscapeNodes K8S_DAEMONSET
+            | filter matchesPhrase(k8s.workload.name, "oneagent") and not matchesPhrase(k8s.workload.name, "csi-driver")
+            | fieldsAdd applicationci = lower(splitString(k8s.cluster.name, "-")[0])
+            | parse k8s.object, "JSON:config"
+            | fieldsAdd
+                component = \`tags:k8s.labels\`[\`app.kubernetes.io/component\`],
+                desired = toLong(config[status][desiredNumberScheduled]),
+                ready = toLong(config[status][numberReady])
+            | summarize
+                cloudNativeOperatorHealthy = countIf(component == "cloudnativefullstack" and desired > 0 and ready == desired),
+                by:{applicationci}
+          ], sourceField:applicationci, lookupField:applicationci, fields:{cloudNativeOperatorHealthy}
+        | lookup [
+            timeseries reqs = sum(dt.service.request.count), by:{k8s.cluster.name}, from:now()-2h
+            | fieldsAdd applicationci = lower(splitString(k8s.cluster.name, "-")[0]),
+                total = arraySum(reqs)
+            | summarize k8sScopedTracing = sum(total), by:{applicationci}
+          ], sourceField:applicationci, lookupField:applicationci, fields:{k8sScopedTracing}
+        | lookup [
+            fetch logs, samplingRatio:1000, from:now()-2h
+            | filter isNotNull(k8s.cluster.name)
+            | fieldsAdd applicationci = lower(splitString(k8s.cluster.name, "-")[0])
+            | summarize k8sScopedLogs = count(), by:{applicationci}
+          ], sourceField:applicationci, lookupField:applicationci, fields:{k8sScopedLogs}
+        | lookup [
+            fetch logs, samplingRatio:1000
+            | filter isNotNull(applicationci)
+            | summarize logCount = count(), by:{applicationci}
+          ], sourceField:applicationci, lookupField:applicationci, fields:{logCount}
+        | lookup [
+            smartscapeNodes "AWS*"
+            | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+            | append [
+                smartscapeNodes "AZURE*"
+                | fieldsFlatten \`tags:azure\`, fields:{ApplicationCI}
+              ]
+            | append [
+                smartscapeNodes "GCP*"
+                | fieldsFlatten \`tags:gcp_labels\`, fields:{ApplicationCI}
+              ]
+            | filter isNotNull(ApplicationCI)
+            | fieldsAdd applicationci = lower(ApplicationCI)
+            | summarize cloudCount = count(), by:{applicationci}
+          ], sourceField:applicationci, lookupField:applicationci, fields:{cloudCount}
+        | lookup [
+            fetch dt.entity.application, from:now()-1000d
+            | fieldsAdd applicationci = arrayDistinct(
+                iCollectArray(
+                  splitString(
+                    arrayRemoveNulls(
+                      iCollectArray(
+                        if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                      )
+                    )[], ":"
+                  )[1]
+                )
+              )
+            | fieldsAdd applicationci = arrayDistinct(
+                iCollectArray(splitString(applicationci[], ",")[0])
+              )
+            | expand applicationci
+            | fieldsAdd rumActive = if(lifetime[end] > now()-7d, true, else: false)
+            | summarize rumCount = countIf(rumActive == true), by:{applicationci}
+          ], sourceField:applicationci, lookupField:applicationci, fields:{rumCount}
+        | lookup [
+            fetch dt.entity.synthetic_test
+            | fieldsAdd applicationci = arrayDistinct(
+                iCollectArray(
+                  splitString(
+                    arrayRemoveNulls(
+                      iCollectArray(
+                        if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                      )
+                    )[], ":"
+                  )[1]
+                )
+              )
+            | fieldsAdd applicationci = arrayDistinct(
+                iCollectArray(splitString(applicationci[], ",")[0])
+              )
+            | expand applicationci
+            | summarize synCount = count(), by:{applicationci}
+          ], sourceField:applicationci, lookupField:applicationci, fields:{synCount}
+        | fieldsAdd
+            hostCount = if(isNull(hostCount), 0, else: hostCount),
+            serviceCount = if(isNull(serviceCount), 0, else: serviceCount),
+            k8sCount = if(isNull(k8sCount), 0, else: k8sCount),
+            cloudNativeOperatorHealthy = if(isNull(cloudNativeOperatorHealthy), 0, else: cloudNativeOperatorHealthy),
+            k8sScopedTracing = if(isNull(k8sScopedTracing), 0, else: k8sScopedTracing),
+            k8sScopedLogs = if(isNull(k8sScopedLogs), 0, else: k8sScopedLogs),
+            logCount = if(isNull(logCount), 0, else: logCount),
+            cloudCount = if(isNull(cloudCount), 0, else: cloudCount),
+            rumCount = if(isNull(rumCount), 0, else: rumCount),
+            synCount = if(isNull(synCount), 0, else: synCount)
+        | fieldsAdd k8sHealthy = cloudNativeOperatorHealthy > 0 and k8sScopedTracing > 0 and k8sScopedLogs > 0
+        | fieldsAdd l1Score =
+            if(hostCount > 0, 1, else: 0)
+            + if(serviceCount > 0, 1, else: 0)
+            + if(logCount > 0, 1, else: 0)
+            + if(serviceCount > 0, 1, else: 0)
+            + if(k8sCount == 0 or k8sHealthy, 1, else: 0)
+            + 1
+            + if(rumCount > 0 or synCount > 0, 1, else: 0)
+        | fields applicationci, l1Score`,
+          l2: `fetch dt.entity.service
+        | fieldsAdd applicationci = arrayDistinct(
+            iCollectArray(
+              splitString(
+                arrayRemoveNulls(
+                  iCollectArray(
+                    if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                  )
+                )[], ":"
+              )[1]
+            )
+          )
+        | fieldsAdd applicationci = arrayDistinct(
+            iCollectArray(splitString(applicationci[], ",")[0])
+          )
+        | expand applicationci
+        | filter stringLength(applicationci) <= 3
+        | summarize serviceCount = count(), by:{applicationci}
+        | lookup [
+            fetch bizevents, from:now()-24h
+            | filter event.type == "workflow.summary.dashboard"
+            | fieldsAdd dashAppci = lower(splitString(name, " :")[0])
+            | filter isNotNull(dashAppci)
+            | filter stringLength(dashAppci) <= 3
+            | summarize dashboardCount = count(), by:{dashAppci}
+            | fieldsRename applicationci = dashAppci
+          ], sourceField:applicationci, lookupField:applicationci, fields:{dashboardCount}
+        | lookup [
+            fetch bizevents, from:now()-24h
+            | filter event.type == "workflow.import.servicenow.appci"
+            | fieldsAdd applicationci = lower(applicationci)
+            | filter isNotNull(tier)
+            | summarize hasTier = count(), by:{applicationci}
+          ], sourceField:applicationci, lookupField:applicationci, fields:{hasTier}
+        | lookup [
+            load "/lookups/slo"
+            | fieldsAdd appci = lower(substring(slo, from:0, to:3))
+            | summarize sloCount = count(), by:{appci}
+          ], sourceField:applicationci, lookupField:appci, fields:{sloCount}
+        | lookup [
+            load "/lookups/guardians"
+            | fieldsAdd appci = lower(appci)
+            | summarize guardianCount = count(), by:{appci}
+          ], sourceField:applicationci, lookupField:appci, fields:{guardianCount}
+        | lookup [
+            load "/lookups/critical_services"
+            | fieldsAdd appci = lower(appci)
+            | summarize criticalCount = count(), resolved = countIf(entity_ids != "-"), by:{appci}
+          ], sourceField:applicationci, lookupField:appci, fields:{criticalCount, resolved}
+        | fieldsAdd
+            dashboardCount = if(isNull(dashboardCount), 0, else: dashboardCount),
+            hasTier = if(isNull(hasTier), 0, else: hasTier),
+            sloCount = if(isNull(sloCount), 0, else: sloCount),
+            guardianCount = if(isNull(guardianCount), 0, else: guardianCount),
+            criticalCount = if(isNull(criticalCount), 0, else: criticalCount),
+            resolved = if(isNull(resolved), 0, else: resolved)
+        | fieldsAdd l2Score =
+            if(serviceCount > 0, 1, else: 0)
+            + if(sloCount > 0, 1, else: 0)
+            + if(guardianCount > 0, 1, else: 0)
+            + if(dashboardCount > 0, 1, else: 0)
+            + if(hasTier > 0, 1, else: 0)
+            + if(resolved > 0 or criticalCount == 0, 1, else: 0)
+        | fields applicationci, l2Score`,
+          l3: `fetch dt.entity.service
+        | fieldsAdd applicationci = arrayDistinct(
+            iCollectArray(
+              splitString(
+                arrayRemoveNulls(
+                  iCollectArray(
+                    if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                  )
+                )[], ":"
+              )[1]
+            )
+          )
+        | fieldsAdd applicationci = arrayDistinct(
+            iCollectArray(splitString(applicationci[], ",")[0])
+          )
+        | expand applicationci
+        | filter stringLength(applicationci) <= 3
+        | summarize svcCount = count(), by:{applicationci}
+        | lookup [
+            fetch dt.davis.problems, from:now()-7d
+            | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
+            | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+            | filter isNotNull(appci)
+            | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
+            | fieldsAdd isCausal = matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
+            | fieldsAdd isNoise = eventCount == 1 and matchesValue(event.category, array("AVAILABILITY", "RESOURCE_CONTENTION", "CUSTOM_ALERT", "MONITORING_UNAVAILABLE"))
+            | summarize
+                total7d = count(),
+                causalTotal = countIf(isCausal),
+                causalWithCause = countIf(isCausal and isNotNull(root_cause_entity_id)),
+                noiseTotal = countIf(isNoise),
+                by:{appci}
+          ], sourceField:applicationci, lookupField:appci, fields:{total7d, causalTotal, causalWithCause, noiseTotal}
+        | lookup [
+            fetch events, from:now()-30d
+            | filter event.type == "CUSTOM_DEPLOYMENT"
+            | filter isNotNull(application_ci)
+            | summarize deployTotal = count(), by:{appci = lower(application_ci)}
+          ], sourceField:applicationci, lookupField:appci, fields:{deployTotal}
+        | lookup [
+            fetch dt.system.events, from:now()-30d
+            | filter event.provider == "AUTOMATION_ENGINE"
+            | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
+            | filter matchesValue(\`dt.automation_engine.workflow.title\`, "* Production Dynatrace Alerts")
+            | fieldsAdd wfAppci = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+            | summarize itsmWorkflows = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppci}
+          ], sourceField:applicationci, lookupField:wfAppci, fields:{itsmWorkflows}
+        | fieldsAdd
+            total7d = if(isNull(total7d), 0, else: total7d),
+            causalTotal = if(isNull(causalTotal), 0, else: causalTotal),
+            causalWithCause = if(isNull(causalWithCause), 0, else: causalWithCause),
+            noiseTotal = if(isNull(noiseTotal), 0, else: noiseTotal),
+            deployTotal = if(isNull(deployTotal), 0, else: deployTotal),
+            itsmWorkflows = if(isNull(itsmWorkflows), 0, else: itsmWorkflows)
+        | fieldsAdd noisePct = if(total7d > 0, round(toDouble(noiseTotal) * 100.0 / toDouble(total7d), decimals:0), else: 0.0)
+        | fieldsAdd rootCausePct = if(causalTotal > 0, round(toDouble(causalWithCause) * 100.0 / toDouble(causalTotal), decimals:0), else: 0.0)
+        | fieldsAdd l3Score =
+            if(causalTotal > 0, 1, else: 0)
+            + if(deployTotal > 0, 1, else: 0)
+            + if(itsmWorkflows > 0, 1, else: 0)
+            + 0
+            + if(total7d == 0 or noisePct <= 50, 1, else: 0)
+            + if(causalTotal == 0 or rootCausePct >= 40, 1, else: 0)
+            + if(deployTotal > 0, 1, else: 0)
+        | fields applicationci, l3Score`,
+          l4: `fetch dt.entity.service
+        | fieldsAdd applicationci = arrayDistinct(
+            iCollectArray(
+              splitString(
+                arrayRemoveNulls(
+                  iCollectArray(
+                    if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
+                  )
+                )[], ":"
+              )[1]
+            )
+          )
+        | fieldsAdd applicationci = arrayDistinct(
+            iCollectArray(splitString(applicationci[], ",")[0])
+          )
+        | expand applicationci
+        | filter stringLength(applicationci) <= 3
+        | summarize svcCount = count(), by:{applicationci}
+        | lookup [
+            fetch dt.davis.problems, from:now()-30d
+            | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
+            | filter event.category == "CUSTOM_ALERT"
+            | filter contains(lower(event.name), "burn rate")
+            | fieldsAdd appci = lower(trim(splitString(event.name, " - ")[0]))
+            | filter stringLength(appci) == 3
+            | summarize burnAlerts = countDistinct(event.name), by:{appci}
+          ], sourceField:applicationci, lookupField:appci, fields:{burnAlerts}
+        | lookup [
+            smartscapeNodes "AWS*"
+            | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+            | filter isNotNull(ApplicationCI)
+            | summarize
+                cloudTotal = count(),
+                scaleTargets = countIf(matchesValue(type, "AWS_AUTOSCALING_AUTOSCALINGGROUP", "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET", "AWS_EKS_NODEGROUP")),
+                by:{appci = lower(ApplicationCI)}
+          ], sourceField:applicationci, lookupField:appci, fields:{cloudTotal, scaleTargets}
+        | lookup [
+            fetch events, from:now()-30d
+            | filter event.kind == "SDLC_EVENT"
+            | filter event.type == "validation" and event.status == "finished"
+            | fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"ApplicationCI\\":[\\"")[1], "\\"")[0])
+            | filter isNotNull(appci)
+            | fieldsAdd trig = coalesce(\`dt.automation_engine.workflow_execution.trigger.type\`, "Manual")
+            | summarize srgEventTriggered = countIf(trig != "Schedule" and trig != "Manual"), by:{appci}
+          ], sourceField:applicationci, lookupField:appci, fields:{srgEventTriggered}
+        | fieldsAdd
+            burnAlerts = if(isNull(burnAlerts), 0, else: burnAlerts),
+            cloudTotal = if(isNull(cloudTotal), 0, else: cloudTotal),
+            scaleTargets = if(isNull(scaleTargets), 0, else: scaleTargets),
+            srgEventTriggered = if(isNull(srgEventTriggered), 0, else: srgEventTriggered)
+        | fieldsAdd l4Score =
+            if(burnAlerts > 0, 1, else: 0)
+            + if(scaleTargets > 0 or cloudTotal == 0, 1, else: 0)
+            + 0
+            + if(srgEventTriggered > 0, 1, else: 0)
+            + 0
+        | fields applicationci, l4Score`,
+          l5: `fetch dt.system.events, from:now()-30d
+        | filter event.provider == "AUTOMATION_ENGINE"
+        | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
+        | fieldsAdd applicationci = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+        | filter stringLength(applicationci) == 3
+        | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{applicationci}
+        | lookup [
+            fetch dt.davis.problems
+            | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+            | filter isNotNull(appci)
+            | filter dt.davis.is_duplicate == false
+            | fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"
+                and isNotNull(labels.alerting_profile)
+            | summarize
+                totalProblems = count(),
+                enrichedProblems = countIf(hasItsmProfile == true),
+                by:{appci}
+          ], sourceField:applicationci, lookupField:appci, fields:{totalProblems, enrichedProblems}
+        | fieldsAdd
+            totalProblems = if(isNull(totalProblems), 0, else: totalProblems),
+            enrichedProblems = if(isNull(enrichedProblems), 0, else: enrichedProblems)
+        | fieldsAdd enrichPct = if(totalProblems > 0,
+            round(toDouble(enrichedProblems) * 100.0 / toDouble(totalProblems), decimals:0),
+            else: 0.0)
+        | fieldsAdd l5Score =
+            if(workflowCount > 0, 1, else: 0)
+            + if(workflowCount > 0, 1, else: 0)
+            + 0
+            + if(totalProblems > 0 and enrichPct >= 50, 1, else: 0)
+            + 0
+        | fields applicationci, l5Score`,
+        };
+
+        // Grail's query execution API silently caps a single query at 1000 result
+        // records unless maxResultRecords is raised explicitly (confirmed live:
+        // computeL5 returned exactly 1000 of ~1417 real distinct apps before this
+        // fix). The native dynatrace.automations:execute-dql-query workflow action
+        // does NOT forward a maxResultRecords-style input through to the
+        // underlying query — verified by testing it directly against this tenant
+        // (the "Your result has been limited to 1000" API warning still fired even
+        // with that field set on the task input). Calling queryExecutionClient
+        // directly, as this script does, is the one place maxResultRecords is
+        // actually honored.
+        const MAX_RESULT_RECORDS = 5000;
+
+        async function runQuery(query) {
+          const start = await queryExecutionClient.queryExecute({
+            body: { query, maxResultRecords: MAX_RESULT_RECORDS, requestTimeoutMilliseconds: 60000 },
+          });
+          let state = start.state;
+          let result = start.result;
+          let token = start.requestToken;
+          while (state !== 'SUCCEEDED' && token) {
+            // eslint-disable-next-line no-await-in-loop
+            const poll = await queryExecutionClient.queryPoll({ requestToken: token });
+            state = poll.state;
+            result = poll.result;
+            if (state === 'SUCCEEDED' || state === 'FAILED' || state === 'CANCELLED' || state === 'RESULT_GONE') break;
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+          if (state !== 'SUCCEEDED') {
+            throw new Error(`Query did not succeed (state=${state}): ${query.slice(0, 80)}...`);
+          }
+          const records = (result && result.records) || [];
+          if (records.length >= MAX_RESULT_RECORDS) {
+            // Still hit the ceiling even after raising it — surface this loudly
+            // rather than silently under-counting; bump MAX_RESULT_RECORDS further
+            // if this ever fires for real.
+            // eslint-disable-next-line no-console
+            console.warn(`Query returned ${records.length} records, at or above MAX_RESULT_RECORDS=${MAX_RESULT_RECORDS} — results may be truncated: ${query.slice(0, 80)}...`);
+          }
+          return records;
+        }
+
+        // Denominators must match ScorecardsPage.tsx's `L{n} Score` = concat(passCount, " / N")
+        // and checkDetailConfigs.ts's LEVEL_CHECK_COUNT (L1:7, L2:6, L3:7, L4:5, L5:5).
+        const LEVEL_MAX = { l1: 7, l2: 6, l3: 7, l4: 5, l5: 5 };
+        const LEVELS = ['l1', 'l2', 'l3', 'l4', 'l5'];
+        const TOTAL_MAX = LEVELS.reduce((s, k) => s + LEVEL_MAX[k], 0); // 30
+
+        // Mirrors ui/app/components/MaturitySpine.tsx's getCurrentLevel(): a
+        // cumulative 80%-gate walk up the levels, NOT MaturityLeaderboard.tsx's
+        // different single-threshold getMaturityLevel(pct) bucketing. The daily
+        // snapshot's grade must match the live scorecard's own grading.
+        function currentGrade(scores) {
+          const THRESHOLD = 0.8;
+          let idx = 0;
+          for (let i = 0; i < LEVELS.length; i++) {
+            const key = LEVELS[i];
+            const pct = LEVEL_MAX[key] > 0 ? scores[key] / LEVEL_MAX[key] : 0;
+            if (pct >= THRESHOLD) idx = Math.min(i + 1, LEVELS.length - 1);
+            else { idx = i; break; }
+          }
+          return LEVELS[idx].toUpperCase(); // "L1".."L5"
+        }
+
+        function toMap(records, scoreField) {
+          const m = new Map();
+          for (const r of records || []) {
+            const appci = String(r.applicationci || '').trim().toLowerCase();
+            if (!appci) continue;
+            m.set(appci, Number(r[scoreField] || 0));
+          }
+          return m;
+        }
+
+        export default async function () {
+          const [l1, l2, l3, l4, l5] = await Promise.all([
+            runQuery(QUERIES.l1), runQuery(QUERIES.l2), runQuery(QUERIES.l3),
+            runQuery(QUERIES.l4), runQuery(QUERIES.l5),
+          ]);
+
+          const l1Map = toMap(l1, 'l1Score');
+          const l2Map = toMap(l2, 'l2Score');
+          const l3Map = toMap(l3, 'l3Score');
+          const l4Map = toMap(l4, 'l4Score');
+          const l5Map = toMap(l5, 'l5Score');
+
+          // Union of every appci seen in ANY of the 5 result sets — deliberately not
+          // anchored on l1Map only. MaturityLeaderboard.tsx's client-side merge
+          // anchors on l1Map.entries() as "all apps," which would silently drop an
+          // app that only appears in another level's independently-derived set.
+          // Since the goal here is "snapshot every app," union is correct.
+          const allAppci = new Set([
+            ...l1Map.keys(), ...l2Map.keys(), ...l3Map.keys(), ...l4Map.keys(), ...l5Map.keys(),
+          ]);
+
+          const snapshotDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+          const events = [];
+          for (const appci of allAppci) {
+            const scores = {
+              l1: l1Map.get(appci) || 0, l2: l2Map.get(appci) || 0,
+              l3: l3Map.get(appci) || 0, l4: l4Map.get(appci) || 0,
+              l5: l5Map.get(appci) || 0,
+            };
+            const total = LEVELS.reduce((s, k) => s + scores[k], 0);
+            const pct = Math.round((total / TOTAL_MAX) * 100);
+            const grade = currentGrade(scores);
+
+            events.push({
+              specversion: '1.0',
+              id: `${appci}-${snapshotDate}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              source: 'sre-maturity-daily-snapshot-workflow',
+              type: 'workflow.summary.sre_maturity',
+              time: new Date().toISOString(),
+              data: {
+                applicationci: appci,
+                snapshotDate,
+                l1Score: scores.l1, l2Score: scores.l2, l3Score: scores.l3,
+                l4Score: scores.l4, l5Score: scores.l5,
+                total, totalMax: TOTAL_MAX, pct, grade,
+              },
+            });
+          }
+
+          // Batches of 500 bound blast radius / retry granularity per network call —
+          // not driven by the 5 MiB payload cap (at ~2,000 apps x ~400 bytes each, a
+          // single batch is well under 1 MiB).
+          const BATCH_SIZE = 500;
+          let batchesOk = 0;
+          const failedBatches = [];
+          for (let i = 0; i < events.length; i += BATCH_SIZE) {
+            const chunk = events.slice(i, i + BATCH_SIZE);
+            try {
+              await businessEventsClient.ingest({
+                type: 'application/cloudevent-batch+json',
+                body: chunk,
+              });
+              batchesOk++;
+            } catch (err) {
+              // A partially-invalid batch still ingests its valid events per
+              // businessEventsClient.ingest's documented behavior — log and
+              // continue so one bad record doesn't block the other apps.
+              failedBatches.push({ startIndex: i, size: chunk.length, error: String(err) });
+            }
+          }
+
+          return {
+            appsProcessed: allAppci.size,
+            recordCounts: { l1: l1.length, l2: l2.length, l3: l3.length, l4: l4.length, l5: l5.length },
+            batchesTotal: Math.ceil(events.length / BATCH_SIZE),
+            batchesOk,
+            batchesFailed: failedBatches.length,
+            failedBatches,
+          };
+        }
+

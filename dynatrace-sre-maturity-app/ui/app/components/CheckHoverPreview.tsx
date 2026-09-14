@@ -19,26 +19,66 @@ const STATUS_COLOR: Record<string, string> = {
   na: "var(--na-ink, #4C5B73)",
 };
 
+const POPUP_WIDTH = 300;
+const HOVER_DELAY_MS = 800;
+
 export const CheckHoverPreview = ({ checkKey, value, accentColor, children }: Props) => {
-  const ref = React.useRef<HTMLDivElement>(null);
-  const [coords, setCoords] = React.useState<{ x: number; y: number } | null>(null);
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const timeoutRef = React.useRef<number | null>(null);
+  const [coords, setCoords] = React.useState<{ x: number; top?: number; bottom?: number } | null>(null);
+
+  const clearTimer = () => {
+    if (timeoutRef.current !== null) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  };
 
   const show = () => {
-    const r = ref.current?.getBoundingClientRect();
-    if (!r) return;
-    const width = 340;
-    const x = Math.max(12, Math.min(window.innerWidth - width - 12, r.left));
-    setCoords({ x, y: r.bottom + 8 });
+    clearTimer();
+    timeoutRef.current = window.setTimeout(() => {
+      // wrapperRef's div is `display: contents` (so it doesn't disturb the
+      // flex/grid layout it sits in), which means it has no box of its own —
+      // getBoundingClientRect() on it returns an empty rect at (0,0). Measure
+      // its rendered child instead, or the popup pins to the viewport corner.
+      const target = (wrapperRef.current?.firstElementChild ?? wrapperRef.current) as HTMLElement | null;
+      const r = target?.getBoundingClientRect();
+      if (!r) return;
+      const centerX = r.left + r.width / 2;
+      const x = Math.max(12, Math.min(window.innerWidth - POPUP_WIDTH - 12, centerX - POPUP_WIDTH / 2));
+      const spaceBelow = window.innerHeight - r.bottom;
+      const spaceAbove = r.top;
+      if (spaceBelow < 260 && spaceAbove > spaceBelow) {
+        setCoords({ x, bottom: window.innerHeight - r.top + 8 });
+      } else {
+        setCoords({ x, top: r.bottom + 8 });
+      }
+    }, HOVER_DELAY_MS);
   };
-  const hide = () => setCoords(null);
+
+  const hide = () => {
+    clearTimer();
+    setCoords(null);
+  };
+
+  React.useEffect(() => clearTimer, []);
 
   const config = CHECK_DETAIL_CONFIGS[checkKey];
   const status = getStatus(value);
   const display = value.replace(/^(pass|fail|warn|n\/a)\s*/i, "");
   const levelInfo = config ? LEVEL_META[config.level] : null;
+  // passLogic is usually "Pass: ..." or "N/A: ...", but a couple of
+  // known-not-yet-live checks are a single plain sentence with no leading
+  // label — only split off a label when the text before the colon reads
+  // like one (short), not when a colon happens to appear mid-sentence.
+  const passLogicText = config?.passLogic ?? "";
+  const colonIdx = passLogicText.indexOf(":");
+  const hasLabel = colonIdx > 0 && colonIdx < 12;
+  const formulaLabel = hasLabel ? passLogicText.slice(0, colonIdx).toUpperCase() : null;
+  const formula = hasLabel ? passLogicText.slice(colonIdx + 1).trim() : passLogicText;
 
   return (
-    <div ref={ref} onMouseEnter={show} onMouseLeave={hide} style={{ display: "contents" }}>
+    <div ref={wrapperRef} onMouseEnter={show} onMouseLeave={hide} style={{ display: "contents" }}>
       {children}
       {coords &&
         config &&
@@ -47,8 +87,9 @@ export const CheckHoverPreview = ({ checkKey, value, accentColor, children }: Pr
             style={{
               position: "fixed",
               left: coords.x,
-              top: coords.y,
-              width: 340,
+              top: coords.top,
+              bottom: coords.bottom,
+              width: POPUP_WIDTH,
               zIndex: 9999,
               background: "var(--card, #fff)",
               border: "1px solid var(--line, rgba(0,0,0,0.08))",
@@ -59,7 +100,7 @@ export const CheckHoverPreview = ({ checkKey, value, accentColor, children }: Pr
             }}
           >
             <div style={{ height: 3, background: accentColor }} />
-            <div style={{ padding: "13px 15px 12px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ padding: "12px 14px 11px", display: "flex", flexDirection: "column", gap: 9 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span
                   style={{
@@ -73,7 +114,7 @@ export const CheckHoverPreview = ({ checkKey, value, accentColor, children }: Pr
                 >
                   {config.level}
                 </span>
-                <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0 }}>
                   {checkKey.replace(/^\d+\.\s*/, "")}
                 </span>
                 <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.6, color: STATUS_COLOR[status] }}>
@@ -81,39 +122,26 @@ export const CheckHoverPreview = ({ checkKey, value, accentColor, children }: Pr
                 </span>
               </div>
               {config.hardcoded && <HardcodedBadge size="chip" />}
-              <div style={{ fontSize: 12.5, color: "var(--ink, #1A2440)", lineHeight: 1.5 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--ink, #1A2440)", lineHeight: 1.3 }}>
                 {display || "—"}
               </div>
-              <div>
-                <span
+              {formula && (
+                <div
                   style={{
-                    fontSize: 9.5,
-                    fontWeight: 700,
-                    letterSpacing: 0.7,
-                    color: "var(--ink-2, #6F747F)",
-                    textTransform: "uppercase",
+                    background: levelInfo ? `${levelInfo.color}14` : "var(--panel, #F7F8FA)",
+                    border: `1px solid ${levelInfo ? levelInfo.color + "40" : "var(--line, #E3E6EB)"}`,
+                    borderRadius: 7,
+                    padding: "7px 10px",
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    fontSize: 11,
+                    lineHeight: 1.4,
                   }}
                 >
-                  How it's calculated
-                </span>
-                <p style={{ margin: "4px 0 0", fontSize: 11.5, lineHeight: 1.5, color: "var(--ink, #1A2440)" }}>
-                  {config.description}
-                </p>
-              </div>
-              <div
-                style={{
-                  background: levelInfo ? `${levelInfo.color}14` : "var(--panel, #F7F8FA)",
-                  border: `1px solid ${levelInfo ? levelInfo.color + "40" : "var(--line, #E3E6EB)"}`,
-                  borderRadius: 7,
-                  padding: "7px 10px",
-                }}
-              >
-                <span style={{ fontSize: 11.5, lineHeight: 1.45 }}>
-                  <strong style={{ color: levelInfo?.color }}>Passes when: </strong>
-                  {config.passLogic}
-                </span>
-              </div>
-              <span style={{ fontSize: 10.5, color: "var(--ink-2, #6F747F)" }}>Click for full detail →</span>
+                  {formulaLabel && <strong style={{ color: levelInfo?.color }}>{formulaLabel}: </strong>}
+                  {formula}
+                </div>
+              )}
+              <span style={{ fontSize: 10, color: "var(--ink-2, #6F747F)" }}>Click for full detail →</span>
             </div>
           </div>,
           document.body

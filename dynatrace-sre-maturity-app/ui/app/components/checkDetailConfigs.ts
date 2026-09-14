@@ -25,6 +25,10 @@ export interface CheckDetailConfig {
   secondaryAppFunction?: { name: string; toRecords: (result: unknown) => Record<string, unknown>[] };
   secondaryChartType?: "table" | "bar" | "stackedBar" | "multiPanel" | "donut";
   secondaryLabel?: string;
+  /** Whole secondary chart is clickable; opens the Kubernetes app's cluster
+   *  list filtered to this AppCI's cluster-name prefix (handles AppCIs that
+   *  span multiple clusters without needing a per-cluster entity ID). */
+  secondaryChartClusterClick?: boolean;
   /** Small caption rendered under the total in the middle of a donut. */
   donutCenterLabel?: string;
   multiSeriesMeta?: Record<string, { label: string; unit?: string }>;
@@ -40,7 +44,9 @@ export interface CheckDetailConfig {
    *  Dependencies tab with that service pre-selected, instead of opening an
    *  external Dynatrace app in a new tab. */
   dependenciesRowClick?: boolean;
-  k8sClusterRowClick?: boolean;
+  /** Row supplies an `entityId` column (a K8s workload's Smartscape node ID);
+   *  opens that specific workload in the Kubernetes app's workload explorer. */
+  k8sWorkloadRowClick?: boolean;
   cloudResourceRowClick?: boolean;
   cloudTypeRowClick?: boolean;
   dashboardRowClick?: boolean;
@@ -406,16 +412,15 @@ fetch dt.entity.service
     level: "L1",
     levelColor: "#57C0F4",
     description:
-      "Detects Kubernetes clusters belonging to this ApplicationCI by matching the cluster name against the ApplicationCI prefix (e.g. '<code>-us-east-1-prd'), not by workload tags — a shared EKS cluster's workloads (cloud_application entities) are often tagged with a sub-application's CI, which under-detects the parent app. This check is N/A for applications that do not run on Kubernetes. The table lists every workload running on the app's cluster(s), following Kubernetes SRE best practice by surfacing the two signals that matter most for workload health: desired vs. running replica count (drift indicates a scheduling or capacity problem) and container restart count (a crash-loop indicator). Workloads with running < desired sort to the top. Click any row to open that workload's cluster in the Services app. The chart breaks restart volume down by namespace over time, so you can see which sub-application is unstable.",
+      "Detects Kubernetes clusters belonging to this ApplicationCI by matching the cluster name against the ApplicationCI prefix (e.g. '<code>-us-east-1-prd'), not by workload tags — a shared EKS cluster's workloads (cloud_application entities) are often tagged with a sub-application's CI, which under-detects the parent app. This check is N/A for applications that do not run on Kubernetes. The table lists every workload running on the app's cluster(s), following Kubernetes SRE best practice by surfacing the two signals that matter most for workload health: desired vs. running replica count (drift indicates a scheduling or capacity problem) and health events (24h count of restarts, OOM kills, failed scheduling, and failed health probes — a crash-loop/instability indicator). Workloads with running < desired sort to the top. Click any row to open that specific workload in the Kubernetes app, or use the View menu to jump straight into a Smartscape topology view (related nodes, direct calls, hierarchy, downstream/upstream call chain) for it. The chart breaks down the same event types over time, so you can see when and how the trouble happened, not just how much. Click the chart to open this AppCI's clusters in the Kubernetes app.",
     passLogic:
-      "Pass: at least one Kubernetes cluster's name starts with this ApplicationCI (case-insensitive). N/A: no matching cluster exists for this app.",
+      "N/A (counted as a pass): no Kubernetes cluster matches this ApplicationCI — not every app runs on K8s. When a cluster does match: Pass requires the Cloud Native Full Stack OneAgent Operator DaemonSet to be present and fully ready, plus K8s-scoped tracing and logs both flowing for the cluster. Fail: a cluster matches but the operator isn't healthy or a signal is missing.",
     guidance:
-      "Connect your Kubernetes cluster to Dynatrace via the Kubernetes Operator. Name clusters with the '<applicationci>-<region>-<env>' convention so they're attributable to the owning app. Investigate workloads where running < desired (scheduling/capacity issue) or where restarts are climbing (crash loop) first.",
+      "Connect your Kubernetes cluster to Dynatrace via the Kubernetes Operator. Name clusters with the '<applicationci>-<region>-<env>' convention so they're attributable to the owning app. Investigate workloads where running < desired (scheduling/capacity issue) or where health events are climbing (crash loop, OOM, or scheduling instability) first.",
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.kubernetes_cluster
 | filter startsWith(lower(entity.name), concat(lower("${appCI}"), "-"))
 | dedup id
-| fieldsAdd clusterName = entity.name
 | lookup [
     fetch logs, samplingRatio:1000, from:now()-2h
     | filter isNotNull(dt.entity.cloud_application)
@@ -433,45 +438,56 @@ fetch dt.entity.service
     | summarize ns = takeFirst(k8s.namespace.name), by:{dt.entity.cloud_application}
   ], sourceField:workloadIds, lookupField:dt.entity.cloud_application, fields:{ns}
 | lookup [
-    timeseries desired = avg(dt.kubernetes.workload.pods_desired), running = avg(dt.kubernetes.pods), restarts = sum(dt.kubernetes.container.restarts), by:{dt.entity.cloud_application}, from:now()-1h
+    timeseries desired = avg(dt.kubernetes.workload.pods_desired), running = avg(dt.kubernetes.pods), by:{dt.entity.cloud_application}, from:now()-1h
     | fieldsAdd desiredLast = arrayLast(desired)
     | fieldsAdd runningLast = arrayLast(running)
-    | fieldsAdd restartsTotal = arraySum(restarts)
-    | fields dt.entity.cloud_application, desiredLast, runningLast, restartsTotal
-  ], sourceField:workloadIds, lookupField:dt.entity.cloud_application, fields:{desiredLast, runningLast, restartsTotal}
-| fieldsAdd restartsTotal = if(isNull(restartsTotal), 0, else: restartsTotal)
+    | fields dt.entity.cloud_application, desiredLast, runningLast
+  ], sourceField:workloadIds, lookupField:dt.entity.cloud_application, fields:{desiredLast, runningLast}
+| lookup [
+    fetch events, from:now()-24h
+    | filter event.provider == "KUBERNETES_EVENT"
+    | filter in(dt.kubernetes.event.reason, {"Killing","BackOff","FailedScheduling","Unhealthy"})
+    | filter isNotNull(dt.entity.cloud_application)
+    | summarize eventCount = count(), by:{dt.entity.cloud_application}
+  ], sourceField:workloadIds, lookupField:dt.entity.cloud_application, fields:{eventCount}
+| lookup [
+    timeseries oom = sum(dt.kubernetes.container.oom_kills), by:{dt.entity.cloud_application}, from:now()-24h
+    | fieldsAdd oomTotal = arraySum(oom)
+    | fields dt.entity.cloud_application, oomTotal
+  ], sourceField:workloadIds, lookupField:dt.entity.cloud_application, fields:{oomTotal}
+| lookup [
+    smartscapeNodes K8S_DEPLOYMENT, K8S_STATEFULSET, K8S_DAEMONSET, K8S_JOB, K8S_CRONJOB
+    | filter startsWith(lower(k8s.cluster.name), concat(lower("${appCI}"), "-"))
+    | fields id_classic, workloadEntityId = id
+  ], sourceField:workloadIds, lookupField:id_classic, fields:{workloadEntityId}
+| fieldsAdd healthEvents = (if(isNull(eventCount), 0, else: eventCount)) + (if(isNull(oomTotal), 0, else: oomTotal))
 | fieldsAdd problemSort = if(isNotNull(desiredLast) and isNotNull(runningLast) and runningLast < desiredLast, 0, else: 1)
 | sort problemSort asc, workloadName asc
-| fields workload = workloadName, namespace = ns, desired = desiredLast, running = runningLast, restarts = restartsTotal, clusterName
+| fields workload = workloadName, namespace = ns, desired = desiredLast, running = runningLast, \`health events\` = healthEvents, entityId = workloadEntityId
 | limit 500`,
-    k8sClusterRowClick: true,
-    secondaryQuery: (appCI: string) => `fetch dt.entity.kubernetes_cluster
-| filter startsWith(lower(entity.name), concat(lower("${appCI}"), "-"))
-| dedup id
-| lookup [
-    fetch logs, samplingRatio:1000, from:now()-2h
-    | filter isNotNull(dt.entity.cloud_application)
-    | summarize workloadIds = collectDistinct(dt.entity.cloud_application), by:{dt.entity.kubernetes_cluster}
-  ], sourceField:id, lookupField:dt.entity.kubernetes_cluster, fields:{workloadIds}
-| expand workloadIds
-| dedup workloadIds
-| lookup [
-    fetch logs, samplingRatio:1000, from:now()-2h
-    | filter isNotNull(dt.entity.cloud_application) and isNotNull(k8s.namespace.name)
-    | summarize ns = takeFirst(k8s.namespace.name), by:{dt.entity.cloud_application}
-  ], sourceField:workloadIds, lookupField:dt.entity.cloud_application, fields:{ns}
-| fieldsAdd ns = if(isNull(ns), "unknown", else: ns)
-| lookup [
-    timeseries restarts = sum(dt.kubernetes.container.restarts), by:{dt.entity.cloud_application}, from:now()-24h, interval:1h
-  ], sourceField:workloadIds, lookupField:dt.entity.cloud_application, fields:{restarts, timeframe, interval}
-| filter isNotNull(restarts)
-| fieldsAdd bucket = record(timestamp = timeframe[start] + interval * iIndex(), v = restarts[])
-| expand bucket
-| fieldsFlatten bucket, prefix:""
-| summarize restarts = sum(v), by:{timestamp, namespace = ns}
+    k8sWorkloadRowClick: true,
+    smartscapeMenuRowClick: true,
+    secondaryQuery: (appCI: string) => `fetch events, from:now()-24h
+| filter event.provider == "KUBERNETES_EVENT"
+| filter startsWith(lower(k8s.cluster.name), concat(lower("${appCI}"), "-"))
+| filter in(dt.kubernetes.event.reason, {"Killing","BackOff","FailedScheduling","Unhealthy"})
+| fieldsAdd category = if(dt.kubernetes.event.reason == "FailedScheduling", "Failed Scheduling",
+    else: if(dt.kubernetes.event.reason == "Unhealthy", "Unhealthy", else: "Restarts"))
+| summarize count = toDouble(count()), by:{timestamp = bin(timestamp, 1h), category}
+| append [
+    timeseries oom = sum(dt.kubernetes.container.oom_kills), by:{k8s.cluster.name}, interval:1h, from:now()-24h
+    | filter startsWith(lower(k8s.cluster.name), concat(lower("${appCI}"), "-"))
+    | fieldsAdd bucket = record(timestamp = timeframe[start] + interval * iIndex(), v = oom[])
+    | expand bucket
+    | fieldsFlatten bucket, prefix:""
+    | summarize count = sum(v), by:{timestamp}
+    | filter count > 0
+    | fieldsAdd category = "OOM Kills"
+  ]
 | sort timestamp asc`,
     secondaryChartType: "stackedBar",
-    secondaryLabel: "Container restarts by namespace (24h, hourly)",
+    secondaryLabel: "Kubernetes events by type (24h, hourly)",
+    secondaryChartClusterClick: true,
     scorecardSnippet: `fetch dt.entity.kubernetes_cluster
 | fieldsAdd applicationci = lower(splitString(entity.name, "-")[0])
 | summarize k8sClusterCount = count(), by:{applicationci}

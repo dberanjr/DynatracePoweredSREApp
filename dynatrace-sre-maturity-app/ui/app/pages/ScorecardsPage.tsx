@@ -1,11 +1,11 @@
 import React from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
-import { Heading } from "@dynatrace/strato-components/typography";
 import { ScorecardCard } from "../components/ScorecardCard";
-import { MaturitySpine } from "../components/MaturitySpine";
+import { MaturitySpine, SPINE_BACKGROUND } from "../components/MaturitySpine";
 import { AppIdentityBar } from "../components/AppIdentityBar";
 import { NextMovesBand } from "../components/NextMovesBand";
 import { CheckDetailModal } from "../components/CheckDetailModal";
+import { SkeletonKeyframes } from "../components/SkeletonBar";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOverride";
 import { LevelId, LevelRecord } from "../components/checkStatus";
@@ -53,9 +53,12 @@ data record(applicationci = lower("${appCI}"))
         iCollectArray(splitString(applicationci[], ",")[0])
       )
     | expand applicationci
+    // PaaS-injected hosts (ECS Fargate, EKS Fargate, etc.) never get a
+    // monitoringMode value — PaaS OneAgent has no partial mode, it's always
+    // full-stack or not present at all — so a null mode here still counts.
     | summarize
         hostCount = count(),
-        fullStackCount = countIf(monitoringMode == "FULL_STACK"),
+        fullStackCount = countIf(monitoringMode == "FULL_STACK" or isNull(monitoringMode)),
         by:{applicationci}
   ], sourceField:applicationci, lookupField:applicationci, fields:{hostCount, fullStackCount}
 | fieldsRename hosts = hostCount, fullStack = fullStackCount
@@ -101,6 +104,40 @@ data record(applicationci = lower("${appCI}"))
     | summarize k8sClusterCount = count(), by:{applicationci}
   ], sourceField:applicationci, lookupField:applicationci, fields:{k8sClusterCount}
 | fieldsRename k8sClusters = k8sClusterCount
+
+// Signal 4a: Cloud Native Full Stack OneAgent Operator health — the operator
+// DaemonSet's app.kubernetes.io/component label distinguishes cloudnativefullstack
+// from classicfullstack; only cloudnativefullstack counts as "properly instrumented".
+| lookup [
+    smartscapeNodes K8S_DAEMONSET
+    | filter matchesPhrase(k8s.workload.name, "oneagent") and not matchesPhrase(k8s.workload.name, "csi-driver")
+    | fieldsAdd applicationci = lower(splitString(k8s.cluster.name, "-")[0])
+    | parse k8s.object, "JSON:config"
+    | fieldsAdd
+        component = \`tags:k8s.labels\`[\`app.kubernetes.io/component\`],
+        desired = toLong(config[status][desiredNumberScheduled]),
+        ready = toLong(config[status][numberReady])
+    | summarize
+        cloudNativeOperatorHealthy = countIf(component == "cloudnativefullstack" and desired > 0 and ready == desired),
+        by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{cloudNativeOperatorHealthy}
+
+// Signal 4b: K8s-scoped tracing — dt.service.request.count carries k8s.cluster.name
+// as a dimension, no direct Smartscape edge exists from SERVICE to K8S_POD.
+| lookup [
+    timeseries reqs = sum(dt.service.request.count), by:{k8s.cluster.name}, from:now()-2h
+    | fieldsAdd applicationci = lower(splitString(k8s.cluster.name, "-")[0]),
+        total = arraySum(reqs)
+    | summarize k8sScopedTracing = sum(total), by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sScopedTracing}
+
+// Signal 4c: K8s-scoped logs
+| lookup [
+    fetch logs, samplingRatio:1000, from:now()-2h
+    | filter isNotNull(k8s.cluster.name)
+    | fieldsAdd applicationci = lower(splitString(k8s.cluster.name, "-")[0])
+    | summarize k8sScopedLogs = count(), by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sScopedLogs}
 
 // Signal 5: Cloud (all AWS/Azure/GCP resources — same smartscapeNodes source as
 // the Clouds app, not just EC2/RDS/Lambda, since those undercounted vs. the
@@ -178,9 +215,16 @@ data record(applicationci = lower("${appCI}"))
     services = if(isNull(services), 0, else: services),
     logs = if(isNull(logs), 0, else: logs),
     k8sClusters = if(isNull(k8sClusters), 0, else: k8sClusters),
+    cloudNativeOperatorHealthy = if(isNull(cloudNativeOperatorHealthy), 0, else: cloudNativeOperatorHealthy),
+    k8sScopedTracing = if(isNull(k8sScopedTracing), 0, else: k8sScopedTracing),
+    k8sScopedLogs = if(isNull(k8sScopedLogs), 0, else: k8sScopedLogs),
     cloudResources = if(isNull(cloudResources), 0, else: cloudResources),
     rumApps = if(isNull(rumApps), 0, else: rumApps),
     synthetics = if(isNull(synthetics), 0, else: synthetics)
+
+// Kubernetes health: n/a (no k8s) counts as pass; otherwise pass only if the
+// Cloud Native Full Stack operator is healthy AND k8s-scoped tracing/logs are flowing.
+| fieldsAdd k8sHealthy = cloudNativeOperatorHealthy > 0 and k8sScopedTracing > 0 and k8sScopedLogs > 0
 
 // Compute status
 | fieldsAdd
@@ -196,9 +240,11 @@ data record(applicationci = lower("${appCI}"))
     \`4. Smartscape Discovery\` = if(services > 0,
         "pass Active",
         else: "fail Not discovered"),
-    \`5. Kubernetes\` = if(k8sClusters > 0,
-        concat("pass ", toString(k8sClusters), " cluster(s)"),
-        else: "n/a N/A"),
+    \`5. Kubernetes\` = if(k8sClusters == 0,
+        "pass N/A — no Kubernetes detected",
+        else: if(k8sHealthy,
+            concat("pass ", toString(k8sClusters), " cluster(s), cloud-native full-stack healthy"),
+            else: concat("fail ", toString(k8sClusters), " cluster(s) detected, operator or signal issue"))),
     \`6. Cloud\` = if(cloudResources > 0,
         concat("pass ", toString(cloudResources), " resources"),
         else: "n/a N/A"),
@@ -211,8 +257,8 @@ data record(applicationci = lower("${appCI}"))
     + if(services > 0, 1, else: 0)
     + if(logs > 0, 1, else: 0)
     + if(services > 0, 1, else: 0)
-    + if(k8sClusters > 0, 1, else: 0)
-    + if(cloudResources > 0, 1, else: 0)
+    + if(k8sClusters == 0 or k8sHealthy, 1, else: 0)
+    + 1
     + if(rumApps > 0 or synthetics > 0, 1, else: 0)
 | fieldsAdd \`L1 Score\` = concat(toString(passCount), " / 7")
 
@@ -335,7 +381,7 @@ data record(applicationci = lower("${appCI}"))
     + if(guardianCount > 0, 1, else: 0)
     + if(dashboards > 0, 1, else: 0)
     + if(sreAssessment > 0, 1, else: 0)
-    + if(resolved > 0, 1, else: 0)
+    + if(resolved > 0 or criticalCount == 0, 1, else: 0)
 | fieldsAdd \`L2 Score\` = concat(toString(passCount), " / 6")
 
 | fields
@@ -481,8 +527,8 @@ data record(applicationci = lower("${appCI}"))
     if(causalTotal > 0, 1, else: 0)
     + if(deployTotal > 0, 1, else: 0)
     + if(itsmWorkflows > 0, 1, else: 0)
-    + if(total7d > 0 and noisePct <= 50, 1, else: 0)
-    + if(causalTotal > 0 and rootCausePct >= 40, 1, else: 0)
+    + if(total7d == 0 or noisePct <= 50, 1, else: 0)
+    + if(causalTotal == 0 or rootCausePct >= 40, 1, else: 0)
     + if(deployTotal > 0, 1, else: 0)
 | fieldsAdd \`L3 Score\` = concat(toString(passCount), " / 7")
 
@@ -599,11 +645,13 @@ data record(applicationci = lower("${appCI}"))
                     else: "fail No deployments or guardian validations (30d)")))),
     \`5. Error Budget Gating\` = "fail Error budget not sent to change management"
 
-// Only a genuine pass scores. warn / n/a / fail all score 0 against a fixed denominator
-// of 5, so the two capability gaps (forecasting, gating) stay visible as red.
+// A genuine pass or a genuine n/a (no cloud footprint at all, check #2) scores.
+// warn / fail score 0, and the two hardcoded capability gaps (#3 forecasting,
+// #5 gating) always score 0 against a fixed denominator of 5, so they stay
+// visible as red until those capabilities are actually built.
 | fieldsAdd passCount =
     if(burnAlerts > 0, 1, else: 0)
-    + if(scaleTargets > 0, 1, else: 0)
+    + if(scaleTargets > 0 or cloudTotal == 0, 1, else: 0)
     + 0
     + if(srgEventTriggered > 0, 1, else: 0)
     + 0
@@ -620,13 +668,24 @@ data record(applicationci = lower("${appCI}"))
   const l5Query = `// L5 Autonomous Reliability - Maturity Scorecard
 data record(applicationci = lower("${appCI}"))
 
-// Signal 1: Workflow automations
+// Signal 1: Automation Engine workflows tied to this app (title prefixed
+// with the app's 3-letter code, executed in the last 30 days). FIXED
+// (2026-08-30): previously counted ANY bizevent whose event.type merely
+// contained the substring "workflow" — that matched near-universal noise
+// (ServiceNow CMDB import events, other teams' cost/cloud-inventory
+// reporting workflows, even this app's own daily maturity-snapshot
+// bizevent), so almost every app in the tenant passed regardless of
+// whether it had real automation. Now requires an actual Automation
+// Engine WORKFLOW_EXECUTION whose title starts with this app's code —
+// the same convention the ITSM Integration check (L3 #3) already uses.
 | lookup [
-    fetch bizevents, from:now()-7d
-    | filter contains(event.type, "workflow")
-    | filter isNotNull(applicationci)
-    | summarize workflowCount = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{workflowCount}
+    fetch dt.system.events, from:now()-30d
+    | filter event.provider == "AUTOMATION_ENGINE"
+    | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
+    | fieldsAdd wfAppci = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+    | filter stringLength(wfAppci) == 3
+    | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppci}
+  ], sourceField:applicationci, lookupField:wfAppci, fields:{workflowCount}
 | fieldsRename workflows = workflowCount
 
 // Signal 2: Problem auto-enrichment
@@ -658,7 +717,7 @@ data record(applicationci = lower("${appCI}"))
 // Compute status
 | fieldsAdd
     \`1. Repetitive Tasks Identified\` = if(workflows > 0,
-        concat("pass ", toString(workflows), " workflow events (7d)"),
+        concat("pass ", toString(workflows), " automation workflow(s) (30d)"),
         else: "fail No automation detected"),
     \`2. Workflow Automation\` = if(workflows > 0,
         "pass Workflows active",
@@ -687,12 +746,25 @@ data record(applicationci = lower("${appCI}"))
     \`4. Incident Auto-Enrichment\`,
     \`5. AI Postmortem / PTASK in ARD\``;
 
+  // Maturity trend — daily snapshot bizevents ingested by
+  // workflows/sre-maturity-daily-snapshot.yaml (event.type
+  // "workflow.summary.sre_maturity"). Filters early (event.type, then
+  // applicationci) since this is a large shared tenant. dedup collapses a
+  // same-day manual re-run down to its latest snapshot.
+  const trendQuery = `fetch bizevents, from:now()-90d
+| filter event.type == "workflow.summary.sre_maturity"
+| filter lower(applicationci) == lower("${appCI}")
+| sort timestamp desc
+| dedup snapshotDate
+| sort timestamp asc
+| fields timestamp, snapshotDate, l1Score, l2Score, l3Score, l4Score, l5Score, total, totalMax, pct, grade`;
+
   const levelConfigs: { level: LevelId; label: string; query: string; color: string; liveOverride?: LiveCheckOverride }[] = [
-    { level: "L1", label: "L1 — Full Observability", query: l1Query, color: "#3BACF0" },
-    { level: "L2", label: "L2 — Measured Reliability", query: l2Query, color: "#1966FF" },
-    { level: "L3", label: "L3 — AI-Assisted Operations", query: l3Query, color: "#5E28E5", liveOverride: runbooksLiveOverride },
-    { level: "L4", label: "L4 — Proactive Reliability", query: l4Query, color: "#8D1CDC" },
-    { level: "L5", label: "L5 — Autonomous Reliability", query: l5Query, color: "#49C2B3" },
+    { level: "L1", label: "L1 — Full Observability", query: l1Query, color: "#57C0F4" },
+    { level: "L2", label: "L2 — Measured Reliability", query: l2Query, color: "#2E3EEA" },
+    { level: "L3", label: "L3 — AI-Assisted Operations", query: l3Query, color: "#611CD9", liveOverride: runbooksLiveOverride },
+    { level: "L4", label: "L4 — Proactive Reliability", query: l4Query, color: "#B23BE4" },
+    { level: "L5", label: "L5 — Autonomous Reliability", query: l5Query, color: "#E436FF" },
   ];
 
   // levelConfigs is a fixed-length, fixed-order array (never conditional on
@@ -711,8 +783,11 @@ data record(applicationci = lower("${appCI}"))
     return { level: r.level, record };
   });
 
-  const anyFirstLoad = results.some((r) => r.isLoading);
-  const anyRefreshing = results.some((r) => r.isRefreshing);
+  const { data: trendData, isLoading: trendIsLoading, isRefreshing: trendIsRefreshing } = useDqlWithCache({ query: trendQuery });
+  const trendRecords = (trendData?.records as Record<string, unknown>[] | undefined) ?? [];
+
+  const anyFirstLoad = results.some((r) => r.isLoading) || trendIsLoading;
+  const anyRefreshing = results.some((r) => r.isRefreshing) || trendIsRefreshing;
 
   const [mode, setMode] = React.useState<"engineer" | "executive">("engineer");
   const [openCheck, setOpenCheck] = React.useState<{ level: LevelId; key: string; value: string } | null>(null);
@@ -728,20 +803,34 @@ data record(applicationci = lower("${appCI}"))
 
   return (
     <Flex flexDirection="column" gap={20} padding={16}>
-      <Heading level={3}>SRE Maturity Level Scorecards</Heading>
+      <SkeletonKeyframes />
 
-      <AppIdentityBar appCI={appCI} />
+      <div
+        style={{
+          background: SPINE_BACKGROUND,
+          borderRadius: 16,
+          padding: "16px 24px 20px",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+        }}
+      >
+        <AppIdentityBar appCI={appCI} />
+        <div style={{ borderTop: "1px solid rgba(255,255,255,.12)", marginTop: 14, paddingTop: 16 }}>
+          <MaturitySpine
+            levelRecords={levelRecords}
+            isLoading={anyFirstLoad}
+            isRefreshing={anyRefreshing}
+            mode={mode}
+            onModeChange={setMode}
+            onCheckOpen={handleCheckOpen}
+            trendRecords={trendRecords}
+          />
+        </div>
+      </div>
 
-      <MaturitySpine
-        levelRecords={levelRecords}
-        isLoading={anyFirstLoad}
-        isRefreshing={anyRefreshing}
-        mode={mode}
-        onModeChange={setMode}
-        onCheckOpen={handleCheckOpen}
-      />
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, alignItems: "stretch" }}>
+      {/* minmax(0, 1fr), not plain 1fr — a bare 1fr track's floor is its content's
+          auto/min-content width, so a wide check row (long title + metric column)
+          pushes the whole grid wider than the viewport instead of being clipped. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12, alignItems: "stretch" }}>
         {results.map((r) => {
           const lr = levelRecords.find((l) => l.level === r.level)!;
           return (

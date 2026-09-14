@@ -1,7 +1,7 @@
 import React from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Paragraph } from "@dynatrace/strato-components/typography";
-import { APP_VERSION, COMMIT_HASH, COMMIT_DATE } from "../version";
+import { APP_VERSION, COMMIT_HASH, BUILD_DATE, DEPLOY_DATE } from "../version";
 
 // Dynatrace brand palette (matches LandingPage / app design system)
 const brand = {
@@ -82,8 +82,9 @@ const valueStyle: React.CSSProperties = {
 const linkStyle: React.CSSProperties = { color: brand.accent3, textDecoration: "none" };
 
 export const AboutPage = () => {
-  const buildDate = formatBuildDate(COMMIT_DATE);
-  const year = (COMMIT_DATE ? new Date(COMMIT_DATE) : new Date()).getFullYear();
+  const buildDate = formatBuildDate(BUILD_DATE);
+  const deployDate = formatBuildDate(DEPLOY_DATE);
+  const year = new Date().getFullYear();
 
   const rows: { label: string; value: React.ReactNode }[] = [
     { label: "App", value: CONFIG.appName },
@@ -95,6 +96,10 @@ export const AboutPage = () => {
           {buildDate} · <code>{COMMIT_HASH}</code>
         </span>
       ),
+    },
+    {
+      label: "Deployed",
+      value: DEPLOY_DATE ? deployDate : "Not yet deployed",
     },
     { label: "Author", value: CONFIG.author },
     { label: "Maintainer", value: CONFIG.maintainer },

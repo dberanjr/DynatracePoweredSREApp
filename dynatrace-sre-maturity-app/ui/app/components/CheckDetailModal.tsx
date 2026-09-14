@@ -445,6 +445,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   WARN: "#9a6700",
   FAILED: "#cf222e",
   ERROR: "#cf222e",
+  // K8s events-by-type breakdown (L1-5 Kubernetes check), ordered least to
+  // most concerning.
+  RESTARTS: "#1966FF",
+  UNHEALTHY: "#9a6700",
+  "FAILED SCHEDULING": "#bf5b04",
+  "OOM KILLS": "#cf222e",
 };
 const CATEGORY_STACK_ORDER = [
   "FULL_STACK",
@@ -459,6 +465,10 @@ const CATEGORY_STACK_ORDER = [
   "WARN",
   "FAILED",
   "ERROR",
+  "RESTARTS",
+  "UNHEALTHY",
+  "FAILED SCHEDULING",
+  "OOM KILLS",
 ];
 
 function statusRank(status: string): number {
@@ -901,21 +911,20 @@ function DataPanel({
               const url = `${envUrl}/ui/apps/dynatrace.services/explorer-new/services?${params.toString()}`;
               window.open(url, "_blank");
             }
-          : config?.k8sClusterRowClick
+          : config?.k8sWorkloadRowClick
             ? (row: Record<string, unknown>) => {
-                const clusterName = String(row.clusterName ?? "");
-                if (!clusterName) return;
+                const entityId = String(row.entityId ?? "");
+                if (!entityId) return;
                 const envUrl = getEnvironmentUrl().replace(/\/$/, "");
                 const qs = new URLSearchParams({
-                  tf: "now-2h;now",
-                  perspective: "performance",
-                  sort: "healthIndicators:descending",
+                  perspective: "Health",
+                  sort: "workload-entity:ascending",
+                  detailsId: entityId,
+                  sidebarOpen: "false",
+                  detailsTab: "Info",
                 });
-                const hash = new URLSearchParams({
-                  filtering: `k8s.cluster.name = "${clusterName}"`,
-                  segments: "[]",
-                });
-                const url = `${envUrl}/ui/apps/dynatrace.services/explorer/services?${qs.toString()}#${hash.toString()}`;
+                const hash = new URLSearchParams({ filtering: `Cluster = ${appCI}*` });
+                const url = `${envUrl}/ui/apps/dynatrace.kubernetes/smartscape/workload/K8S_WORKLOAD?${qs.toString()}#${hash.toString()}`;
                 window.open(url, "_blank");
               }
             : config?.cloudResourceRowClick
@@ -1082,11 +1091,9 @@ function DataPanel({
           : undefined
       }
       hiddenCols={
-        config?.serviceRowClick || config?.hostEntityRowClick || config?.serviceMapRowClick || config?.cloudResourceRowClick || config?.dependenciesRowClick
+        config?.serviceRowClick || config?.hostEntityRowClick || config?.serviceMapRowClick || config?.cloudResourceRowClick || config?.dependenciesRowClick || config?.k8sWorkloadRowClick
           ? ["entityId"]
-          : config?.k8sClusterRowClick
-            ? ["clusterName"]
-            : config?.dashboardRowClick
+          : config?.dashboardRowClick
               ? ["dashboardId"]
               : config?.guardianRowClick
                 ? ["guardianId"]
@@ -1967,9 +1974,9 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                   — use the View menu for Smartscape topology views
                 </div>
               )}
-              {config?.k8sClusterRowClick && (
+              {config?.k8sWorkloadRowClick && (
                 <div style={{ fontSize: 10, color: "var(--sre-text-secondary, #6F747F)", fontStyle: "italic" }}>
-                  — click a row to open that workload's cluster in Services
+                  — click a row to open that workload in the Kubernetes app
                 </div>
               )}
               {config?.cloudResourceRowClick && (
@@ -2024,28 +2031,47 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                       {" "}— click a row to open that type in the Clouds app
                     </span>
                   )}
+                  {config.secondaryChartClusterClick && (
+                    <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, fontStyle: "italic" }}>
+                      {" "}— click the chart to open this app's clusters in the Kubernetes app
+                    </span>
+                  )}
                 </div>
-                <SecondaryDataPanel
-                  query={config.secondaryQuery ? config.secondaryQuery(appCI, facet ?? undefined) : `data record(none = true)`}
-                  appCI={appCI}
-                  appFunction={config.secondaryAppFunction}
-                  chartType={config.secondaryChartType ?? "bar"}
-                  accentColor={accentColor}
-                  tableHeight={config.secondaryChartType === "table" ? TABLE_HEIGHT : undefined}
-                  onRowClick={
-                    config.cloudTypeRowClick
-                      ? (row) => {
-                          const rawType = String(row.type ?? "");
-                          if (!rawType) return;
-                          const resourceType = row.resourceType != null ? String(row.resourceType) : undefined;
-                          window.open(buildCloudTypeFilterUrl(appCI, rawType, resourceType), "_blank");
+                <div
+                  onClick={
+                    config.secondaryChartClusterClick
+                      ? () => {
+                          const envUrl = getEnvironmentUrl().replace(/\/$/, "");
+                          const qs = new URLSearchParams({ sort: "healthIndicators:descending" });
+                          const hash = new URLSearchParams({ filtering: `Cluster = ${appCI}*` });
+                          window.open(`${envUrl}/ui/apps/dynatrace.kubernetes/smartscape/K8S_CLUSTER?${qs.toString()}#${hash.toString()}`, "_blank");
                         }
                       : undefined
                   }
-                  hiddenCols={config.cloudTypeRowClick ? ["resourceType"] : undefined}
-                  multiSeriesMeta={config.multiSeriesMeta}
-                  donutCenterLabel={config.donutCenterLabel}
-                />
+                  style={config.secondaryChartClusterClick ? { cursor: "pointer" } : undefined}
+                >
+                  <SecondaryDataPanel
+                    query={config.secondaryQuery ? config.secondaryQuery(appCI, facet ?? undefined) : `data record(none = true)`}
+                    appCI={appCI}
+                    appFunction={config.secondaryAppFunction}
+                    chartType={config.secondaryChartType ?? "bar"}
+                    accentColor={accentColor}
+                    tableHeight={config.secondaryChartType === "table" ? TABLE_HEIGHT : undefined}
+                    onRowClick={
+                      config.cloudTypeRowClick
+                        ? (row) => {
+                            const rawType = String(row.type ?? "");
+                            if (!rawType) return;
+                            const resourceType = row.resourceType != null ? String(row.resourceType) : undefined;
+                            window.open(buildCloudTypeFilterUrl(appCI, rawType, resourceType), "_blank");
+                          }
+                        : undefined
+                    }
+                    hiddenCols={config.cloudTypeRowClick ? ["resourceType"] : undefined}
+                    multiSeriesMeta={config.multiSeriesMeta}
+                    donutCenterLabel={config.donutCenterLabel}
+                  />
+                </div>
               </>
             )}
           </div>

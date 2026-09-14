@@ -1,10 +1,15 @@
 import React, { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { CHECK_DETAIL_CONFIGS, LEVEL_META, CheckDetailConfig } from "../components/checkDetailConfigs";
 
 type Level = "L1" | "L2" | "L3" | "L4" | "L5";
 const LEVELS: Level[] = ["L1", "L2", "L3", "L4", "L5"];
+
+function isLevel(v: string | null): v is Level {
+  return !!v && (LEVELS as string[]).includes(v);
+}
 
 // Minimal DQL syntax highlighter — renders a code block with line-level comment dimming.
 function DQLBlock({ code }: { code: string }) {
@@ -68,11 +73,11 @@ function CheckDefinitionCard({ label, config }: { label: string; config: CheckDe
   const [showDql, setShowDql] = useState(false);
 
   const statusColors: Record<string, string> = {
-    L1: "#3BACF0",
-    L2: "#1966FF",
-    L3: "#5E28E5",
-    L4: "#8D1CDC",
-    L5: "#49C2B3",
+    L1: "#57C0F4",
+    L2: "#2E3EEA",
+    L3: "#611CD9",
+    L4: "#B23BE4",
+    L5: "#E436FF",
   };
   const color = statusColors[config.level] ?? "#888";
 
@@ -249,14 +254,18 @@ function LevelPanel({ level }: { level: Level }) {
 }
 
 export const DefinitionsPage = () => {
-  const [activeLevel, setActiveLevel] = useState<Level>("L1");
+  // "def" links from ScorecardCard land here as /definitions?level=L3 so the
+  // tab opens on the level the user actually clicked from, not always L1.
+  const [searchParams] = useSearchParams();
+  const levelParam = searchParams.get("level");
+  const [activeLevel, setActiveLevel] = useState<Level>(isLevel(levelParam) ? levelParam : "L1");
 
   const tabColors: Record<Level, string> = {
-    L1: "#3BACF0",
-    L2: "#1966FF",
-    L3: "#5E28E5",
-    L4: "#8D1CDC",
-    L5: "#49C2B3",
+    L1: "#57C0F4",
+    L2: "#2E3EEA",
+    L3: "#611CD9",
+    L4: "#B23BE4",
+    L5: "#E436FF",
   };
 
   return (

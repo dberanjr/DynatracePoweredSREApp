@@ -1,7 +1,9 @@
-// Single-row app identity bar for the redesigned Scorecards page. Same data
-// source as AppContextBanner.tsx (PROFILE_LOOKUP/PROFILE_FALLBACK) — that
-// component is left untouched because Home.tsx also renders it and this
-// redesign doesn't touch Home.
+// Identity strip for the redesigned Scorecards page. Same data source as
+// AppContextBanner.tsx (PROFILE_LOOKUP/PROFILE_FALLBACK) — that component is
+// left untouched because Home.tsx also renders it and this redesign doesn't
+// touch Home. Renders content only (no card chrome) — ScorecardsPage stacks
+// this directly on top of MaturitySpine inside one shared dark card, so the
+// colors here are tuned for that dark background rather than a white card.
 import React, { useRef } from "react";
 import { Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
@@ -14,19 +16,19 @@ interface Props {
 
 function getCriticalityColor(criticality: string): string {
   const c = criticality.toLowerCase();
-  if (c.includes("1") || c.includes("most critical")) return "var(--fail-ink, #B3261E)";
-  if (c.includes("2") || c.includes("high")) return "#c2410c";
-  if (c.includes("3") || c.includes("moderate")) return "var(--warn-ink, #8A6100)";
-  if (c.includes("4") || c.includes("low")) return "var(--pass-ink, #17663C)";
-  return "var(--ink-2, #6F747F)";
+  if (c.includes("1") || c.includes("most critical")) return "#FF6B6B";
+  if (c.includes("2") || c.includes("high")) return "#FF9F5A";
+  if (c.includes("3") || c.includes("moderate")) return "#FBBF24";
+  if (c.includes("4") || c.includes("low")) return "#4ADE80";
+  return "rgba(255,255,255,.6)";
 }
 
 function getStatusColor(status: string): string {
   const s = status.toLowerCase();
-  if (s.includes("production")) return "var(--pass-ink, #17663C)";
-  if (s.includes("implementation")) return "var(--nav-active, #1414D3)";
-  if (s.includes("retired")) return "var(--fail-ink, #B3261E)";
-  return "var(--ink-2, #6F747F)";
+  if (s.includes("production")) return "#4ADE80";
+  if (s.includes("implementation")) return "#7DD3FC";
+  if (s.includes("retired")) return "#FF6B6B";
+  return "rgba(255,255,255,.6)";
 }
 
 function Chip({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
@@ -37,13 +39,13 @@ function Chip({ label, value, valueColor }: { label: string; value: string; valu
           fontSize: 10,
           fontWeight: 700,
           letterSpacing: 0.5,
-          color: "var(--ink-2, #6F747F)",
+          color: "rgba(255,255,255,.42)",
           textTransform: "uppercase",
         }}
       >
         {label}
       </span>
-      <span style={{ fontSize: 12.5, fontWeight: 700, color: valueColor ?? "var(--ink, #1A2440)" }}>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: valueColor ?? "rgba(255,255,255,.85)" }}>
         {value || "—"}
       </span>
     </div>
@@ -90,19 +92,9 @@ export const AppIdentityBar = ({ appCI }: Props) => {
 
   if (isFirstLoad) {
     return (
-      <div
-        style={{
-          background: "var(--card, #fff)",
-          borderRadius: 10,
-          padding: "10px 14px",
-          border: "1px solid var(--line, #E3E6EB)",
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <ProgressCircle size="small" />
-        <Paragraph style={{ fontSize: 12 }}>Loading application profile...</Paragraph>
+        <Paragraph style={{ fontSize: 12, color: "rgba(255,255,255,.7)" }}>Loading application profile...</Paragraph>
       </div>
     );
   }
@@ -118,26 +110,14 @@ export const AppIdentityBar = ({ appCI }: Props) => {
 
   return (
     <RefreshOverlay isRefreshing={isRefreshing}>
-      <div
-        style={{
-          background: "var(--card, #fff)",
-          border: "1px solid var(--line, #E3E6EB)",
-          borderRadius: 10,
-          padding: "10px 16px",
-          boxShadow: "var(--shadow, 0 1px 2px rgba(26,36,64,.05))",
-          display: "flex",
-          alignItems: "center",
-          gap: 20,
-          flexWrap: "wrap",
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexShrink: 0 }}>
-          <span style={{ fontFamily: "monospace", fontSize: 20, fontWeight: 700, color: "var(--ink, #1A2440)" }}>
+          <span style={{ fontFamily: "monospace", fontSize: 20, fontWeight: 700, color: "#fff" }}>
             {appci.toUpperCase()}
           </span>
-          <span style={{ fontSize: 13, color: "var(--ink, #1A2440)" }}>{name}</span>
+          <span style={{ fontSize: 13, color: "rgba(255,255,255,.75)" }}>{name}</span>
         </div>
-        <div style={{ width: 1, height: 26, background: "var(--line, #E3E6EB)", flexShrink: 0 }} />
+        <div style={{ width: 1, height: 26, background: "rgba(255,255,255,.14)", flexShrink: 0 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
           <Chip label="Tier" value={criticality} valueColor={getCriticalityColor(criticality)} />
           <Chip label="Status" value={status} valueColor={getStatusColor(status)} />
@@ -146,7 +126,7 @@ export const AppIdentityBar = ({ appCI }: Props) => {
           <Chip label="Support" value={supportGroup} />
         </div>
         {lookupError && !fallbackData?.records?.length && (
-          <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--ink-2, #6F747F)" }}>
+          <span style={{ marginLeft: "auto", fontSize: 10, color: "rgba(255,255,255,.42)" }}>
             CMDB lookup unavailable — showing data from ServiceNow import
           </span>
         )}

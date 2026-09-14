@@ -48,9 +48,12 @@ const BULK_L1_QUERY = `fetch dt.entity.service
         iCollectArray(splitString(applicationci[], ",")[0])
       )
     | expand applicationci
+    // PaaS-injected hosts (ECS Fargate, EKS Fargate, etc.) never get a
+    // monitoringMode value — PaaS OneAgent has no partial mode, it's always
+    // full-stack or not present at all — so a null mode here still counts.
     | summarize
         hostCount = count(),
-        fullStackCount = countIf(monitoringMode == "FULL_STACK"),
+        fullStackCount = countIf(monitoringMode == "FULL_STACK" or isNull(monitoringMode)),
         by:{applicationci}
   ], sourceField:applicationci, lookupField:applicationci, fields:{hostCount, fullStackCount}
 | lookup [
@@ -72,6 +75,31 @@ const BULK_L1_QUERY = `fetch dt.entity.service
     | expand applicationci
     | summarize k8sCount = count(), by:{applicationci}
   ], sourceField:applicationci, lookupField:applicationci, fields:{k8sCount}
+| lookup [
+    smartscapeNodes K8S_DAEMONSET
+    | filter matchesPhrase(k8s.workload.name, "oneagent") and not matchesPhrase(k8s.workload.name, "csi-driver")
+    | fieldsAdd applicationci = lower(splitString(k8s.cluster.name, "-")[0])
+    | parse k8s.object, "JSON:config"
+    | fieldsAdd
+        component = \`tags:k8s.labels\`[\`app.kubernetes.io/component\`],
+        desired = toLong(config[status][desiredNumberScheduled]),
+        ready = toLong(config[status][numberReady])
+    | summarize
+        cloudNativeOperatorHealthy = countIf(component == "cloudnativefullstack" and desired > 0 and ready == desired),
+        by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{cloudNativeOperatorHealthy}
+| lookup [
+    timeseries reqs = sum(dt.service.request.count), by:{k8s.cluster.name}, from:now()-2h
+    | fieldsAdd applicationci = lower(splitString(k8s.cluster.name, "-")[0]),
+        total = arraySum(reqs)
+    | summarize k8sScopedTracing = sum(total), by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sScopedTracing}
+| lookup [
+    fetch logs, samplingRatio:1000, from:now()-2h
+    | filter isNotNull(k8s.cluster.name)
+    | fieldsAdd applicationci = lower(splitString(k8s.cluster.name, "-")[0])
+    | summarize k8sScopedLogs = count(), by:{applicationci}
+  ], sourceField:applicationci, lookupField:applicationci, fields:{k8sScopedLogs}
 | lookup [
     fetch logs, samplingRatio:1000
     | filter isNotNull(applicationci)
@@ -135,17 +163,21 @@ const BULK_L1_QUERY = `fetch dt.entity.service
     hostCount = if(isNull(hostCount), 0, else: hostCount),
     serviceCount = if(isNull(serviceCount), 0, else: serviceCount),
     k8sCount = if(isNull(k8sCount), 0, else: k8sCount),
+    cloudNativeOperatorHealthy = if(isNull(cloudNativeOperatorHealthy), 0, else: cloudNativeOperatorHealthy),
+    k8sScopedTracing = if(isNull(k8sScopedTracing), 0, else: k8sScopedTracing),
+    k8sScopedLogs = if(isNull(k8sScopedLogs), 0, else: k8sScopedLogs),
     logCount = if(isNull(logCount), 0, else: logCount),
     cloudCount = if(isNull(cloudCount), 0, else: cloudCount),
     rumCount = if(isNull(rumCount), 0, else: rumCount),
     synCount = if(isNull(synCount), 0, else: synCount)
+| fieldsAdd k8sHealthy = cloudNativeOperatorHealthy > 0 and k8sScopedTracing > 0 and k8sScopedLogs > 0
 | fieldsAdd l1Score =
     if(hostCount > 0, 1, else: 0)
     + if(serviceCount > 0, 1, else: 0)
     + if(logCount > 0, 1, else: 0)
     + if(serviceCount > 0, 1, else: 0)
-    + if(k8sCount > 0, 1, else: 0)
-    + if(cloudCount > 0, 1, else: 0)
+    + if(k8sCount == 0 or k8sHealthy, 1, else: 0)
+    + 1
     + if(rumCount > 0 or synCount > 0, 1, else: 0)
 | fields applicationci, l1Score, serviceCount, hostCount, k8sCount, logCount`;
 
@@ -202,13 +234,14 @@ const BULK_L2_QUERY = `fetch dt.entity.service
 | lookup [
     load "/lookups/critical_services"
     | fieldsAdd appci = lower(appci)
-    | summarize resolved = countIf(entity_ids != "-"), by:{appci}
-  ], sourceField:applicationci, lookupField:appci, fields:{resolved}
+    | summarize criticalCount = count(), resolved = countIf(entity_ids != "-"), by:{appci}
+  ], sourceField:applicationci, lookupField:appci, fields:{criticalCount, resolved}
 | fieldsAdd
     dashboardCount = if(isNull(dashboardCount), 0, else: dashboardCount),
     hasTier = if(isNull(hasTier), 0, else: hasTier),
     sloCount = if(isNull(sloCount), 0, else: sloCount),
     guardianCount = if(isNull(guardianCount), 0, else: guardianCount),
+    criticalCount = if(isNull(criticalCount), 0, else: criticalCount),
     resolved = if(isNull(resolved), 0, else: resolved)
 | fieldsAdd l2Score =
     if(serviceCount > 0, 1, else: 0)
@@ -216,7 +249,7 @@ const BULK_L2_QUERY = `fetch dt.entity.service
     + if(guardianCount > 0, 1, else: 0)
     + if(dashboardCount > 0, 1, else: 0)
     + if(hasTier > 0, 1, else: 0)
-    + if(resolved > 0, 1, else: 0)
+    + if(resolved > 0 or criticalCount == 0, 1, else: 0)
 | fields applicationci, l2Score`;
 
 // ── Bulk L3: per-app AI ops signals ──
@@ -293,8 +326,8 @@ const BULK_L3_QUERY = `fetch dt.entity.service
     + if(deployTotal > 0, 1, else: 0)
     + if(itsmWorkflows > 0, 1, else: 0)
     + 0
-    + if(total7d > 0 and noisePct <= 50, 1, else: 0)
-    + if(causalTotal > 0 and rootCausePct >= 40, 1, else: 0)
+    + if(total7d == 0 or noisePct <= 50, 1, else: 0)
+    + if(causalTotal == 0 or rootCausePct >= 40, 1, else: 0)
     + if(deployTotal > 0, 1, else: 0)
 | fields applicationci, l3Score`;
 
@@ -334,11 +367,13 @@ const BULK_L4_QUERY = `fetch dt.entity.service
   ], sourceField:applicationci, lookupField:appci, fields:{burnAlerts}
 | lookup [
     smartscapeNodes "AWS*"
-    | filter matchesValue(type, "AWS_AUTOSCALING_AUTOSCALINGGROUP", "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET", "AWS_EKS_NODEGROUP")
     | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
     | filter isNotNull(ApplicationCI)
-    | summarize scaleTargets = count(), by:{appci = lower(ApplicationCI)}
-  ], sourceField:applicationci, lookupField:appci, fields:{scaleTargets}
+    | summarize
+        cloudTotal = count(),
+        scaleTargets = countIf(matchesValue(type, "AWS_AUTOSCALING_AUTOSCALINGGROUP", "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET", "AWS_EKS_NODEGROUP")),
+        by:{appci = lower(ApplicationCI)}
+  ], sourceField:applicationci, lookupField:appci, fields:{cloudTotal, scaleTargets}
 | lookup [
     fetch events, from:now()-30d
     | filter event.kind == "SDLC_EVENT"
@@ -350,11 +385,12 @@ const BULK_L4_QUERY = `fetch dt.entity.service
   ], sourceField:applicationci, lookupField:appci, fields:{srgEventTriggered}
 | fieldsAdd
     burnAlerts = if(isNull(burnAlerts), 0, else: burnAlerts),
+    cloudTotal = if(isNull(cloudTotal), 0, else: cloudTotal),
     scaleTargets = if(isNull(scaleTargets), 0, else: scaleTargets),
     srgEventTriggered = if(isNull(srgEventTriggered), 0, else: srgEventTriggered)
 | fieldsAdd l4Score =
     if(burnAlerts > 0, 1, else: 0)
-    + if(scaleTargets > 0, 1, else: 0)
+    + if(scaleTargets > 0 or cloudTotal == 0, 1, else: 0)
     + 0
     + if(srgEventTriggered > 0, 1, else: 0)
     + 0
@@ -366,12 +402,19 @@ const BULK_L4_QUERY = `fetch dt.entity.service
 // FIXED (2026-08-29): Incident Auto-Enrichment was dropped entirely — this query
 // never fetched dt.davis.problems at all, so a real, computable signal always
 // scored 0 on the leaderboard. Mirrors l5Query in ScorecardsPage.tsx; keep in sync.
-const BULK_L5_QUERY = `fetch bizevents, from:now()-7d
-| filter contains(event.type, "workflow")
-| filter isNotNull(applicationci)
-| fieldsAdd applicationci = lower(applicationci)
-| filter stringLength(applicationci) <= 3
-| summarize workflowCount = count(), by:{applicationci}
+// FIXED (2026-08-30): the workflowCount signal previously counted ANY bizevent
+// whose event.type merely contained "workflow" — near-universal noise
+// (ServiceNow CMDB import events, other teams' cost/cloud-inventory reporting
+// workflows, even the new daily maturity-snapshot bizevent), so nearly every
+// app passed regardless of real automation. Now requires an actual Automation
+// Engine WORKFLOW_EXECUTION whose title starts with the app's code — same
+// convention as the ITSM Integration check (L3 #3).
+const BULK_L5_QUERY = `fetch dt.system.events, from:now()-30d
+| filter event.provider == "AUTOMATION_ENGINE"
+| filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
+| fieldsAdd applicationci = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+| filter stringLength(applicationci) == 3
+| summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{applicationci}
 | lookup [
     fetch dt.davis.problems
     | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]

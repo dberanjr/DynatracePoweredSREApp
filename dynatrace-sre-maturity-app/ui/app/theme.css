@@ -1,5 +1,16 @@
 /* Custom theme variables for DynatracePoweredSRE */
 
+/* Our check-detail modal (CheckDetailModal.tsx) is a hand-rolled portal at
+   z-index 10000. strato-components' Menu.Content portals its dropdown using
+   the design system's own overlay elevation scale (~30 by default), which
+   sits far below our modal — so without this override, any Menu opened from
+   inside the modal (e.g. the L1-4 Smartscape "View" menu) renders visually
+   underneath it. Menu.Content clobbers any zIndex passed via its own style
+   prop, so this has to be an external !important rule instead. */
+[data-testid="smartscape-view-menu-content"] {
+  z-index: 10001 !important;
+}
+
 :root,
 [data-theme="light"] {
   --sre-bg-primary: #ffffff;
