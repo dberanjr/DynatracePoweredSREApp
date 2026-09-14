@@ -10,7 +10,7 @@
   },
   "app": {
     "name": "DynatracePoweredSRE",
-    "version": "2.69.3",
+    "version": "2.69.4",
     "description": "Dynatrace-Powered SRE Maturity Assessment App",
     "id": "my.dynatrace.sre.maturity.app",
     "scopes": [

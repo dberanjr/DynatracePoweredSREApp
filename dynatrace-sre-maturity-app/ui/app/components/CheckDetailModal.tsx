@@ -2010,7 +2010,13 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                 </div>
               )}
             </div>
-            <DataPanel config={config} appCI={appCI} accentColor={accentColor} facet={facet ?? undefined} scrollable={!!config?.secondaryQuery || !!config?.secondaryAppFunction || !!config?.serviceMapRowClick || !!config?.cloudResourceRowClick || !!config?.dependenciesRowClick} />
+            {/* Keyed by checkKey: sibling-sidebar/arrow-key navigation changes
+                checkKey without unmounting CheckDetailModal, and useAppFunction
+                (inside DataPanel) only re-invokes on a `data` change, not a
+                `name` change — its data is always {appCI}, which doesn't vary
+                between checks. Forcing a remount here re-triggers the
+                mount-time fetch for whichever appFunction the new check uses. */}
+            <DataPanel key={checkKey} config={config} appCI={appCI} accentColor={accentColor} facet={facet ?? undefined} scrollable={!!config?.secondaryQuery || !!config?.secondaryAppFunction || !!config?.serviceMapRowClick || !!config?.cloudResourceRowClick || !!config?.dependenciesRowClick} />
             {(config?.secondaryQuery || config?.secondaryAppFunction) && (
               <>
                 <div
@@ -2051,6 +2057,7 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                   style={config.secondaryChartClusterClick ? { cursor: "pointer" } : undefined}
                 >
                   <SecondaryDataPanel
+                    key={checkKey}
                     query={config.secondaryQuery ? config.secondaryQuery(appCI, facet ?? undefined) : `data record(none = true)`}
                     appCI={appCI}
                     appFunction={config.secondaryAppFunction}

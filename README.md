@@ -272,6 +272,19 @@ Five files must agree, all keyed by the exact check label the DQL emits:
 If you add or rename a check, update all five. The Definitions tab renders straight from
 `checkDetailConfigs.ts`, so its `scorecardSnippet` must reflect what the scorecard actually runs.
 
+### `appFunction` remount gotcha
+
+**Fixed 2026-09-14**: the Dynatrace SDK's `useAppFunction` hook only re-invokes on a change to
+its `data` argument — never on a change to `name` (`useAppFunction({ name, data }, ...)` passes
+`[JSON.stringify(data)]`, not `name`, as its refetch dependency). Every `appFunction`/
+`secondaryAppFunction` call in `CheckDetailModal.tsx` sends `data: { appCI }`, which is identical
+across every check for a given app. That meant switching to a different app-function-driven check
+via the sibling sidebar or arrow-key navigation — without closing and reopening the modal — never
+re-fired the new check's function; only opening a check fresh from the scorecard page (a genuine
+new mount) did. `DataPanel` and `SecondaryDataPanel` are now `key={checkKey}`, forcing a real
+remount on every check switch specifically to route around this. If you add a new
+`appFunction`-driven check, this is already handled — just don't remove those keys.
+
 ## Prerequisites
 
 - Node.js >= 16.13
