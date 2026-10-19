@@ -2,6 +2,7 @@ import React from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Paragraph } from "@dynatrace/strato-components/typography";
 import { APP_VERSION, COMMIT_HASH, BUILD_DATE, DEPLOY_DATE } from "../version";
+import { APP_NAME } from "../constants";
 
 // Dynatrace brand palette (matches LandingPage / app design system)
 const brand = {
@@ -16,7 +17,7 @@ const brand = {
 };
 
 const CONFIG = {
-  appName: "DynatracePoweredSRE",
+  appName: APP_NAME,
   author: "David Beran",
   maintainer: "David Beran",
   email: "david.beran@dynatrace.com",

@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { APP_VERSION } from "../version";
+import { COMPANY_NAME, APP_NAME } from "../constants";
 
 // Dynatrace brand palette from POTX template
 const brand = {
@@ -321,7 +322,7 @@ function EnterpriseBadge() {
               @keyframes dotPulse3 { 0%, 80%, 100% { opacity: 0.15; } 60% { opacity: 0.8; } }
             `}</style>
             <div style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.35)", letterSpacing: 1, marginBottom: 12, lineHeight: 1.5, animation: "shimmer 2s ease-in-out infinite" }}>
-              Computing United Airlines<br />SRE Maturity Score...
+              Computing {COMPANY_NAME}<br />SRE Maturity Score...
             </div>
             <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
               {[1, 2, 3].map((n) => (
@@ -337,7 +338,7 @@ function EnterpriseBadge() {
         ) : (
           <>
             <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: 1.5, marginBottom: 6 }}>
-              UNITED AIRLINES ENTERPRISE MATURITY
+              {COMPANY_NAME.toUpperCase()} ENTERPRISE MATURITY
             </div>
             <div style={{
               fontSize: 72, fontWeight: 900, color, lineHeight: 1,
@@ -410,9 +411,9 @@ export const LandingPage = () => {
 
         </div>
 
-        {/* United globe — blended directly into the dark background */}
+        {/* CareSource — blended directly into the dark background */}
         <img
-          src="./assets/united-globe-white.png"
+          src="./assets/caresource.jpeg"
           alt=""
           style={{
             position: "absolute",
@@ -586,7 +587,7 @@ export const LandingPage = () => {
           background: `linear-gradient(90deg, ${brand.accent1}, ${brand.accent2}, ${brand.accent3}, ${brand.accent4}, ${brand.accent5}, ${brand.accent6})`,
         }} />
         <Paragraph style={{ color: "rgba(255,255,255,0.35)", fontSize: 12 }}>
-          DynatracePoweredSRE — Built by David Beran with Dynatrace App Toolkit (version {APP_VERSION})
+          {APP_NAME} — Built by David Beran with Dynatrace App Toolkit (version {APP_VERSION})
         </Paragraph>
       </div>
     </Flex>

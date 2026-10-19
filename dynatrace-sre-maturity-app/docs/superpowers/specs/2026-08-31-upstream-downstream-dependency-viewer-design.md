@@ -80,7 +80,7 @@ Patterns confirmed reusable during research, with exact locations:
   `selectedServiceId` + per-direction level state, presentational table and
   panel components below it.
 
-### Validated DQL findings (live, against united-preprod, this spike)
+### Validated DQL findings (live, against caresource-preprod, this spike)
 
 - `smartscapeNodes "SERVICE" | traverse edgeTypes:{calls}, targetTypes:{SERVICE}, direction:forward|backward`
   is the correct topology-walk primitive. Chained hops are fast (150ms-1.5s

@@ -4,6 +4,7 @@ import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDql, useAppFunction } from "@dynatrace-sdk/react-hooks";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
+import { COMPANY_NAME } from "../constants";
 
 // ── Bulk L1 query: per-app observability signals (matches scorecard L1 logic) ──
 // Checks: hosts, services, logs, smartscape(=services), k8s, cloud, rum/synthetics → 7 max
@@ -739,7 +740,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
         }}>
           <div>
             <div style={{ fontSize: 20, fontWeight: 900, color: "#fff" }}>SRE Maturity Leaders</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Top 25 Applications at United Airlines</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Top 25 Applications at {COMPANY_NAME}</div>
           </div>
           <div style={{ fontSize: 28 }}>{"\ud83c\udfc6"}</div>
         </div>
