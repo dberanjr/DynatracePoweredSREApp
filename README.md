@@ -5,9 +5,9 @@ An application-level **SRE maturity and reliability intelligence** app built on 
 (keyed by `applicationci`) is scored across a five-level SRE maturity model, entirely from live
 Dynatrace data — no spreadsheets, no manual assessment.
 
-> **Note:** This repository is sanitized for public use. Environment/tenant URLs are set to
-> the placeholder `https://YOUR_TENANT.apps.dynatrace.com` — replace them with your own
-> Dynatrace environment before running (see [Configuration](#configuration)).
+> **Note:** This repository is sanitized for public use. Environment/tenant URLs and company
+> branding are set to placeholder values — replace them with your own before running
+> (see [Configuration](#configuration)).
 
 ## Features
 
@@ -295,15 +295,30 @@ remount on every check switch specifically to route around this. If you add a ne
 
 ## Configuration
 
-Set your Dynatrace environment URL — replace the `YOUR_TENANT` placeholder in:
+### Environment URL
+
+Set your Dynatrace environment URL in two places:
 
 - `app.config.ts` → `environmentUrl`
 - `dynatrace-sre-maturity-app/app.config.json` → `environmentUrl`
-- `dynatrace-sre-maturity-app/ui/app/pages/ProblemAnalyticsPage.tsx` → `problemsAppBase`
 
 ```
 https://YOUR_TENANT.apps.dynatrace.com   →   https://<your-env>.apps.dynatrace.com
 ```
+
+The UI automatically picks up the environment URL from `dynatrace-sre-maturity-app/ui/app/constants.ts` → `ENVIRONMENT_URL` (used for deep-links into the Davis Problems app). Update that value to match.
+
+### Branding
+
+All customer-specific display strings are centralised in `dynatrace-sre-maturity-app/ui/app/constants.ts`:
+
+| Constant | Default | Used in |
+|---|---|---|
+| `COMPANY_NAME` | `"CareSource"` | Landing page heading & leaderboard subtitle |
+| `APP_NAME` | `"DynatracePoweredSRE"` | Header nav, landing page footer, About page |
+| `ENVIRONMENT_URL` | `"https://xyg54887.apps.dynatrace.com"` | Davis Problems deep-links |
+
+Change those three values to rebrand the app for a new tenant.
 
 The app requests read-only scopes for logs, buckets, files (lookup tables), events, business
 events, metrics, entities, system tables, spans, and Smartscape, plus `settings:objects:read`
@@ -322,9 +337,29 @@ npm run build    # production build to dist/
 npm run deploy   # build and deploy to the environment in app.config.json
 npm run lint     # lint the UI source
 
-# one-time (or whenever its DQL changes): activate the daily trend snapshot
+# activate all workflows (run once, or whenever a workflow changes)
 dtctl apply -f workflows/sre-maturity-daily-snapshot.yaml
+dtctl apply -f workflows/refresh-lookups-slo-slos-by-appci.workflow.json
+dtctl apply -f workflows/refresh-lookups-guardians-srg-by-appci.workflow.json
+dtctl apply -f workflows/refresh-lookups-runbooks-runbook-notebooks-by-appci.workflow.json
+dtctl apply -f workflows/refresh-lookups-slo-dashboards-slo-dashboards-by-appci.workflow.json
+dtctl apply -f workflows/refresh-lookups-critical-services-entity-severity-resolved-to-entity-ids.workflow.json
 ```
+
+### Manual prerequisite — `/lookups/entity_severity`
+
+The critical services pipeline requires a human-curated seed table uploaded to your tenant before the `refresh-lookups-critical-services` workflow will produce output. It defines which services/endpoints are considered critical for each AppCI.
+
+Schema (see `lookups/entity_severity.sample.csv` for a template):
+
+| Column | Description |
+|---|---|
+| `appci` | 3-letter AppCI code (lowercase) |
+| `entity_name` | Service or endpoint name as it appears in Dynatrace |
+| `severity` | e.g. `critical`, `high`, `medium` |
+| `business_impact` | e.g. `revenue`, `regulatory`, `member-experience` |
+
+Upload the populated CSV to `/lookups/entity_severity` via the Dynatrace Grail resource store (or the Dynatrace UI's lookup table manager), then run the `refresh-lookups-critical-services` workflow manually to resolve entity IDs and publish `/lookups/critical_services`. After that first run, set a schedule on the workflow to keep entity IDs current as services move.
 
 `build` and `deploy` run `scripts/sync-version.mjs` first, regenerating `ui/app/version.ts` from
 `app.config.json` plus the current git commit and real build/deploy wall-clock times — so the

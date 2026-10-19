@@ -1,7 +1,7 @@
 import type { CliConfig } from "@dynatrace/app-toolkit/cli-config";
 
 const config: CliConfig = {
-  environmentUrl: "https://YOUR_TENANT.apps.dynatrace.com",
+  environmentUrl: "https://xyg54887.apps.dynatrace.com",
   app: {
     name: "DynatraceSREMaturityApp",
     version: "1.0.0",
