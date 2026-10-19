@@ -746,7 +746,7 @@ fetch dt.entity.synthetic_test
     secondaryChartType: "table",
     secondaryLabel: "SLO count by type (parsed from SLO name)",
     sloRowClick: true,
-    scorecardSnippet: `// Source: /lookups/slo  (refreshed hourly by workflow "Write SLOs to Lookup")
+    scorecardSnippet: `// Source: /lookups/slo  (refreshed hourly by workflow "Refresh /lookups/slo (SLOs by AppCI)")
 load "/lookups/slo"
 | fieldsAdd appci = lower(substring(slo, from:0, to:3))
 | summarize sloCount = count(), by:{appci}

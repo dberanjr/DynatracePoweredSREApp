@@ -1,0 +1,46 @@
+{
+  "id": "10ccd727-57d9-429b-b6af-7805434d2f49",
+  "title": "Refresh /lookups/runbooks (Runbook notebooks by AppCI)",
+  "description": "Daily refresh of the /lookups/runbooks table from Dynatrace notebooks, keyed by the leading 3-letter AppCI token. Counts notebooks whose name starts with a 3-letter AppCI token and contains the word \"Runbook\" (case-insensitive). Feeds the L3 \"Runbooks Linked\" scorecard check.",
+  "actor": "edd3ddd7-e1b8-4e95-96ed-9e2cc28ba01e",
+  "owner": "edd3ddd7-e1b8-4e95-96ed-9e2cc28ba01e",
+  "ownerType": "USER",
+  "isPrivate": true,
+  "schemaVersion": 4,
+  "trigger": {
+    "schedule": {
+      "isActive": true,
+      "trigger": {
+        "cron": "0 6 * * *",
+        "type": "cron"
+      },
+      "rule": null,
+      "filterParameters": {},
+      "timezone": "UTC",
+      "inputs": {}
+    }
+  },
+  "result": null,
+  "type": "STANDARD",
+  "input": {},
+  "hourlyExecutionLimit": 1000,
+  "guide": null,
+  "tasks": {
+    "refresh_runbooks_lookup": {
+      "name": "refresh_runbooks_lookup",
+      "input": {
+        "script": "// Refreshes the /lookups/runbooks table (appci -> runbookCount) from Dynatrace\n// notebooks. A notebook is counted as a runbook for an AppCI when its name\n// starts with a 3-letter AppCI token AND contains the word \"Runbook\"\n// (case-insensitive) anywhere. Mirrors the SLO-dashboards convention, but\n// scans notebooks (documents API) instead of dashboards.\nexport default async function () {\n  // 1. Page through all notebook documents\n  const docs = [];\n  let pageKey = null;\n  do {\n    const url = pageKey\n      ? `/platform/document/v1/documents?page-key=${encodeURIComponent(pageKey)}`\n      : `/platform/document/v1/documents?filter=${encodeURIComponent(\"type == 'notebook'\")}&page-size=100`;\n    const r = await fetch(url);\n    if (!r.ok) {\n      throw new Error(`List documents failed: ${r.status} ${await r.text()}`);\n    }\n    const j = await r.json();\n    for (const d of (j.documents || [])) docs.push(d);\n    pageKey = j.nextPageKey || null;\n  } while (pageKey);\n\n  // 2. Match runbooks and aggregate appci -> count.\n  //    appci = leading 3-letter token (3 letters not followed by another letter),\n  //    lowercased. Name must contain \"runbook\" (case-insensitive) anywhere.\n  const counts = {};\n  for (const d of docs) {\n    const name = String((d && d.name) || '');\n    if (!/runbook/i.test(name)) continue;\n    const m = name.match(/^\\s*([A-Za-z]{3})(?![A-Za-z])/);\n    if (!m) continue;\n    const appci = m[1].toLowerCase();\n    counts[appci] = (counts[appci] || 0) + 1;\n  }\n\n  // 3. Build CSV (header is skipped on upload via skippedRecords:1).\n  //    A loaded 0-row lookup exposes no columns, which would break the\n  //    consuming DQL (FIELD_DOES_NOT_EXIST on `appci`). To keep the table's\n  //    schema present even when nothing matches, always emit a sentinel row\n  //    whose appci (\"__none__\") can never equal a real 3-letter AppCI, so it\n  //    never joins to any scorecard row.\n  const appcis = Object.keys(counts).sort();\n  const rows = appcis.map((a) => `${a},${counts[a]}`);\n  if (rows.length === 0) rows.push('__none__,0');\n  const csv = 'appci,runbookCount\\n' + rows.join('\\n') + '\\n';\n\n  // 4. Upload as a lookup table (overwrite existing)\n  const meta = {\n    filePath: '/lookups/runbooks',\n    displayName: 'Runbooks by AppCI',\n    description: 'Count of Runbook notebooks per applicationCI, refreshed daily from the documents API',\n    lookupField: 'appci',\n    parsePattern: \"LD:appci ',' LD:runbookCount\",\n    skippedRecords: 1,\n    autoFlatten: true,\n    timezone: 'UTC',\n    locale: 'en_US',\n    overwrite: true,\n  };\n\n  const boundary = '----runbooklookupboundary' + Date.now();\n  const body =\n    `--${boundary}\\r\\n` +\n    `Content-Disposition: form-data; name=\"request\"\\r\\n` +\n    `Content-Type: application/json\\r\\n\\r\\n` +\n    `${JSON.stringify(meta)}\\r\\n` +\n    `--${boundary}\\r\\n` +\n    `Content-Disposition: form-data; name=\"content\"; filename=\"runbooks\"\\r\\n` +\n    `Content-Type: application/octet-stream\\r\\n\\r\\n` +\n    `${csv}\\r\\n` +\n    `--${boundary}--\\r\\n`;\n\n  const resp = await fetch('/platform/storage/resource-store/v1/files/tabular/lookup:upload', {\n    method: 'POST',\n    headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },\n    body,\n  });\n\n  const text = await resp.text();\n  if (!resp.ok) {\n    throw new Error(`Lookup upload failed: ${resp.status} ${text}`);\n  }\n  return { notebooksRead: docs.length, appciRows: appcis.length, counts };\n}\n"
+      },
+      "action": "dynatrace.automations:run-javascript",
+      "position": {
+        "x": 0,
+        "y": 1
+      },
+      "conditions": {
+        "states": {}
+      },
+      "description": "List notebooks, match runbooks, aggregate appci->count, upload lookup table",
+      "predecessors": []
+    }
+  }
+}

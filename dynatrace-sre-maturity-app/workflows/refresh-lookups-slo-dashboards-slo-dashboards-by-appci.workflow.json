@@ -1,0 +1,46 @@
+{
+  "id": "94a568f0-ce68-4424-8464-f4f19627c7c7",
+  "title": "Refresh /lookups/slo-dashboards (SLO dashboards by AppCI)",
+  "description": "Daily refresh of /lookups/slo-dashboards from dashboard documents whose name starts with a 3-letter AppCI token and contains SLO (standalone uppercase token). Feeds the L2 SLO Dashboards Published scorecard check.",
+  "actor": "edd3ddd7-e1b8-4e95-96ed-9e2cc28ba01e",
+  "owner": "edd3ddd7-e1b8-4e95-96ed-9e2cc28ba01e",
+  "ownerType": "USER",
+  "isPrivate": false,
+  "schemaVersion": 4,
+  "trigger": {
+    "schedule": {
+      "isActive": true,
+      "trigger": {
+        "cron": "15 6 * * *",
+        "type": "cron"
+      },
+      "rule": null,
+      "filterParameters": {},
+      "timezone": "UTC",
+      "inputs": {}
+    }
+  },
+  "result": null,
+  "type": "STANDARD",
+  "input": {},
+  "hourlyExecutionLimit": 1000,
+  "guide": null,
+  "tasks": {
+    "refresh_slo_dashboards_lookup": {
+      "name": "refresh_slo_dashboards_lookup",
+      "input": {
+        "script": "// Refreshes /lookups/slo-dashboards (appci -> dashboardCount) from dashboard\n// documents whose name starts with a 3-letter AppCI token and contains \"SLO\".\nexport default async function () {\n  // 1. Page through all dashboard documents\n  const docs = [];\n  let pageKey = null;\n  do {\n    const params = new URLSearchParams({ filter: \"type=='dashboard'\", 'page-size': '500' });\n    if (pageKey) params.set('page-key', pageKey);\n    const r = await fetch(`/platform/document/v1/documents?${params.toString()}`);\n    if (!r.ok) {\n      throw new Error(`Documents read failed: ${r.status} ${await r.text()}`);\n    }\n    const body = await r.json();\n    for (const d of body.documents || []) docs.push(d);\n    pageKey = body.nextPageKey || null;\n  } while (pageKey);\n\n  // 2. Keep dashboards starting with a 3-letter token that also contain \"SLO\"\n  //    as a standalone uppercase token (allows SLOs / SLO's, rejects SLOW / OSLO / Slow).\n  const tokenRe = /^[A-Za-z]{3}([^A-Za-z]|$)/;\n  const sloRe = /(^|[^A-Z])SLO([^A-Z]|$)/;\n  const counts = {};\n  for (const d of docs) {\n    const name = d.name || '';\n    if (!sloRe.test(name)) continue;\n    if (!tokenRe.test(name)) continue;\n    const appci = name.slice(0, 3).toLowerCase();\n    counts[appci] = (counts[appci] || 0) + 1;\n  }\n\n  // 3. Build CSV (header skipped on upload via skippedRecords:1)\n  const appcis = Object.keys(counts).sort();\n  const csv = 'appci,dashboardCount\\n' + appcis.map((a) => `${a},${counts[a]}`).join('\\n') + '\\n';\n\n  // 4. Upload as a lookup table (overwrite existing)\n  const meta = {\n    filePath: '/lookups/slo-dashboards',\n    displayName: 'SLO Dashboards by AppCI',\n    description: 'Count of dashboards per AppCI whose name starts with a 3-letter AppCI token and contains \"SLO\"',\n    lookupField: 'appci',\n    parsePattern: \"LD:appci ',' LD:dashboardCount\",\n    skippedRecords: 1,\n    autoFlatten: true,\n    timezone: 'UTC',\n    locale: 'en_US',\n    overwrite: true,\n  };\n\n  const boundary = '----slodashboardsboundary' + Date.now();\n  const upBody =\n    `--${boundary}\\r\\n` +\n    `Content-Disposition: form-data; name=\"request\"\\r\\n` +\n    `Content-Type: application/json\\r\\n\\r\\n` +\n    `${JSON.stringify(meta)}\\r\\n` +\n    `--${boundary}\\r\\n` +\n    `Content-Disposition: form-data; name=\"content\"; filename=\"slo-dashboards\"\\r\\n` +\n    `Content-Type: application/octet-stream\\r\\n\\r\\n` +\n    `${csv}\\r\\n` +\n    `--${boundary}--\\r\\n`;\n\n  const up = await fetch('/platform/storage/resource-store/v1/files/tabular/lookup:upload', {\n    method: 'POST',\n    headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },\n    body: upBody,\n  });\n  const upText = await up.text();\n  if (!up.ok) {\n    throw new Error(`Lookup upload failed: ${up.status} ${upText}`);\n  }\n  return { dashboardsScanned: docs.length, appciRows: appcis.length, counts };\n}\n"
+      },
+      "action": "dynatrace.automations:run-javascript",
+      "position": {
+        "x": 0,
+        "y": 1
+      },
+      "conditions": {
+        "states": {}
+      },
+      "description": "Read dashboard documents, aggregate appci->count, upload lookup table",
+      "predecessors": []
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
+import { APP_NAME } from "../constants";
 
 const navItems = [
   { to: "/", label: "Home" },
@@ -37,7 +38,7 @@ export const Header = () => {
           flexShrink: 0,
         }}
       >
-        DynatracePoweredSRE
+        {APP_NAME}
       </Link>
       {navItems.map((item) => {
         const isActive = item.to === "/"

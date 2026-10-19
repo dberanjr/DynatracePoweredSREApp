@@ -1,0 +1,46 @@
+{
+  "id": "b2f7a3c1-d894-4e61-9f02-c5e8d6a01b47",
+  "title": "Refresh /lookups/slo (SLOs by AppCI)",
+  "description": "Hourly refresh of /lookups/slo from the Gen3 SLO platform API. Writes one row per SLO name; the scorecard derives the AppCI from the first 3 characters of each name. Feeds the L2 SLOs Created check in ScorecardsPage and MaturityLeaderboard.",
+  "actor": "edd3ddd7-e1b8-4e95-96ed-9e2cc28ba01e",
+  "owner": "edd3ddd7-e1b8-4e95-96ed-9e2cc28ba01e",
+  "ownerType": "USER",
+  "isPrivate": false,
+  "schemaVersion": 4,
+  "trigger": {
+    "schedule": {
+      "isActive": true,
+      "trigger": {
+        "cron": "0 * * * *",
+        "type": "cron"
+      },
+      "rule": null,
+      "filterParameters": {},
+      "timezone": "UTC",
+      "inputs": {}
+    }
+  },
+  "result": null,
+  "type": "STANDARD",
+  "input": {},
+  "hourlyExecutionLimit": 1000,
+  "guide": null,
+  "tasks": {
+    "refresh_slo_lookup": {
+      "name": "refresh_slo_lookup",
+      "input": {
+        "script": "// Refreshes /lookups/slo (one row per SLO name) from the Gen3 SLO platform API.\n// The scorecard derives AppCI via: lower(substring(slo, from:0, to:3)).\n// NOTE: the platform SLO API rejects page-size when page-key is set — first\n// page uses page-size, subsequent pages use page-key only (confirmed in getSloDetail.function.ts).\nexport default async function () {\n  // 1. Page through all SLOs\n  const slos = [];\n  let pageKey = null;\n  do {\n    const params = new URLSearchParams(\n      pageKey ? { 'page-key': pageKey } : { 'page-size': '500' }\n    );\n    const r = await fetch(`/platform/slo/v1/slos?${params.toString()}`);\n    if (!r.ok) {\n      throw new Error(`SLO list read failed: ${r.status} ${await r.text()}`);\n    }\n    const body = await r.json();\n    for (const s of body.slos || []) {\n      if (s.name) slos.push(s.name);\n    }\n    pageKey = body.nextPageKey || null;\n  } while (pageKey);\n\n  // 2. Build CSV — one row per SLO name, sorted for deterministic diffs\n  slos.sort();\n  const csv = 'slo\\n' + slos.join('\\n') + '\\n';\n\n  // 3. Upload as a lookup table (overwrite existing)\n  const meta = {\n    filePath: '/lookups/slo',\n    displayName: 'SLOs by AppCI',\n    description: 'One row per SLO name; AppCI is derived from the first 3 characters of the name',\n    lookupField: 'slo',\n    parsePattern: 'LD:slo',\n    skippedRecords: 1,\n    autoFlatten: true,\n    timezone: 'UTC',\n    locale: 'en_US',\n    overwrite: true,\n  };\n\n  const boundary = '----slolookupboundary' + Date.now();\n  const body =\n    `--${boundary}\\r\\n` +\n    `Content-Disposition: form-data; name=\"request\"\\r\\n` +\n    `Content-Type: application/json\\r\\n\\r\\n` +\n    `${JSON.stringify(meta)}\\r\\n` +\n    `--${boundary}\\r\\n` +\n    `Content-Disposition: form-data; name=\"content\"; filename=\"slo\"\\r\\n` +\n    `Content-Type: application/octet-stream\\r\\n\\r\\n` +\n    `${csv}\\r\\n` +\n    `--${boundary}--\\r\\n`;\n\n  const up = await fetch('/platform/storage/resource-store/v1/files/tabular/lookup:upload', {\n    method: 'POST',\n    headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },\n    body,\n  });\n  const upText = await up.text();\n  if (!up.ok) {\n    throw new Error(`Lookup upload failed: ${up.status} ${upText}`);\n  }\n  return { slosRead: slos.length };\n}\n"
+      },
+      "action": "dynatrace.automations:run-javascript",
+      "position": {
+        "x": 0,
+        "y": 1
+      },
+      "conditions": {
+        "states": {}
+      },
+      "description": "Read all SLOs from the platform API, build one-row-per-name CSV, upload lookup table",
+      "predecessors": []
+    }
+  }
+}
