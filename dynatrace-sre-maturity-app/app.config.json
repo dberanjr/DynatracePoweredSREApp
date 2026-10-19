@@ -1,6 +1,6 @@
 {
   "$schema": "./.dt-app/app.config.schema.json",
-  "environmentUrl": "https://xyg54887.apps.dynatrace.com/",
+  "environmentUrl": "https://<placeholder>.apps.dynatrace.com/",
   "build": {
     "dynatraceDependencies": {
       "addOrOverride": {
