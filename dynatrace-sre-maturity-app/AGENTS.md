@@ -101,12 +101,12 @@ const result = await queryClient.queryExecute({ body: { query: 'fetch logs | cou
 ### Commands (via `dt-app` CLI)
 - **Dev Server**: `npm run start` - runs with hot reload, auto-opens browser
 - **Build**: `npm run build` - outputs to `dist/` folder
-- **Deploy**: `npm run deploy` - deploys to environment in `app.config.json`
+- **Deploy**: `npm run deploy` - deploys to environment in `app.config.ts`
 
 ### Configuration
-- **App Metadata**: `app.config.json` defines app name, ID, version, and required scopes
-- **Environment URL**: Set `environmentUrl` in `app.config.json` to target Dynatrace environment
-- **Scopes**: Add required permissions to `app.config.json` `scopes` array (e.g., `storage:logs:read`, `document:documents:read`, `document:documents:write`, `state:app-states:read`, `state:app-states:write`)
+- **App Metadata**: `app.config.ts` defines app name, ID, version, and required scopes
+- **Environment URL**: Set `DT_ENVIRONMENT_URL` in the untracked `.env` (read by `app.config.ts`) to target Dynatrace environment
+- **Scopes**: Add required permissions to `app.config.ts` `scopes` array (e.g., `storage:logs:read`, `document:documents:read`, `document:documents:write`, `state:app-states:read`, `state:app-states:write`)
 
 ## Key Dependencies
 - `@dynatrace/strato-components` and `-preview`: UI component library

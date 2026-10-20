@@ -5,6 +5,10 @@ An application-level **SRE maturity and reliability intelligence** app built on 
 (keyed by `applicationci`) is scored across a five-level SRE maturity model, entirely from live
 Dynatrace data — no spreadsheets, no manual assessment.
 
+> **New to the app?** Read the [How to use, set up and maintain guide](dynatrace-sre-maturity-app/docs/HOW-TO-USE.md)
+> for setup, permissions, the hand-maintained lookup tables and routine upkeep. This README is the
+> developer reference.
+
 > **Note:** This repository is sanitized for public use. Environment/tenant URLs and company
 > branding are set to placeholder values — replace them with your own before running
 > (see [Configuration](#configuration)).
@@ -51,7 +55,7 @@ Dynatrace data — no spreadsheets, no manual assessment.
   About page now shows both), kept in sync automatically by `scripts/sync-version.mjs`.
 
 The primary navigation is deliberately scoped to **Home, Scorecards, Dependencies, Definitions,
-and About**. Several earlier pages — Overview, Golden Signals, AI Ops, Proactive, Problem
+Lookups, and About**. Several earlier pages — Overview, Golden Signals, AI Ops, Proactive, Problem
 Analytics, Portfolio, and Explore Data — are still built and routable
 (`/overview`, `/golden-signals`, `/ai-ops`, `/proactive`, `/problem-analytics`, `/portfolio`,
 `/data`) but are no longer linked from the header. Re-add them in
@@ -156,7 +160,16 @@ it). Known gap: it excludes the Documents-API-driven Runbooks Linked signal — 
 
 ### Lookup tables
 
-Refreshed by Dynatrace Workflows; the app only needs read access (`storage:files:read`).
+Most tables are refreshed by Dynatrace Workflows and the app only reads them (`storage:files:read`).
+Two are **maintained by people in the app's Lookups tab**, which needs `storage:files:write`
+(gated by the user's own IAM permissions — see the how-to guide):
+
+| Table | Contents | Maintained |
+| ----- | -------- | ---------- |
+| `/lookups/dynatrace/cmdb_appci_owner_mapping` | One row per application: name, owner, criticality, status, support group | Lookups tab |
+| `/lookups/entity_severity` | Critical services/endpoints per AppCI (seed for `critical_services`) | Lookups tab |
+
+The rest:
 
 | Table | Contents | Refresh |
 | ----- | -------- | ------- |
@@ -229,7 +242,7 @@ Repetitive Tasks Identified and Workflow Automation.
 ├── app.config.ts                 # top-level app config (environmentUrl, scopes)
 ├── src/                          # top-level app source
 └── dynatrace-sre-maturity-app/   # primary app project
-    ├── app.config.json           # app id, name, version, environmentUrl, scopes
+    ├── app.config.ts             # app id, name, version, scopes; environmentUrl/name come from .env
     ├── api/                      # server-side app functions (guardian/dashboard/SLO/runbook
     │                             #   detail, bulk runbook counts)
     ├── scripts/sync-version.mjs  # regenerates ui/app/version.ts on build & deploy
@@ -295,46 +308,60 @@ remount on every check switch specifically to route around this. If you add a ne
 
 ## Configuration
 
-### Environment URL
+### Local settings (`.env`)
 
-Set your Dynatrace environment URL in two places:
+Customer- and tenant-specific values live in an **untracked** `.env` file in `dynatrace-sre-maturity-app/`, so they never get committed. The tracked `.env.example` is the template.
 
-- `app.config.ts` → `environmentUrl`
-- `dynatrace-sre-maturity-app/app.config.json` → `environmentUrl`
+**Setup (once per clone):**
+
+```bash
+cd dynatrace-sre-maturity-app
+cp .env.example .env
+# edit .env, then:
+npm run start      # or build / deploy
+```
+
+Example `.env`:
 
 ```
-https://YOUR_TENANT.apps.dynatrace.com   →   https://<your-env>.apps.dynatrace.com
+DT_ENVIRONMENT_URL=https://abc12345.apps.dynatrace.com
+COMPANY_NAME=Acme Health
+APP_NAME=DynatracePoweredSRE
 ```
 
-The UI automatically picks up the environment URL from `dynatrace-sre-maturity-app/ui/app/constants.ts` → `ENVIRONMENT_URL` (used for deep-links into the Davis Problems app). Update that value to match.
-
-### Branding
-
-All customer-specific display strings are centralised in `dynatrace-sre-maturity-app/ui/app/constants.ts`:
-
-| Constant | Default | Used in |
+| Variable | Default if unset | Used for |
 |---|---|---|
-| `COMPANY_NAME` | `"CareSource"` | Landing page heading & leaderboard subtitle |
-| `APP_NAME` | `"DynatracePoweredSRE"` | Header nav, landing page footer, About page |
-| `ENVIRONMENT_URL` | `"https://xyg54887.apps.dynatrace.com"` | Davis Problems deep-links |
+| `DT_ENVIRONMENT_URL` | `https://YOUR_TENANT.apps.dynatrace.com` | Deploy target (`environmentUrl` in `app.config.ts`). Trailing slash is stripped. The UI's Davis Problems links read the live tenant URL at runtime instead. |
+| `COMPANY_NAME` | `YourCompany` | Landing page heading and leaderboard subtitle (the only value the UI reads from `.env`) |
+| `APP_NAME` | `DynatracePoweredSRE` | Manifest name in `app.config.ts`. The header, landing footer and About page show it via `getAppName()` at runtime. |
 
-Change those three values to rebrand the app for a new tenant.
+**How it works**
+- `app.config.ts` reads `.env` itself, since `dt-app` doesn't load it.
+- `scripts/sync-version.mjs` (run by `npm run start`, `build` and `deploy`) writes the gitignored `ui/app/constants.ts` (just `COMPANY_NAME`) from `.env`. Don't edit or commit that file; edit `.env` instead.
+- Real environment variables override `.env`, e.g. `DT_ENVIRONMENT_URL=... npm run deploy` or in CI.
+- Changing `.env` takes effect on the next `npm run start`/`build`/`deploy`. Restart a running dev server.
+
+**Gotchas**
+- After a fresh clone, `ui/app/constants.ts` doesn't exist until one of those three scripts has run once. `npm run lint` or a bare `tsc` will fail on the missing import until then.
+- Without a `.env` you get a warning and placeholder values. `deploy` would then target `YOUR_TENANT` and fail, so create the file first.
+- Keep `version: "x.y.z"` on a single line in `app.config.ts`; `sync-version.mjs` reads it with a regex.
 
 The app requests read-only scopes for logs, buckets, files (lookup tables), events, business
 events, metrics, entities, system tables, spans, and Smartscape, plus `settings:objects:read`
 (guardians), `document:documents:read` (dashboards and notebooks), `iam:users:read` (resolving
 owner names), and `slo:slos:read` (Gen3 SLOs). The Gen3 SLO API also requires an explicit
 `build.dynatraceDependencies` entry for `/platform/slo/v1`. See
-`dynatrace-sre-maturity-app/app.config.json`.
+`dynatrace-sre-maturity-app/app.config.ts`.
 
 ## Getting started
 
 ```bash
 cd dynatrace-sre-maturity-app
+cp .env.example .env   # then edit it — see "Local settings" above
 npm install
 npm run start    # run in development mode
 npm run build    # production build to dist/
-npm run deploy   # build and deploy to the environment in app.config.json
+npm run deploy   # build and deploy to the environment in app.config.ts
 npm run lint     # lint the UI source
 
 # activate all workflows (run once, or whenever a workflow changes)
@@ -355,16 +382,16 @@ Schema (see `lookups/entity_severity.sample.csv` for a template):
 | Column | Description |
 |---|---|
 | `appci` | 3-letter AppCI code (lowercase) |
-| `entity_name` | Service or endpoint name as it appears in Dynatrace |
+| `entity_name` | A real span endpoint name (e.g. an API path), or the exact name of a service tagged `applicationci:<code>` — not the CMDB application name |
 | `severity` | e.g. `critical`, `high`, `medium` |
 | `business_impact` | e.g. `revenue`, `regulatory`, `member-experience` |
 
-Upload the populated CSV to `/lookups/entity_severity` via the Dynatrace Grail resource store (or the Dynatrace UI's lookup table manager), then run the `refresh-lookups-critical-services` workflow manually to resolve entity IDs and publish `/lookups/critical_services`. After that first run, set a schedule on the workflow to keep entity IDs current as services move.
+Add the rows (or **Import CSV…**) in the app's **Lookups → Critical services seed** tab and Save, which writes `/lookups/entity_severity`, then run the `refresh-lookups-critical-services` workflow manually to resolve entity IDs and publish `/lookups/critical_services`. After that first run, set a schedule on the workflow to keep entity IDs current as services move.
 
 `build` and `deploy` run `scripts/sync-version.mjs` first, regenerating `ui/app/version.ts` from
-`app.config.json` plus the current git commit and real build/deploy wall-clock times — so the
+`app.config.ts` plus the current git commit and real build/deploy wall-clock times — so the
 in-app version footer and About page always match what was actually built and deployed, not just
-committed. Bump `app.version` in `app.config.json`; never edit `version.ts` by hand.
+committed. Bump `app.version` in `app.config.ts`; never edit `version.ts` by hand.
 
 ## License
 

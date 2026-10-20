@@ -1,12 +1,14 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { APP_NAME } from "../constants";
+import { getAppName } from "@dynatrace-sdk/app-environment";
 
 const navItems = [
   { to: "/", label: "Home" },
   { to: "/scorecards", label: "Scorecards" },
   { to: "/upstream-downstream", label: "Dependencies" },
   { to: "/definitions", label: "Definitions" },
+  { to: "/coverage", label: "Coverage" },
+  { to: "/lookups", label: "Lookups" },
   { to: "/about", label: "About" },
 ];
 
@@ -38,7 +40,7 @@ export const Header = () => {
           flexShrink: 0,
         }}
       >
-        {APP_NAME}
+        {getAppName()}
       </Link>
       {navItems.map((item) => {
         const isActive = item.to === "/"

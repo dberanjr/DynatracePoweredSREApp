@@ -20,11 +20,11 @@ Builds the app for production to the `dist` folder. It correctly bundles your ap
 
 ### `npm run deploy`
 
-Builds the app and deploys it to the specified environment in `app.config.json`.
+Builds the app and deploys it to the specified environment in `app.config.ts`.
 
 ### `npm run uninstall
 
-Uninstalls the app from the specified environment in `app.config.json`.
+Uninstalls the app from the specified environment in `app.config.ts`.
 
 ### `npm run generate:function`
 

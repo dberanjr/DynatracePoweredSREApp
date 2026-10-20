@@ -6,7 +6,7 @@ import { ChartCard } from "../components/ChartCard";
 import { TableCard } from "../components/TableCard";
 import { InfographicList } from "../components/InfographicList";
 import { SparklineCard } from "../components/SparklineCard";
-import { ENVIRONMENT_URL } from "../constants";
+import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 
 interface Props {
   appCI: string;
@@ -17,7 +17,7 @@ export const ProblemAnalyticsPage = ({ appCI, timeframe }: Props) => {
   const tf = `from:${timeframe.from}, to:${timeframe.to}`;
 
   // Link to the new Davis Problems app filtered to this AppCI
-  const problemsAppBase = `${ENVIRONMENT_URL}/ui/apps/dynatrace.davis.problems/`;
+  const problemsAppBase = `${getEnvironmentUrl().replace(/\/+$/, "")}/ui/apps/dynatrace.davis.problems/`;
   const tagFilter = encodeURIComponent(`"Entity tags" = "applicationci:${appCI.toLowerCase()}"`);
   const fromParam = encodeURIComponent(timeframe.from);
   const toParam = encodeURIComponent(timeframe.to);

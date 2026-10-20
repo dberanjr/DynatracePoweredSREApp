@@ -1,5 +1,0 @@
-name,applicationci,operational_status,business_criticality,owned_by,managed_by,u_maintained_by,support_group,managed_by.u_managing_director,managed_by.u_vp,managed_by.u_director
-BillingPortal_PRD,BILPRD,In Production,1 - critical,Example Owner,Example Owner,Example Maintainer,l3-support-group-1,Other Person,Other Person,Other Person
-MemberSite_PRD,MEMPRD,In Production,2 - somewhat critical,Example Owner,Example Owner,Example Maintainer,l3-support-group-2,Other Person,Other Person,Other Person
-DocStore_PRD,DOCSTORE,In Production,4 - not critical,Example Owner,Example Owner,Example Maintainer,l3-support-group-3,Other Person,Other Person,Other Person
-CoreAdmin_PRD,COREADMIN,In Production,3 - less critical,Example Owner,Example Owner,Example Maintainer,l3-support-group-4,Other Person,Other Person,Other Person

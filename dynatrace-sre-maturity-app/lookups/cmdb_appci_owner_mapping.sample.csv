@@ -1,0 +1,5 @@
+name,applicationci,operational_status,business_criticality,owned_by,managed_by,u_maintained_by,support_group,managed_by.u_managing_director,managed_by.u_vp,managed_by.u_director
+BillingPortal_CRT,BIL,In Production,1 - critical,Example Owner,Example Owner,Example Maintainer,l3-support-group-1,Other Person,Other Person,Other Person
+MemberHub_CRT,MEM,In Production,2 - somewhat critical,Example Owner,Example Owner,Example Maintainer,l3-support-group-2,Other Person,Other Person,Other Person
+DocStore_CRT,DOC,In Production,4 - not critical,Example Owner,Example Owner,Example Maintainer,l3-support-group-3,Other Person,Other Person,Other Person
+CareManager_CRT,CRM,In Production,3 - less critical,Example Owner,Example Owner,Example Maintainer,l3-support-group-4,Other Person,Other Person,Other Person

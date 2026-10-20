@@ -20,6 +20,8 @@ import { LandingPage } from "./pages/LandingPage";
 import { ProblemAnalyticsPage } from "./pages/ProblemAnalyticsPage";
 import { AboutPage } from "./pages/AboutPage";
 import { DefinitionsPage } from "./pages/DefinitionsPage";
+import { LookupsPage } from "./pages/LookupsPage";
+import { CoveragePage } from "./pages/CoveragePage";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 
 export interface Timeframe {
@@ -146,6 +148,8 @@ export const App = () => {
             <Route path="/scorecards" element={<ErrorBoundary><ScorecardsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
             <Route path="/upstream-downstream" element={<ErrorBoundary><UpstreamDownstreamPage appCI={appCI} onAppCIChange={setSelectedAppCI} /></ErrorBoundary>} />
             <Route path="/definitions" element={<ErrorBoundary><DefinitionsPage /></ErrorBoundary>} />
+            <Route path="/coverage" element={<ErrorBoundary><CoveragePage /></ErrorBoundary>} />
+            <Route path="/lookups" element={<ErrorBoundary><LookupsPage /></ErrorBoundary>} />
             <Route path="/portfolio" element={<ErrorBoundary><PortfolioPage /></ErrorBoundary>} />
             <Route path="/data" element={<ErrorBoundary><Data /></ErrorBoundary>} />
             <Route path="/about" element={<ErrorBoundary><AboutPage /></ErrorBoundary>} />

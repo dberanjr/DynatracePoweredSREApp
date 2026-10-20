@@ -38,3 +38,9 @@ Thumbs.db
 # app-settings plugin local files
 /settings/local-mock-data/secrets.json
 /settings/local-mock-data/persistence/
+
+# Generated from .env by scripts/sync-version.mjs
+/ui/app/constants.ts
+
+# Local, tenant-specific data (never commit)
+/lookups/local/

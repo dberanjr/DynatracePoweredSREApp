@@ -2,7 +2,7 @@ import React from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Paragraph } from "@dynatrace/strato-components/typography";
 import { APP_VERSION, COMMIT_HASH, BUILD_DATE, DEPLOY_DATE } from "../version";
-import { APP_NAME } from "../constants";
+import { getAppName } from "@dynatrace-sdk/app-environment";
 
 // Dynatrace brand palette (matches LandingPage / app design system)
 const brand = {
@@ -17,7 +17,7 @@ const brand = {
 };
 
 const CONFIG = {
-  appName: APP_NAME,
+  appName: getAppName(),
   author: "David Beran",
   maintainer: "David Beran",
   email: "david.beran@dynatrace.com",
@@ -29,7 +29,7 @@ const CONFIG = {
     "An SRE maturity assessment app that scores applications (by ApplicationCI) across a five-level reliability model — observability, measured reliability, AI-assisted operations, and beyond — using live Dynatrace Grail data.",
 };
 
-// Grail scopes the app requests (from app.config.json `scopes`), with a purpose each.
+// Grail scopes the app requests (from app.config.ts `scopes`), with a purpose each.
 const SCOPES: { name: string; desc: string }[] = [
   { name: "storage:logs:read", desc: "Read log data" },
   { name: "storage:buckets:read", desc: "Read Grail buckets" },
