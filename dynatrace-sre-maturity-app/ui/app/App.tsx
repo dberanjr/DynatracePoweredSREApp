@@ -23,6 +23,7 @@ import { AboutPage } from "./pages/AboutPage";
 import { DefinitionsPage } from "./pages/DefinitionsPage";
 import { LookupsPage } from "./pages/LookupsPage";
 import { CoveragePage } from "./pages/CoveragePage";
+import { ReadinessPage } from "./pages/ReadinessPage";
 import { appciFromEntityTags, APPCI_MAP_PATH } from "./queries/maturityQueries";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 
@@ -182,6 +183,7 @@ export const App = () => {
             <Route path="/upstream-downstream" element={<ErrorBoundary><UpstreamDownstreamPage appCI={appCI} onAppCIChange={setSelectedAppCI} /></ErrorBoundary>} />
             <Route path="/definitions" element={<ErrorBoundary><DefinitionsPage /></ErrorBoundary>} />
             <Route path="/coverage" element={<ErrorBoundary><CoveragePage /></ErrorBoundary>} />
+            <Route path="/readiness" element={<ErrorBoundary><ReadinessPage appCI={appCI} /></ErrorBoundary>} />
             <Route path="/lookups" element={<ErrorBoundary><LookupsPage /></ErrorBoundary>} />
             <Route path="/portfolio" element={<ErrorBoundary><PortfolioPage /></ErrorBoundary>} />
             <Route path="/data" element={<ErrorBoundary><Data /></ErrorBoundary>} />

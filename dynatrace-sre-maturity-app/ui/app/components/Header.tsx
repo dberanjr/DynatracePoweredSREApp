@@ -8,6 +8,7 @@ const navItems = [
   { to: "/upstream-downstream", label: "Dependencies" },
   { to: "/definitions", label: "Definitions" },
   { to: "/coverage", label: "Coverage" },
+  { to: "/readiness", label: "Readiness" },
   { to: "/lookups", label: "Lookups" },
   { to: "/about", label: "About" },
 ];

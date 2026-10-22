@@ -230,8 +230,39 @@ exist`.
 | **Dependencies** | Explore an application's upstream and downstream services and live problems |
 | **Definitions** | Read exactly what each check measures, how it passes, how to fix a fail, and the query it runs |
 | **Coverage** | Check, per application, how much of its data the scorecards can find (tagged services, hosts, SLOs, guardians, dashboards, critical services, workflows). Read-only. Start here when an app scores zero |
-| **Lookups** | Maintain the two hand-managed tables (editors only) |
+| **Readiness** | See why a score is low: which inputs the checks read are missing, for the whole environment or for the application chosen in the header. Read-only, and it runs only when you press a button. Read it before judging a low score |
+| **Lookups** | Maintain the three hand-managed tables (editors only) |
 | **About** | Version, commit, build and deploy times |
+
+**Reading the Readiness tab.** A low score can mean weak practice, or only that this environment does not provide
+what a check reads (a log attribute, deployment events, a naming convention). The tab has two views.
+
+**Application** (the one chosen in the header) answers "why does this application's scorecard complain?". Each check
+is explained in a sentence and given one of these findings:
+
+| Finding | Meaning | Who fixes it |
+|---|---|---|
+| **Environment gap** | The input exists nowhere, so no application can pass until it does | Fixed once, helps every application |
+| **Application gap** | The input exists elsewhere but not for this application | That application's team |
+| **Present** | The input exists for this application. Whether the check then passes is judged on the Scorecards page | |
+| **Not applicable** | The scorecard counts "none of these for this application" as a pass (Kubernetes, cloud, scaling). If the environment has such resources but none are attributed to any application, the line says so | |
+
+**This environment** looks at everything at once and answers "which inputs are missing, and what do they hold up?".
+Each input has a status:
+
+| Status | Meaning |
+|---|---|
+| **Ready** | Present for at least 80% of what was measured (or present at all, for event streams) |
+| **Partial** | Present for some, not enough |
+| **Missing** | Not present, or a lookup that should exist does not |
+| **Not applicable** | Nothing of that kind exists to measure (for example no Kubernetes clusters) |
+| **Unknown** | The measurement could not run (a lookup it depends on is missing, or a permission is lacking). This is never reported as Missing |
+| **Later phase** | Needs the SLO, Settings or Documents APIs; not measured yet |
+
+Each row opens to show what was measured, what it cost (bytes scanned), the checks that read it, and the query.
+The table lists the inputs that hold up the most checks first. A check is **blocked** when an input it reads is
+missing, **at risk** when one is partial, and the four checks the app marks "not yet live" are listed as **not
+implemented**, not as gaps. Some probes scan a month of events, so nothing runs until you press the button.
 
 **Reading a result.** A check is **pass**, **warn**, **fail** or **n/a**. Some checks are
 structurally not applicable to an app (for example Kubernetes for an app with no cluster);
@@ -398,6 +429,8 @@ AppCI map: `app_name` (key, lower case, no environment suffix), `applicationci`.
 | `lookups/` | Sample CSVs for the three hand-maintained tables |
 | `ui/app/queries/maturityQueries.ts` | The AppCI resolver and the bulk maturity queries; the single source for the app and the snapshot workflow |
 | `scripts/generate-snapshot-workflow.mjs` | Generates the snapshot workflow's script from that module (`npm run generate:workflows`) |
+| `ui/app/readiness/registry.ts` | The inputs, probes and check-to-input map behind the Readiness tab |
+| `scripts/check-readiness-registry.mjs` | Fails if a scorecard check is missing from that map (`npm run check:readiness`) |
 | `api/saveLookup.function.ts` | Server-side validation, backup and write for the Lookups tab |
 | `ui/app/pages/lookupTables.ts` | Column definitions for the Lookups tab |
 | `scripts/sync-version.mjs` | Generates `version.ts` and `constants.ts` on start, build and deploy |

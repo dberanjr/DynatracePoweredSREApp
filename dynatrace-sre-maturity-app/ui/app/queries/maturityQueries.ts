@@ -469,3 +469,231 @@ ${appciFromProblemTags()}
     + if(totalProblems > 0 and enrichPct >= 50, 1, else: 0)
     + 0
 | fields applicationci, l5Score`;
+
+// ── Readiness probes ──
+// One read-only DQL query per measurable input, behind the Readiness page. Each returns a few small
+// aggregate rows (`total`, `ok`, sometimes `kind`), never entity names or log lines. Windows and
+// sampling are chosen to bound cost; the page runs them only when asked. Interpretation (what counts as
+// ready) lives in ui/app/readiness/registry.ts; the queries stay here so they can reuse the resolver
+// above and be run from a script for testing.
+const resolvedFlag = '| fieldsAdd resolved = arraySize(applicationci) > 0';
+
+export const READINESS_QUERIES = {
+  // IN-01: share of services and hosts that resolve to an AppCI (by tag or by the AppCI map).
+  resolution: `fetch dt.entity.service
+${appciFromEntityTags()}
+${resolvedFlag}
+| summarize total = count(), ok = countIf(resolved)
+| fieldsAdd kind = "services"
+| append [
+    fetch dt.entity.host
+    | limit 100000
+    | filter lifetime[end] > asTimestamp(now()-2h)
+    ${appciFromEntityTags()}
+    ${resolvedFlag}
+    | summarize total = count(), ok = countIf(resolved)
+    | fieldsAdd kind = "hosts"
+  ]`,
+
+  // IN-02: CMDB rows (active applications) that carry a tier.
+  cmdb: `load "${CMDB_PATH}"
+| filter operational_status != "Retired"
+| summarize total = count(), ok = countIf(isNotNull(business_criticality) and trim(business_criticality) != "")`,
+
+  // IN-03: rows in the AppCI map.
+  map: `load "${APPCI_MAP_PATH}"
+| summarize total = count()`,
+
+  // IN-04: sampled recent logs that carry an `applicationci` attribute (about 1 in 1000 is read).
+  logs: `fetch logs, from:now()-2h, samplingRatio:1000
+| summarize total = count(), ok = countIf(isNotNull(applicationci))`,
+
+  // IN-05: Kubernetes clusters whose name starts with a known AppCI (the way the L1 check matches them).
+  k8s: `fetch dt.entity.kubernetes_cluster
+| fields name = entity.name
+| fieldsAdd prefix = lower(arrayFirst(splitString(name, "-")))
+| lookup [
+    load "${CMDB_PATH}"
+    | fieldsAdd p = lower(applicationci)
+    | fields p
+  ], sourceField:prefix, lookupField:p, fields:{matched = p}
+| summarize total = count(), ok = countIf(isNotNull(matched))`,
+
+  // IN-06: cloud resources (AWS, Azure, GCP) that carry an `ApplicationCI` tag or label.
+  cloud: `smartscapeNodes "AWS*"
+| fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+| append [
+    smartscapeNodes "AZURE*"
+    | fieldsFlatten \`tags:azure\`, fields:{ApplicationCI}
+  ]
+| append [
+    smartscapeNodes "GCP*"
+    | fieldsFlatten \`tags:gcp_labels\`, fields:{ApplicationCI}
+  ]
+| summarize total = count(), ok = countIf(isNotNull(ApplicationCI))`,
+
+  // IN-07: active RUM applications and synthetic tests that resolve to an AppCI.
+  rumSynthetic: `fetch dt.entity.application, from:now()-1000d
+| filter lifetime[end] > now()-7d
+${appciFromEntityTags()}
+${resolvedFlag}
+| summarize total = count(), ok = countIf(resolved)
+| fieldsAdd kind = "RUM apps"
+| append [
+    fetch dt.entity.synthetic_test
+    ${appciFromEntityTags()}
+    ${resolvedFlag}
+    | summarize total = count(), ok = countIf(resolved)
+    | fieldsAdd kind = "synthetic tests"
+  ]`,
+
+  // IN-12: critical-services seed rows that resolved to a Dynatrace entity.
+  seed: `load "/lookups/critical_services"
+| summarize total = count(), ok = countIf(entity_ids != "-")`,
+
+  // IN-13: deployment events, and how many carry the application_ci field the checks read.
+  deployments: `fetch events, from:now()-30d
+| filter event.type == "CUSTOM_DEPLOYMENT"
+| summarize total = count(), ok = countIf(isNotNull(application_ci))`,
+
+  // IN-14: finished SDLC validation events (Site Reliability Guardian runs).
+  srgEvents: `fetch events, from:now()-30d
+| filter event.kind == "SDLC_EVENT" and event.type == "validation" and event.status == "finished"
+| summarize total = count()`,
+
+  // IN-16: Automation workflows (that ran) whose title resolves to an AppCI, by code or by map.
+  workflows: `fetch dt.system.events, from:now()-30d
+| filter event.provider == "AUTOMATION_ENGINE"
+| filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
+${appciFromWorkflowTitle()}
+| fieldsAdd resolvedWf = if(isNotNull(applicationci) and stringLength(applicationci) == 3, 1, else: 0)
+| summarize resolvedWf = max(resolvedWf), by:{wfId = \`dt.automation_engine.workflow.id\`}
+| summarize total = count(), ok = sum(resolvedWf)`,
+
+  // IN-15: workflows named for alert routing (the L3 convention), plus workflows that call ServiceNow.
+  alertRouting: `fetch dt.system.events, from:now()-30d
+| filter event.provider == "AUTOMATION_ENGINE" and event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
+| summarize total = countDistinct(\`dt.automation_engine.workflow.id\`), ok = countDistinct(if(matchesValue(\`dt.automation_engine.workflow.title\`, "* Production Dynatrace Alerts"), \`dt.automation_engine.workflow.id\`))
+| fieldsAdd kind = "named"
+| append [
+    fetch dt.system.events, from:now()-30d
+    | filter event.provider == "AUTOMATION_ENGINE" and event.type == "ACTION_EXECUTION"
+    | filter \`dt.automation_engine.action.app\` == "dynatrace.servicenow"
+    | summarize total = countDistinct(\`dt.automation_engine.workflow.id\`)
+    | fieldsAdd kind = "servicenow"
+  ]`,
+
+  // IN-17 and IN-18, from one scan: Davis problems, and how many are on a non-default alerting profile.
+  problems: `fetch dt.davis.problems, from:now()-7d
+| filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
+| fieldsAdd nonDefault = isNotNull(labels.alerting_profile) and toString(labels.alerting_profile) != "[\\"Default\\"]"
+| summarize total = count(), ok = countIf(nonDefault)`,
+} as const;
+
+// The same probes for ONE application, so the Readiness page can tell an environment gap (the input exists
+// nowhere) from an application gap (it exists elsewhere, not for this application). The AppCI is interpolated
+// into DQL, so it is checked first: anything but letters, digits, `_` and `-` matches nothing.
+const safeAppci = (appCI: string): string => (typeof appCI === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(appCI) ? appCI.toLowerCase() : "__invalid__");
+
+export const readinessAppQueries = (appCI: string) => {
+  const a = safeAppci(appCI);
+  return {
+    resolution: `fetch dt.entity.service
+${appciFromEntityTags()}
+| expand applicationci
+| filter applicationci == "${a}"
+| summarize total = countDistinct(id)
+| fieldsAdd kind = "services"
+| append [
+    fetch dt.entity.host
+    | limit 100000
+    | filter lifetime[end] > asTimestamp(now()-2h)
+    ${appciFromEntityTags()}
+    | expand applicationci
+    | filter applicationci == "${a}"
+    | summarize total = countDistinct(id)
+    | fieldsAdd kind = "hosts"
+  ]`,
+
+    cmdb: `load "${CMDB_PATH}"
+| filter lower(applicationci) == "${a}"
+| summarize total = count(), ok = countIf(isNotNull(business_criticality) and trim(business_criticality) != "")`,
+
+    map: `load "${APPCI_MAP_PATH}"
+| filter lower(applicationci) == "${a}"
+| summarize total = count()`,
+
+    logs: `fetch logs, from:now()-2h, samplingRatio:1000
+| filter lower(applicationci) == "${a}"
+| summarize total = count()`,
+
+    k8s: `fetch dt.entity.kubernetes_cluster
+| fields name = entity.name
+| filter lower(arrayFirst(splitString(name, "-"))) == "${a}"
+| summarize total = count()`,
+
+    cloud: `smartscapeNodes "AWS*"
+| fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+| append [
+    smartscapeNodes "AZURE*"
+    | fieldsFlatten \`tags:azure\`, fields:{ApplicationCI}
+  ]
+| append [
+    smartscapeNodes "GCP*"
+    | fieldsFlatten \`tags:gcp_labels\`, fields:{ApplicationCI}
+  ]
+| filter lower(toString(ApplicationCI)) == "${a}"
+| summarize total = count()`,
+
+    rumSynthetic: `fetch dt.entity.application, from:now()-1000d
+| filter lifetime[end] > now()-7d
+${appciFromEntityTags()}
+| expand applicationci
+| filter applicationci == "${a}"
+| summarize total = countDistinct(id)
+| fieldsAdd kind = "RUM apps"
+| append [
+    fetch dt.entity.synthetic_test
+    ${appciFromEntityTags()}
+    | expand applicationci
+    | filter applicationci == "${a}"
+    | summarize total = countDistinct(id)
+    | fieldsAdd kind = "synthetic tests"
+  ]`,
+
+    seed: `load "/lookups/critical_services"
+| filter lower(appci) == "${a}"
+| summarize total = count(), ok = countIf(entity_ids != "-")`,
+
+    deployments: `fetch events, from:now()-30d
+| filter event.type == "CUSTOM_DEPLOYMENT"
+| filter lower(application_ci) == "${a}"
+| summarize total = count()`,
+
+    srgEvents: `fetch events, from:now()-30d
+| filter event.kind == "SDLC_EVENT" and event.type == "validation" and event.status == "finished"
+| fieldsAdd srgAppci = lower(splitString(splitString(dt.srg.tags, "\\"ApplicationCI\\":[\\"")[1], "\\"")[0])
+| filter srgAppci == "${a}"
+| summarize total = count()`,
+
+    workflows: `fetch dt.system.events, from:now()-30d
+| filter event.provider == "AUTOMATION_ENGINE"
+| filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
+${appciFromWorkflowTitle("wfCode")}
+| filter wfCode == "${a}"
+| summarize total = countDistinct(\`dt.automation_engine.workflow.id\`)`,
+
+    alertRouting: `fetch dt.system.events, from:now()-30d
+| filter event.provider == "AUTOMATION_ENGINE" and event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
+| filter matchesValue(\`dt.automation_engine.workflow.title\`, "* Production Dynatrace Alerts")
+| filter lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " "))) == "${a}"
+| summarize total = countDistinct(\`dt.automation_engine.workflow.id\`)`,
+
+    problems: `fetch dt.davis.problems, from:now()-7d
+| filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
+${appciFromProblemTags()}
+| filter appci == "${a}"
+| fieldsAdd nonDefault = isNotNull(labels.alerting_profile) and toString(labels.alerting_profile) != "[\\"Default\\"]"
+| summarize total = count(), ok = countIf(nonDefault)`,
+  } satisfies Record<keyof typeof READINESS_QUERIES, string>;
+};

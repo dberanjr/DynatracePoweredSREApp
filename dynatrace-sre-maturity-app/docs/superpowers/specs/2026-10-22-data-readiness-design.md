@@ -1,6 +1,6 @@
 # Data Readiness: the "get well plan" backbone
 
-Status: proposed (not built). Author: drafted with Claude Code, 2026-10-22. Builds on
+Status: **P0 built** (see "What shipped in P0"); P1 onward proposed. Drafted with Claude Code, 2026-10-22. Builds on
 `2026-10-21-appci-resolver-design.md`.
 
 ## Motivation
@@ -157,6 +157,39 @@ material; they should be rewritten against the inputs, not copied.
 | P4 | "Not measurable" display (option 3) | owner decision |
 
 P0 reproduces the hand audit and is the minimum worth shipping.
+
+## What shipped in P0
+
+The **Readiness** tab (`ui/app/pages/ReadinessPage.tsx`, registry in `ui/app/readiness/registry.ts`, queries in
+`READINESS_QUERIES`) measures 14 of the 18 inputs with 13 read-only queries, and maps all 30 checks to the inputs
+they read. It differs from the draft above in these ways:
+
+- **Probes run on demand**, behind a button, with the bytes scanned shown per probe. A few scan a month of events
+  and a page that fires them on every visit is not acceptable.
+- **IN-15 (alert routing) is measured in P0**: it is a DQL question about workflow executions, not an API one.
+  It reports both the workflows named for the L3 convention and the workflows that call ServiceNow, so "routing
+  exists under another name" is visible. Only IN-08 to IN-11 (SLOs, Guardians, dashboards, notebooks) wait for P1.
+- **IN-01 covers services and hosts**; RUM applications and synthetic tests are reported under IN-07, so each row
+  has one population.
+- **The problem-based checks and L5-4 also read IN-01**, so a tenant where almost nothing resolves to an AppCI
+  does not look "ready" for them.
+- **Checks have a "measured in a later phase" state** for those whose only input cannot be measured yet, so they are
+  not shown as "not run" after a run.
+- **A lookup the probe is about is "missing" when absent; a lookup it merely depends on makes the result
+  "unknown"**, never "missing".
+- A drift guard, `npm run check:readiness`, fails if a scorecard check has no registry entry, a name differs, or a
+  check names an input or probe that does not exist.
+- **A per-application view** (built after the first version was found hard to follow, because it described the whole
+  environment next to a per-application scorecard). Every probe also has an application version
+  (`readinessAppQueries`). Comparing the two sorts each gap into an **environment gap** (missing everywhere, so
+  fix it once) or an **application gap** (present elsewhere, not for this application), with a plain sentence and
+  a one-line fix. The application is the one chosen in the header; running it also runs the environment probes.
+- **Checks where the scorecard counts "none for this application" as not applicable** (Kubernetes, cloud, dynamic
+  scaling) are shown as not applicable, not as gaps. If the environment has such resources and none are attributed
+  to any application, the sentence says so, because the pass may be hiding infrastructure nobody can see.
+- The application AppCI is checked before it is interpolated into DQL (letters, digits, `_` and `-` only; anything
+  else matches nothing).
+- Not built: plays and effort/owner (P2), export (P2), the readiness snapshot (P3), the scoring display (P4).
 
 ## Risks and open questions
 

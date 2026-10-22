@@ -390,6 +390,7 @@ npm run deploy   # build and deploy to the environment in app.config.ts
 npm run lint     # lint the UI source
 npm run generate:workflows   # regenerate the snapshot and critical-services workflow scripts from ui/app/queries/maturityQueries.ts
 npm run check:workflows      # fail if those files are out of date
+npm run check:readiness      # fail if the Readiness registry is missing a scorecard check
 
 # activate all workflows (run once, or whenever a workflow changes)
 dtctl apply -f workflows/sre-maturity-daily-snapshot.yaml
