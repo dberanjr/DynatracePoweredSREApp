@@ -5,6 +5,7 @@ import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { severityColor, severityLabel, severityRank, formatDurationUs } from "./dependencyUtils";
 import { openProblem } from "./SmartscapeViewMenu";
+import { appciFromEntityTags } from "../queries/maturityQueries";
 
 export type SeverityFilterValue = "high" | "medium" | "low" | "none";
 
@@ -51,9 +52,9 @@ interface Props {
 //    into an array (root-cause entries sorted first) rather than deduped
 //    down to one.
 const buildQuery = (appCI: string) => `fetch dt.entity.service
-| expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+${appciFromEntityTags()}
+| expand applicationci
+| filter applicationci == lower("${appCI}")
 | dedup id
 | fields id, entity.name, calls
 | limit 500

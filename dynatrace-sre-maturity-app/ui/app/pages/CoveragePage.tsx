@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { useDql } from "@dynatrace-sdk/react-hooks";
+import { appciFromEntityTags, unmappedApplicationsQuery, APPCI_MAP_ROWS_QUERY, appciFromWorkflowTitle } from "../queries/maturityQueries";
 
 // Tagging / onboarding coverage: for every active application in the CMDB table, how much of its
 // data the scorecards can actually find. Read-only: it measures, it never changes tenant config.
@@ -18,24 +19,12 @@ const CMDB_QUERY = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
 
 // AppCI codes found in `applicationci:<code>` tags on one entity type, with how many entities carry each.
 const tagCodes = (entityFetch: string, countField: string) => `${entityFetch}
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(
-      splitString(
-        arrayRemoveNulls(
-          iCollectArray(
-            if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-          )
-        )[], ":"
-      )[1]
-    )
-  )
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(splitString(applicationci[], ",")[0])
-  )
+${appciFromEntityTags()}
 | expand applicationci
 | summarize ${countField} = count(), by:{applicationci}`;
 
 const SERVICES_QUERY = tagCodes("fetch dt.entity.service", "n");
+const UNMAPPED_QUERY = unmappedApplicationsQuery("fetch dt.entity.service");
 const HOSTS_QUERY = tagCodes("fetch dt.entity.host\n| limit 100000\n| filter lifetime[end] > asTimestamp(now()-2h)", "n");
 
 const SLO_QUERY = `load "/lookups/slo"
@@ -53,7 +42,7 @@ const CRITICAL_QUERY = `load "/lookups/critical_services"
 const WORKFLOW_QUERY = `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-| fieldsAdd applicationci = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+${appciFromWorkflowTitle()}
 | summarize n = countDistinct(\`dt.automation_engine.workflow.id\`), by:{applicationci}`;
 
 interface Signal {
@@ -64,13 +53,13 @@ interface Signal {
 }
 
 const SIGNALS: Signal[] = [
-  { key: "services", label: "Services", how: "Services tagged applicationci:<code>" },
-  { key: "hosts", label: "Hosts", how: "Hosts tagged applicationci:<code>" },
+  { key: "services", label: "Services", how: "Services tagged applicationci:<code>, or tagged Application:<name> with that name mapped to the code on Lookups > AppCI map" },
+  { key: "hosts", label: "Hosts", how: "Hosts tagged applicationci:<code>, or tagged Application:<name> mapped to the code on Lookups > AppCI map" },
   { key: "slos", label: "SLOs", how: "SLO names that start with the code (from /lookups/slo)" },
   { key: "guardians", label: "Guardians", how: "Site Reliability Guardians tagged applicationci:<code> (from /lookups/guardians)" },
   { key: "dashboards", label: "SLO dashboards", how: "Dashboards named <code> … SLO (from /lookups/slo-dashboards)" },
   { key: "critical", label: "Critical services", how: "Rows in the critical services seed; resolved = matched to a Dynatrace entity" },
-  { key: "workflows", label: "Workflows", how: "Automation workflows whose title starts with the code (last 30 days)" },
+  { key: "workflows", label: "Workflows", how: "Automation workflows whose title starts with the code, or with an application name in the AppCI map (last 30 days)" },
 ];
 
 interface Counts {
@@ -110,6 +99,8 @@ export const CoveragePage = () => {
   const dashboards = useSource(DASHBOARD_QUERY);
   const critical = useSource(CRITICAL_QUERY);
   const workflows = useSource(WORKFLOW_QUERY);
+  const unmappedSrc = useDql({ query: UNMAPPED_QUERY });
+  const mapRowsSrc = useDql({ query: APPCI_MAP_ROWS_QUERY });
   // Rebuilt only when a source's data or state changes, so the memos below stay stable.
   const sources = useMemo(
     () => ({ services, hosts, slos, guardians, dashboards, critical, workflows }),
@@ -133,6 +124,27 @@ export const CoveragePage = () => {
   const orphans = useMemo(
     () => [...sources.services.map.entries()].filter(([code]) => !cmdbKeys.has(code)).sort((a, b) => b[1].n - a[1].n),
     [sources.services.map, cmdbKeys]
+  );
+
+  // Application names on services that no AppCI covers: the to-do list for Lookups > AppCI map.
+  const unmapped = useMemo(
+    () =>
+      (unmappedSrc.data?.records ?? []).map((rec) => {
+        const r = rec as Record<string, unknown>;
+        return { name: str(r.appciName), n: Number(r.entities ?? 0) };
+      }),
+    [unmappedSrc.data]
+  );
+  // Map rows that point at an AppCI absent from the CMDB table: usually a typo in the code.
+  const mapOrphans = useMemo(
+    () =>
+      (mapRowsSrc.data?.records ?? [])
+        .map((rec) => {
+          const r = rec as Record<string, unknown>;
+          return { name: str(r.app_name), code: str(r.applicationci) };
+        })
+        .filter((m) => m.code && !cmdbKeys.has(m.code.toLowerCase())),
+    [mapRowsSrc.data, cmdbKeys]
   );
 
   const taggedApps = apps.filter((a) => (sources.services.map.get(a.key)?.n ?? 0) > 0).length;
@@ -162,8 +174,8 @@ export const CoveragePage = () => {
           {apps.length > 0 && taggedApps === 0 && (
             <span style={{ color: "#B45309" }}>
               {" "}
-              — no service carries an <code>applicationci:&lt;code&gt;</code> tag that matches a CMDB AppCI, so the leaderboard and
-              daily snapshot will be empty.
+              — no service resolves to a CMDB AppCI, so the leaderboard and daily snapshot will be empty. Services resolve through an
+              <code>applicationci:&lt;code&gt;</code> tag or through the AppCI map on the Lookups tab.
             </span>
           )}
         </div>
@@ -257,6 +269,42 @@ export const CoveragePage = () => {
               </span>
             ))}
             {orphans.length > 40 && <span style={{ fontSize: 12, color: MUTED }}>…and {orphans.length - 40} more</span>}
+          </div>
+        </div>
+      )}
+
+      {unmapped.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
+            Application names with no AppCI ({unmapped.length})
+          </div>
+          <Paragraph style={{ margin: "0 0 8px", fontSize: 12, color: MUTED }}>
+            Services carry these <code>Application:&lt;name&gt;</code> tags, but no <code>applicationci</code> tag and no row in the
+            AppCI map, so the scorecards cannot see them. Add each name (without its environment suffix) on Lookups &gt; AppCI map.
+          </Paragraph>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {unmapped.slice(0, 60).map((u) => (
+              <span key={u.name} style={{ padding: "3px 10px", borderRadius: 12, border: "1px solid var(--sre-border, #C4C8D1)", fontSize: 12 }}>
+                {u.name} <span style={{ color: MUTED }}>({u.n} services)</span>
+              </span>
+            ))}
+            {unmapped.length > 60 && <span style={{ fontSize: 12, color: MUTED }}>…and {unmapped.length - 60} more</span>}
+          </div>
+        </div>
+      )}
+
+      {mapOrphans.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>AppCI map rows that point outside the CMDB table ({mapOrphans.length})</div>
+          <Paragraph style={{ margin: "0 0 8px", fontSize: 12, color: MUTED }}>
+            These map rows name an AppCI that has no active CMDB row, which is usually a typo in the code.
+          </Paragraph>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {mapOrphans.slice(0, 40).map((m) => (
+              <span key={m.name} style={{ padding: "3px 10px", borderRadius: 12, border: "1px solid var(--sre-border, #C4C8D1)", fontSize: 12 }}>
+                {m.name} <span style={{ color: MUTED }}>→ {m.code}</span>
+              </span>
+            ))}
           </div>
         </div>
       )}

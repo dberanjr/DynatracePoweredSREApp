@@ -1,8 +1,9 @@
 import { Page } from "@dynatrace/strato-components-preview/layouts";
-import React, { useState, useMemo } from "react";
-import { Route, Routes } from "react-router-dom";
+import React, { useState, useMemo, useEffect } from "react";
+import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading } from "@dynatrace/strato-components/typography";
+import { MessageContainer } from "@dynatrace/strato-components/content";
 import { Select, SelectOption, SelectContent, SelectTrigger, SelectFilter } from "@dynatrace/strato-components/forms";
 import { TimeframeSelector } from "@dynatrace/strato-components/filters";
 import { useDql } from "@dynatrace-sdk/react-hooks";
@@ -22,6 +23,7 @@ import { AboutPage } from "./pages/AboutPage";
 import { DefinitionsPage } from "./pages/DefinitionsPage";
 import { LookupsPage } from "./pages/LookupsPage";
 import { CoveragePage } from "./pages/CoveragePage";
+import { appciFromEntityTags, APPCI_MAP_PATH } from "./queries/maturityQueries";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 
 export interface Timeframe {
@@ -42,10 +44,10 @@ const APPCI_LOOKUP_QUERY = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
 
 // Fallback: derive AppCI values from entity tags (no application name available)
 const APPCI_FALLBACK_QUERY = `fetch dt.entity.service
-| expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter isNotNull(appci)
-| fieldsAdd appci = upper(appci)
+${appciFromEntityTags()}
+| expand applicationci
+| filter isNotNull(applicationci)
+| fieldsAdd appci = upper(applicationci)
 | filter stringLength(appci) <= 3
 | dedup appci
 | sort appci asc
@@ -59,8 +61,17 @@ const APPCI_FALLBACK_QUERY = `fetch dt.entity.service
 // flip this back to true to bring the control back once timeframe matters.
 const SHOW_TIMEFRAME_SELECTOR = false;
 
+// A missing map makes every scoring query fail with UNKNOWN_TABULAR_FILE. Probe for it once so the
+// app can say what is wrong and where to fix it, instead of showing a wall of per-card errors.
+const APPCI_MAP_PROBE_QUERY = `load "${APPCI_MAP_PATH}" | limit 1`;
+const isMissingLookup = (err: unknown): boolean =>
+  !!err && /UNKNOWN_TABULAR_FILE|doesn't exist/i.test(`${(err as { message?: string }).message ?? ""} ${JSON.stringify(err)}`);
+
 export const App = () => {
-  const [selectedAppCI, setSelectedAppCI] = useState<string | null>("ADH");
+  const location = useLocation();
+  // null until the picker has loaded, then the first AppCI in the list (see the effect below). The
+  // app used to start on a hard-coded "ADH", which does not exist in every tenant.
+  const [selectedAppCI, setSelectedAppCI] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>({ from: "now()-24h", to: "now()" });
 
   // Try lookup table first.
@@ -90,7 +101,17 @@ export const App = () => {
     }));
   }, [appciData]);
 
-  const appCI = selectedAppCI || "ADH";
+  // Preselect the first AppCI once the list arrives so no page starts on an AppCI that isn't in it.
+  useEffect(() => {
+    if (!selectedAppCI && appciOptions.length > 0) setSelectedAppCI(appciOptions[0].code);
+  }, [selectedAppCI, appciOptions]);
+
+  const { error: mapProbeError } = useDql({ query: APPCI_MAP_PROBE_QUERY });
+  const mapMissing = isMissingLookup(mapProbeError);
+
+  // Empty string before the list loads: pages already tolerate an AppCI with no data, and this avoids
+  // querying for a placeholder code that was never a real application.
+  const appCI = selectedAppCI || "";
 
   return (
     <Page>
@@ -137,6 +158,18 @@ export const App = () => {
         </Flex>
       </Page.Header>
       <Page.Main>
+        {mapMissing && location.pathname !== "/lookups" && (
+          <MessageContainer variant="warning" style={{ margin: "8px 16px" }}>
+            <MessageContainer.Title>AppCI map not found</MessageContainer.Title>
+            <MessageContainer.Description>
+              The lookup {APPCI_MAP_PATH} does not exist in this environment, so scores cannot be resolved to an
+              AppCI and most pages will show errors. Create it on the Lookups tab (one row per application name).
+            </MessageContainer.Description>
+            <MessageContainer.Actions>
+              <Link to="/lookups">Open Lookups</Link>
+            </MessageContainer.Actions>
+          </MessageContainer>
+        )}
         <ErrorBoundary>
           <Routes>
             <Route path="/" element={<ErrorBoundary><LandingPage /></ErrorBoundary>} />

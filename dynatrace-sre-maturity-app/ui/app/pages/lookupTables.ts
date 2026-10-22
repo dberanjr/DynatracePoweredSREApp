@@ -8,7 +8,7 @@ export interface LookupColumn {
 }
 
 export interface LookupTableConfig {
-  id: "cmdb" | "entity_severity";
+  id: "cmdb" | "entity_severity" | "appci_map";
   tabLabel: string;
   title: string;
   description: string;
@@ -69,5 +69,22 @@ export const LOOKUP_TABLES: LookupTableConfig[] = [
     lowercase: ["appci", "severity"],
     keyColumns: ["appci", "entity_name"],
     keyLabel: "AppCI + entity name",
+  },
+  {
+    id: "appci_map",
+    tabLabel: "AppCI map",
+    title: "AppCI Map — Application Tag to AppCI",
+    description:
+      "Translates the application name in your tenant's Application tag to its 3-letter AppCI, so entities, hosts and problems can be scored without an applicationci tag. Enter the name WITHOUT its environment suffix: the tag Application:BillingPortal::CRT (or ::SPT, ::PRD) is matched by the name billingportal. Names are matched case-insensitively. Several names can share one AppCI; a name can have only one.",
+    path: "/lookups/appci_map",
+    backupPath: "/lookups/appci_map_backup",
+    columns: [
+      { key: "app_name", label: "Application name (no environment suffix)", required: true },
+      { key: "applicationci", label: "AppCI", required: true },
+    ],
+    appciKey: "applicationci",
+    lowercase: ["app_name", "applicationci"],
+    keyColumns: ["app_name"],
+    keyLabel: "Application name",
   },
 ];

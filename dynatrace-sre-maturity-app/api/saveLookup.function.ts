@@ -29,6 +29,8 @@ interface TableDef {
   appciColumn: string;
   lowercase: string[]; // columns normalised to lower case (consumers compare them lower-cased)
   keyColumns: string[]; // together unique within the table
+  // Optional extra rule for a free-text column, e.g. text the matching queries can never match.
+  reject?: { column: string; pattern: RegExp; message: string };
 }
 
 // Keep in sync with LOOKUP_TABLES in ui/app/pages/lookupTables.ts.
@@ -70,6 +72,23 @@ const TABLES: Record<string, TableDef> = {
     lowercase: ['appci', 'severity'],
     keyColumns: ['appci', 'entity_name'],
   },
+  appci_map: {
+    // Read by the shared AppCI resolver in ui/app/queries/maturityQueries.ts (APPCI_MAP_PATH) -
+    // keep this path in sync with that constant. Backend code cannot import from the UI.
+    path: '/lookups/appci_map',
+    backupPath: '/lookups/appci_map_backup',
+    displayName: 'AppCI map (Application tag name to AppCI)',
+    description: 'Maps an Application tag name (environment suffix removed, lower case) to its AppCI, for tenants that do not tag applicationci directly. Maintained from the Lookups tab of the SRE maturity app.',
+    lookupField: 'app_name',
+    columns: ['app_name', 'applicationci'],
+    required: ['app_name', 'applicationci'],
+    appciColumn: 'applicationci',
+    lowercase: ['app_name', 'applicationci'],
+    keyColumns: ['app_name'],
+    // The queries strip backslashes and cut the tag at "::" (the environment suffix) before matching,
+    // so a name containing either could never match and would fail silently.
+    reject: { column: 'app_name', pattern: /::|\\/, message: 'must not contain "::" or a backslash (enter the application name without its environment suffix)' },
+  },
 };
 
 const clean = (v: unknown): string =>
@@ -96,6 +115,9 @@ function validate(t: TableDef, input: unknown): Row[] {
     for (const c of t.required) if (!row[c]) errors.push(`Row ${line}: ${c} is required`);
     if (row[t.appciColumn] && !APPCI_PATTERN.test(row[t.appciColumn])) {
       errors.push(`Row ${line}: ${t.appciColumn} "${row[t.appciColumn]}" may only contain letters, digits, _ and -`);
+    }
+    if (t.reject && row[t.reject.column] && t.reject.pattern.test(row[t.reject.column])) {
+      errors.push(`Row ${line}: ${t.reject.column} "${row[t.reject.column]}" ${t.reject.message}`);
     }
     const key = t.keyColumns.map((c) => row[c].toLowerCase()).join('|');
     if (t.keyColumns.every((c) => row[c])) {

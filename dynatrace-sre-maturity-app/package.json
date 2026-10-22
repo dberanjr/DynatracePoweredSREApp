@@ -4,6 +4,8 @@
   "description": "A starting project with routing, fetching data, and charting",
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
+    "generate:workflows": "node scripts/generate-snapshot-workflow.mjs",
+    "check:workflows": "node scripts/generate-snapshot-workflow.mjs --check",
     "build": "node scripts/sync-version.mjs && dt-app build",
     "start": "node scripts/sync-version.mjs && dt-app dev",
     "create:function": "dt-app function create",

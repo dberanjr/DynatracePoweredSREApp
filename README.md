@@ -145,8 +145,9 @@ sources fill gaps DQL cannot reach live.
 ### Maturity trend snapshots
 
 `workflows/sre-maturity-daily-snapshot.yaml` runs daily at 06:15 UTC, computes every AppCI's
-L1–L5 score using the same bulk queries the portfolio leaderboard already runs
-(`MaturityLeaderboard.tsx`'s `BULK_L1_QUERY`…`BULK_L5_QUERY`, reused verbatim), and ingests one
+L1–L5 score using the same bulk queries the portfolio leaderboard runs
+(`BULK_L1_QUERY`…`BULK_L5_QUERY` in `ui/app/queries/maturityQueries.ts`; the workflow's script is
+**generated** from them by `npm run generate:workflows`, so the two cannot drift), and ingests one
 `workflow.summary.sre_maturity` bizevent per app. `ScorecardsPage.tsx`'s `trendQuery` reads the
 last 90 days of these events for the selected AppCI, and `MaturityTrendChart.tsx` renders them as
 a fixed-0–100%-domain SVG line in the Executive-mode hero. It runs as a single
@@ -155,19 +156,40 @@ a fixed-0–100%-domain SVG line in the Executive-mode hero. It runs as a single
 silently caps at 1,000 records regardless of that input, and this tenant has ~1,987 non-retired
 AppCIs. Apply or update it with `dtctl apply -f workflows/sre-maturity-daily-snapshot.yaml` (the
 file carries its own `id:`, so re-applying updates the existing workflow rather than duplicating
-it). Known gap: it excludes the Documents-API-driven Runbooks Linked signal — see
+it). `npm run check:workflows` fails if the committed workflow files are out of date relative to
+the queries; run it before committing a change to `maturityQueries.ts`. The same generator also builds the
+tag-resolution parts of the critical-services refresh workflow. Known gap: it excludes the Documents-API-driven Runbooks Linked signal — see
 [Known measurement caveats](#known-measurement-caveats).
+
+### How an AppCI is resolved
+
+Everything is keyed on a 3-letter AppCI. An entity resolves to one in either of two ways, and both are
+used together (a union), so a tenant can mix them:
+
+1. an `applicationci:<code>` tag, as the app has always read it; or
+2. an `Application:<Name>` tag whose name (environment suffix `::PRD` / `::CRT` / … removed, lower
+   case) has a row in `/lookups/appci_map`.
+
+The second path exists for tenants that tag the application name, not a code. The logic lives in one
+place, `ui/app/queries/maturityQueries.ts` (`appciFromEntityTags`, `appciFromProblemTags`), and is
+spliced into every scoring query, the Coverage page and the snapshot workflow. The map is required: a
+query against a missing lookup fails, so the app shows an **AppCI map not found** banner until the table
+exists. Design and trade-offs: [docs/superpowers/specs/2026-10-21-appci-resolver-design.md](dynatrace-sre-maturity-app/docs/superpowers/specs/2026-10-21-appci-resolver-design.md).
+Not covered: logs (`applicationci` attribute), deployment events (`application_ci`), SRG tags, cloud
+tags, Kubernetes cluster names and the legacy un-navigated pages (Overview, Golden Signals, AI Ops,
+Proactive, Portfolio, Data, Problem Analytics) still read their sources as before.
 
 ### Lookup tables
 
 Most tables are refreshed by Dynatrace Workflows and the app only reads them (`storage:files:read`).
-Two are **maintained by people in the app's Lookups tab**, which needs `storage:files:write`
+Three are **maintained by people in the app's Lookups tab**, which needs `storage:files:write`
 (gated by the user's own IAM permissions — see the how-to guide):
 
 | Table | Contents | Maintained |
 | ----- | -------- | ---------- |
 | `/lookups/dynatrace/cmdb_appci_owner_mapping` | One row per application: name, owner, criticality, status, support group | Lookups tab |
 | `/lookups/entity_severity` | Critical services/endpoints per AppCI (seed for `critical_services`) | Lookups tab |
+| `/lookups/appci_map` | Application tag name (no environment suffix) → AppCI | Lookups tab |
 
 The rest:
 
@@ -246,6 +268,7 @@ Repetitive Tasks Identified and Workflow Automation.
     ├── api/                      # server-side app functions (guardian/dashboard/SLO/runbook
     │                             #   detail, bulk runbook counts)
     ├── scripts/sync-version.mjs  # regenerates ui/app/version.ts on build & deploy
+    ├── scripts/generate-snapshot-workflow.mjs  # generates the snapshot workflow script from the queries
     ├── workflows/                # Dynatrace Workflow definitions applied via `dtctl apply`
     │                             #   (sre-maturity-daily-snapshot.yaml — see Data sources)
     └── ui/app/
@@ -271,11 +294,13 @@ Five files must agree, all keyed by the exact check label the DQL emits:
   per-app scorecard
 - `ui/app/components/MaturityLeaderboard.tsx` — separate bulk queries (`BULK_L1_QUERY`…`BULK_L5_QUERY`)
   that score every application at once for the portfolio leaderboard
-- `workflows/sre-maturity-daily-snapshot.yaml` — reuses `MaturityLeaderboard.tsx`'s bulk queries
-  verbatim to produce the daily trend-chart snapshot
+- `ui/app/queries/maturityQueries.ts` — the bulk queries themselves, shared by the leaderboard and
+  (through `npm run generate:workflows`) the daily trend-chart snapshot workflow, plus the AppCI
+  resolver that every query uses
 
-  DQL cannot join these three, so parity between them is enforced by convention, not shared
-  code — they drifted once already (Cloud, SLOs, Guardians, and Incident Auto-Enrichment were
+  The leaderboard and the snapshot now share one source. `ScorecardsPage.tsx`'s per-app queries
+  still differ in shape (DQL cannot join them), so parity with the bulk queries is enforced by
+  convention — they drifted once already (Cloud, SLOs, Guardians, and Incident Auto-Enrichment were
   silently hardcoded to 0 in the leaderboard until a 2026-08-29 audit caught it; the L5
   workflow-automation signal separately matched near-universal noise until 2026-08-30) and can
   drift again.
@@ -363,6 +388,8 @@ npm run start    # run in development mode
 npm run build    # production build to dist/
 npm run deploy   # build and deploy to the environment in app.config.ts
 npm run lint     # lint the UI source
+npm run generate:workflows   # regenerate the snapshot and critical-services workflow scripts from ui/app/queries/maturityQueries.ts
+npm run check:workflows      # fail if those files are out of date
 
 # activate all workflows (run once, or whenever a workflow changes)
 dtctl apply -f workflows/sre-maturity-daily-snapshot.yaml
@@ -382,7 +409,7 @@ Schema (see `lookups/entity_severity.sample.csv` for a template):
 | Column | Description |
 |---|---|
 | `appci` | 3-letter AppCI code (lowercase) |
-| `entity_name` | A real span endpoint name (e.g. an API path), or the exact name of a service tagged `applicationci:<code>` — not the CMDB application name |
+| `entity_name` | A real span endpoint name (e.g. an API path), or the exact name of a service that belongs to the AppCI (an `applicationci:<code>` tag, or an `Application:<Name>` tag mapped in `/lookups/appci_map`) — not the CMDB application name |
 | `severity` | e.g. `critical`, `high`, `medium` |
 | `business_impact` | e.g. `revenue`, `regulatory`, `member-experience` |
 
