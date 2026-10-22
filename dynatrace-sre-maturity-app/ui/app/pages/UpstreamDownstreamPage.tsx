@@ -12,6 +12,7 @@ import { DependencySummaryPanel, ChainShapeSummary, DirectDependencyRail } from 
 import { SeverityLegend } from "../components/SeverityLegend";
 import { useDependencyChain } from "../hooks/useDependencyChain";
 import { ActiveProblemLink } from "../components/SmartscapeViewMenu";
+import { appciFromEntityTags } from "../queries/maturityQueries";
 
 const MAX_LEVELS = 8;
 
@@ -47,9 +48,9 @@ const ROOT_METRICS_QUERY = (serviceId: string) => `timeseries {
 // Headline counts for the header card — a cheaper, count-only variant of
 // ServiceGoldenSignalsTable's critical/problem joins (no timeseries lookups).
 const SUMMARY_QUERY = (appCI: string) => `fetch dt.entity.service
-| expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+${appciFromEntityTags()}
+| expand applicationci
+| filter applicationci == lower("${appCI}")
 | dedup id
 | fields id
 | lookup [

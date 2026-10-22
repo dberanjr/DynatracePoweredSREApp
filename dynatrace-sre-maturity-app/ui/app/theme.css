@@ -12,7 +12,7 @@
 }
 
 :root,
-[data-theme="light"] {
+:root[data-theme="light"] {
   --sre-bg-primary: #ffffff;
   --sre-bg-secondary: #EBEBEB;
   --sre-bg-dark: #1A2440;
@@ -57,7 +57,7 @@
   --shadow: 0 1px 2px rgba(26, 36, 64, .05);
 }
 
-[data-theme="dark"] {
+:root[data-theme="dark"] {
   --sre-bg-primary: #0f1520;
   --sre-bg-secondary: #1A2440;
   --sre-bg-dark: #0a0f1a;

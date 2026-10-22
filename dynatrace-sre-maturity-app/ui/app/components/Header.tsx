@@ -1,12 +1,15 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { APP_NAME } from "../constants";
+import { getAppName } from "@dynatrace-sdk/app-environment";
 
 const navItems = [
   { to: "/", label: "Home" },
   { to: "/scorecards", label: "Scorecards" },
   { to: "/upstream-downstream", label: "Dependencies" },
   { to: "/definitions", label: "Definitions" },
+  { to: "/coverage", label: "Coverage" },
+  { to: "/readiness", label: "Readiness" },
+  { to: "/lookups", label: "Lookups" },
   { to: "/about", label: "About" },
 ];
 
@@ -38,7 +41,7 @@ export const Header = () => {
           flexShrink: 0,
         }}
       >
-        {APP_NAME}
+        {getAppName()}
       </Link>
       {navItems.map((item) => {
         const isActive = item.to === "/"
@@ -52,12 +55,12 @@ export const Header = () => {
             style={{
               fontSize: 13,
               fontWeight: isActive ? 700 : 500,
-              color: isActive ? "#1414D3" : "var(--sre-text-secondary, #6F747F)",
+              color: isActive ? "var(--nav-active, #1414D3)" : "var(--sre-text-secondary, #6F747F)",
               textDecoration: "none",
               padding: "6px 10px",
-              borderBottom: isActive ? "3px solid #3BACF0" : "3px solid transparent",
+              borderBottom: isActive ? "3px solid var(--lv1, #3BACF0)" : "3px solid transparent",
               borderRadius: "4px 4px 0 0",
-              background: isActive ? "rgba(20,20,211,0.04)" : "transparent",
+              background: isActive ? "var(--nav-active-bg, rgba(20,20,211,0.04))" : "transparent",
               transition: "all 0.2s",
               flexShrink: 0,
             }}

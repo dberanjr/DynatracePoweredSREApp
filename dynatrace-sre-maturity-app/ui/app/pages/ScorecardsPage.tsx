@@ -9,6 +9,7 @@ import { SkeletonKeyframes } from "../components/SkeletonBar";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOverride";
 import { LevelId, LevelRecord } from "../components/checkStatus";
+import { appciFromEntityTags, appciFromProblemTags, hasTierLookup, appciFromWorkflowTitle } from "../queries/maturityQueries";
 
 interface Props {
   appCI: string;
@@ -38,20 +39,7 @@ data record(applicationci = lower("${appCI}"))
     fetch dt.entity.host
     | limit 100000
     | filter lifetime[end] > asTimestamp(now()-2h)
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(
-          splitString(
-            arrayRemoveNulls(
-              iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-              )
-            )[], ":"
-          )[1]
-        )
-      )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
-      )
+    ${appciFromEntityTags()}
     | expand applicationci
     // PaaS-injected hosts (ECS Fargate, EKS Fargate, etc.) never get a
     // monitoringMode value — PaaS OneAgent has no partial mode, it's always
@@ -66,20 +54,7 @@ data record(applicationci = lower("${appCI}"))
 // Signal 2: Services / Traces
 | lookup [
     fetch dt.entity.service
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(
-          splitString(
-            arrayRemoveNulls(
-              iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-              )
-            )[], ":"
-          )[1]
-        )
-      )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
-      )
+    ${appciFromEntityTags()}
     | expand applicationci
     | summarize serviceCount = count(), by:{applicationci}
   ], sourceField:applicationci, lookupField:applicationci, fields:{serviceCount}
@@ -166,20 +141,7 @@ data record(applicationci = lower("${appCI}"))
 // Signal 6: RUM
 | lookup [
     fetch dt.entity.application, from:now()-1000d
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(
-          splitString(
-            arrayRemoveNulls(
-              iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-              )
-            )[], ":"
-          )[1]
-        )
-      )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
-      )
+    ${appciFromEntityTags()}
     | expand applicationci
     | fieldsAdd rumActive = if(lifetime[end] > now()-7d, true, else: false)
     | summarize rumCount = countIf(rumActive == true), by:{applicationci}
@@ -189,20 +151,7 @@ data record(applicationci = lower("${appCI}"))
 // Signal 7: Synthetics
 | lookup [
     fetch dt.entity.synthetic_test
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(
-          splitString(
-            arrayRemoveNulls(
-              iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-              )
-            )[], ":"
-          )[1]
-        )
-      )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
-      )
+    ${appciFromEntityTags()}
     | expand applicationci
     | summarize synCount = count(), by:{applicationci}
   ], sourceField:applicationci, lookupField:applicationci, fields:{synCount}
@@ -278,20 +227,7 @@ data record(applicationci = lower("${appCI}"))
 // Signal 1: Golden signal metrics
 | lookup [
     fetch dt.entity.service
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(
-          splitString(
-            arrayRemoveNulls(
-              iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-              )
-            )[], ":"
-          )[1]
-        )
-      )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
-      )
+    ${appciFromEntityTags()}
     | expand applicationci
     | summarize serviceCount = count(), by:{applicationci}
   ], sourceField:applicationci, lookupField:applicationci, fields:{serviceCount}
@@ -323,13 +259,7 @@ data record(applicationci = lower("${appCI}"))
 | fieldsRename dashboards = dashboardCount
 
 // Signal 5: SRE assessment (CMDB tier assigned)
-| lookup [
-    fetch bizevents, from:now()-24h
-    | filter event.type == "workflow.import.servicenow.appci"
-    | fieldsAdd applicationci = lower(applicationci)
-    | filter isNotNull(tier)
-    | summarize hasTier = count(), by:{applicationci}
-  ], sourceField:applicationci, lookupField:applicationci, fields:{hasTier}
+${hasTierLookup()}
 | fieldsRename sreAssessment = hasTier
 
 // Signal 6: Critical services tagged (from /lookups/critical_services; itemized one
@@ -405,7 +335,7 @@ data record(applicationci = lower("${appCI}"))
 //   numbers shown side by side described different windows. Now aligned to 7d.
 | lookup [
     fetch dt.davis.problems, from:now()-7d
-    | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+    ${appciFromProblemTags()}
     | filter isNotNull(appci)
     | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
     | fieldsAdd isCorrelated = arraySize(affected_entity_ids) > 1
@@ -420,7 +350,7 @@ data record(applicationci = lower("${appCI}"))
 | lookup [
     fetch dt.davis.problems, from:now()-7d
     | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-    | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+    ${appciFromProblemTags()}
     | filter isNotNull(appci)
     | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
     | fieldsAdd isCausal = matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
@@ -682,7 +612,7 @@ data record(applicationci = lower("${appCI}"))
     fetch dt.system.events, from:now()-30d
     | filter event.provider == "AUTOMATION_ENGINE"
     | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-    | fieldsAdd wfAppci = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+    ${appciFromWorkflowTitle("wfAppci")}
     | filter stringLength(wfAppci) == 3
     | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppci}
   ], sourceField:applicationci, lookupField:wfAppci, fields:{workflowCount}
@@ -691,7 +621,7 @@ data record(applicationci = lower("${appCI}"))
 // Signal 2: Problem auto-enrichment
 | lookup [
     fetch dt.davis.problems
-    | fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+    ${appciFromProblemTags()}
     | filter isNotNull(appci)
     | filter dt.davis.is_duplicate == false
     | fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"

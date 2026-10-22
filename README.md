@@ -5,6 +5,10 @@ An application-level **SRE maturity and reliability intelligence** app built on 
 (keyed by `applicationci`) is scored across a five-level SRE maturity model, entirely from live
 Dynatrace data — no spreadsheets, no manual assessment.
 
+> **New to the app?** Read the [How to use, set up and maintain guide](dynatrace-sre-maturity-app/docs/HOW-TO-USE.md)
+> for setup, permissions, the hand-maintained lookup tables and routine upkeep. This README is the
+> developer reference.
+
 > **Note:** This repository is sanitized for public use. Environment/tenant URLs and company
 > branding are set to placeholder values — replace them with your own before running
 > (see [Configuration](#configuration)).
@@ -51,7 +55,7 @@ Dynatrace data — no spreadsheets, no manual assessment.
   About page now shows both), kept in sync automatically by `scripts/sync-version.mjs`.
 
 The primary navigation is deliberately scoped to **Home, Scorecards, Dependencies, Definitions,
-and About**. Several earlier pages — Overview, Golden Signals, AI Ops, Proactive, Problem
+Lookups, and About**. Several earlier pages — Overview, Golden Signals, AI Ops, Proactive, Problem
 Analytics, Portfolio, and Explore Data — are still built and routable
 (`/overview`, `/golden-signals`, `/ai-ops`, `/proactive`, `/problem-analytics`, `/portfolio`,
 `/data`) but are no longer linked from the header. Re-add them in
@@ -141,8 +145,9 @@ sources fill gaps DQL cannot reach live.
 ### Maturity trend snapshots
 
 `workflows/sre-maturity-daily-snapshot.yaml` runs daily at 06:15 UTC, computes every AppCI's
-L1–L5 score using the same bulk queries the portfolio leaderboard already runs
-(`MaturityLeaderboard.tsx`'s `BULK_L1_QUERY`…`BULK_L5_QUERY`, reused verbatim), and ingests one
+L1–L5 score using the same bulk queries the portfolio leaderboard runs
+(`BULK_L1_QUERY`…`BULK_L5_QUERY` in `ui/app/queries/maturityQueries.ts`; the workflow's script is
+**generated** from them by `npm run generate:workflows`, so the two cannot drift), and ingests one
 `workflow.summary.sre_maturity` bizevent per app. `ScorecardsPage.tsx`'s `trendQuery` reads the
 last 90 days of these events for the selected AppCI, and `MaturityTrendChart.tsx` renders them as
 a fixed-0–100%-domain SVG line in the Executive-mode hero. It runs as a single
@@ -151,12 +156,42 @@ a fixed-0–100%-domain SVG line in the Executive-mode hero. It runs as a single
 silently caps at 1,000 records regardless of that input, and this tenant has ~1,987 non-retired
 AppCIs. Apply or update it with `dtctl apply -f workflows/sre-maturity-daily-snapshot.yaml` (the
 file carries its own `id:`, so re-applying updates the existing workflow rather than duplicating
-it). Known gap: it excludes the Documents-API-driven Runbooks Linked signal — see
+it). `npm run check:workflows` fails if the committed workflow files are out of date relative to
+the queries; run it before committing a change to `maturityQueries.ts`. The same generator also builds the
+tag-resolution parts of the critical-services refresh workflow. Known gap: it excludes the Documents-API-driven Runbooks Linked signal — see
 [Known measurement caveats](#known-measurement-caveats).
+
+### How an AppCI is resolved
+
+Everything is keyed on a 3-letter AppCI. An entity resolves to one in either of two ways, and both are
+used together (a union), so a tenant can mix them:
+
+1. an `applicationci:<code>` tag, as the app has always read it; or
+2. an `Application:<Name>` tag whose name (environment suffix `::PRD` / `::CRT` / … removed, lower
+   case) has a row in `/lookups/appci_map`.
+
+The second path exists for tenants that tag the application name, not a code. The logic lives in one
+place, `ui/app/queries/maturityQueries.ts` (`appciFromEntityTags`, `appciFromProblemTags`), and is
+spliced into every scoring query, the Coverage page and the snapshot workflow. The map is required: a
+query against a missing lookup fails, so the app shows an **AppCI map not found** banner until the table
+exists. Design and trade-offs: [docs/superpowers/specs/2026-10-21-appci-resolver-design.md](dynatrace-sre-maturity-app/docs/superpowers/specs/2026-10-21-appci-resolver-design.md).
+Not covered: logs (`applicationci` attribute), deployment events (`application_ci`), SRG tags, cloud
+tags, Kubernetes cluster names and the legacy un-navigated pages (Overview, Golden Signals, AI Ops,
+Proactive, Portfolio, Data, Problem Analytics) still read their sources as before.
 
 ### Lookup tables
 
-Refreshed by Dynatrace Workflows; the app only needs read access (`storage:files:read`).
+Most tables are refreshed by Dynatrace Workflows and the app only reads them (`storage:files:read`).
+Three are **maintained by people in the app's Lookups tab**, which needs `storage:files:write`
+(gated by the user's own IAM permissions — see the how-to guide):
+
+| Table | Contents | Maintained |
+| ----- | -------- | ---------- |
+| `/lookups/dynatrace/cmdb_appci_owner_mapping` | One row per application: name, owner, criticality, status, support group | Lookups tab |
+| `/lookups/entity_severity` | Critical services/endpoints per AppCI (seed for `critical_services`) | Lookups tab |
+| `/lookups/appci_map` | Application tag name (no environment suffix) → AppCI | Lookups tab |
+
+The rest:
 
 | Table | Contents | Refresh |
 | ----- | -------- | ------- |
@@ -229,10 +264,11 @@ Repetitive Tasks Identified and Workflow Automation.
 ├── app.config.ts                 # top-level app config (environmentUrl, scopes)
 ├── src/                          # top-level app source
 └── dynatrace-sre-maturity-app/   # primary app project
-    ├── app.config.json           # app id, name, version, environmentUrl, scopes
+    ├── app.config.ts             # app id, name, version, scopes; environmentUrl/name come from .env
     ├── api/                      # server-side app functions (guardian/dashboard/SLO/runbook
     │                             #   detail, bulk runbook counts)
     ├── scripts/sync-version.mjs  # regenerates ui/app/version.ts on build & deploy
+    ├── scripts/generate-snapshot-workflow.mjs  # generates the snapshot workflow script from the queries
     ├── workflows/                # Dynatrace Workflow definitions applied via `dtctl apply`
     │                             #   (sre-maturity-daily-snapshot.yaml — see Data sources)
     └── ui/app/
@@ -258,11 +294,13 @@ Five files must agree, all keyed by the exact check label the DQL emits:
   per-app scorecard
 - `ui/app/components/MaturityLeaderboard.tsx` — separate bulk queries (`BULK_L1_QUERY`…`BULK_L5_QUERY`)
   that score every application at once for the portfolio leaderboard
-- `workflows/sre-maturity-daily-snapshot.yaml` — reuses `MaturityLeaderboard.tsx`'s bulk queries
-  verbatim to produce the daily trend-chart snapshot
+- `ui/app/queries/maturityQueries.ts` — the bulk queries themselves, shared by the leaderboard and
+  (through `npm run generate:workflows`) the daily trend-chart snapshot workflow, plus the AppCI
+  resolver that every query uses
 
-  DQL cannot join these three, so parity between them is enforced by convention, not shared
-  code — they drifted once already (Cloud, SLOs, Guardians, and Incident Auto-Enrichment were
+  The leaderboard and the snapshot now share one source. `ScorecardsPage.tsx`'s per-app queries
+  still differ in shape (DQL cannot join them), so parity with the bulk queries is enforced by
+  convention — they drifted once already (Cloud, SLOs, Guardians, and Incident Auto-Enrichment were
   silently hardcoded to 0 in the leaderboard until a 2026-08-29 audit caught it; the L5
   workflow-automation signal separately matched near-universal noise until 2026-08-30) and can
   drift again.
@@ -295,47 +333,64 @@ remount on every check switch specifically to route around this. If you add a ne
 
 ## Configuration
 
-### Environment URL
+### Local settings (`.env`)
 
-Set your Dynatrace environment URL in two places:
+Customer- and tenant-specific values live in an **untracked** `.env` file in `dynatrace-sre-maturity-app/`, so they never get committed. The tracked `.env.example` is the template.
 
-- `app.config.ts` → `environmentUrl`
-- `dynatrace-sre-maturity-app/app.config.json` → `environmentUrl`
+**Setup (once per clone):**
+
+```bash
+cd dynatrace-sre-maturity-app
+cp .env.example .env
+# edit .env, then:
+npm run start      # or build / deploy
+```
+
+Example `.env`:
 
 ```
-https://YOUR_TENANT.apps.dynatrace.com   →   https://<your-env>.apps.dynatrace.com
+DT_ENVIRONMENT_URL=https://abc12345.apps.dynatrace.com
+COMPANY_NAME=Acme Health
+APP_NAME=DynatracePoweredSRE
 ```
 
-The UI automatically picks up the environment URL from `dynatrace-sre-maturity-app/ui/app/constants.ts` → `ENVIRONMENT_URL` (used for deep-links into the Davis Problems app). Update that value to match.
-
-### Branding
-
-All customer-specific display strings are centralised in `dynatrace-sre-maturity-app/ui/app/constants.ts`:
-
-| Constant | Default | Used in |
+| Variable | Default if unset | Used for |
 |---|---|---|
-| `COMPANY_NAME` | `"CareSource"` | Landing page heading & leaderboard subtitle |
-| `APP_NAME` | `"DynatracePoweredSRE"` | Header nav, landing page footer, About page |
-| `ENVIRONMENT_URL` | `"https://xyg54887.apps.dynatrace.com"` | Davis Problems deep-links |
+| `DT_ENVIRONMENT_URL` | `https://YOUR_TENANT.apps.dynatrace.com` | Deploy target (`environmentUrl` in `app.config.ts`). Trailing slash is stripped. The UI's Davis Problems links read the live tenant URL at runtime instead. |
+| `COMPANY_NAME` | `YourCompany` | Landing page heading and leaderboard subtitle (the only value the UI reads from `.env`) |
+| `APP_NAME` | `DynatracePoweredSRE` | Manifest name in `app.config.ts`. The header, landing footer and About page show it via `getAppName()` at runtime. |
 
-Change those three values to rebrand the app for a new tenant.
+**How it works**
+- `app.config.ts` reads `.env` itself, since `dt-app` doesn't load it.
+- `scripts/sync-version.mjs` (run by `npm run start`, `build` and `deploy`) writes the gitignored `ui/app/constants.ts` (just `COMPANY_NAME`) from `.env`. Don't edit or commit that file; edit `.env` instead.
+- Real environment variables override `.env`, e.g. `DT_ENVIRONMENT_URL=... npm run deploy` or in CI.
+- Changing `.env` takes effect on the next `npm run start`/`build`/`deploy`. Restart a running dev server.
+
+**Gotchas**
+- After a fresh clone, `ui/app/constants.ts` doesn't exist until one of those three scripts has run once. `npm run lint` or a bare `tsc` will fail on the missing import until then.
+- Without a `.env` you get a warning and placeholder values. `deploy` would then target `YOUR_TENANT` and fail, so create the file first.
+- Keep `version: "x.y.z"` on a single line in `app.config.ts`; `sync-version.mjs` reads it with a regex.
 
 The app requests read-only scopes for logs, buckets, files (lookup tables), events, business
 events, metrics, entities, system tables, spans, and Smartscape, plus `settings:objects:read`
 (guardians), `document:documents:read` (dashboards and notebooks), `iam:users:read` (resolving
 owner names), and `slo:slos:read` (Gen3 SLOs). The Gen3 SLO API also requires an explicit
 `build.dynatraceDependencies` entry for `/platform/slo/v1`. See
-`dynatrace-sre-maturity-app/app.config.json`.
+`dynatrace-sre-maturity-app/app.config.ts`.
 
 ## Getting started
 
 ```bash
 cd dynatrace-sre-maturity-app
+cp .env.example .env   # then edit it — see "Local settings" above
 npm install
 npm run start    # run in development mode
 npm run build    # production build to dist/
-npm run deploy   # build and deploy to the environment in app.config.json
+npm run deploy   # build and deploy to the environment in app.config.ts
 npm run lint     # lint the UI source
+npm run generate:workflows   # regenerate the snapshot and critical-services workflow scripts from ui/app/queries/maturityQueries.ts
+npm run check:workflows      # fail if those files are out of date
+npm run check:readiness      # fail if the Readiness registry is missing a scorecard check
 
 # activate all workflows (run once, or whenever a workflow changes)
 dtctl apply -f workflows/sre-maturity-daily-snapshot.yaml
@@ -355,16 +410,16 @@ Schema (see `lookups/entity_severity.sample.csv` for a template):
 | Column | Description |
 |---|---|
 | `appci` | 3-letter AppCI code (lowercase) |
-| `entity_name` | Service or endpoint name as it appears in Dynatrace |
+| `entity_name` | A real span endpoint name (e.g. an API path), or the exact name of a service that belongs to the AppCI (an `applicationci:<code>` tag, or an `Application:<Name>` tag mapped in `/lookups/appci_map`) — not the CMDB application name |
 | `severity` | e.g. `critical`, `high`, `medium` |
 | `business_impact` | e.g. `revenue`, `regulatory`, `member-experience` |
 
-Upload the populated CSV to `/lookups/entity_severity` via the Dynatrace Grail resource store (or the Dynatrace UI's lookup table manager), then run the `refresh-lookups-critical-services` workflow manually to resolve entity IDs and publish `/lookups/critical_services`. After that first run, set a schedule on the workflow to keep entity IDs current as services move.
+Add the rows (or **Import CSV…**) in the app's **Lookups → Critical services seed** tab and Save, which writes `/lookups/entity_severity`, then run the `refresh-lookups-critical-services` workflow manually to resolve entity IDs and publish `/lookups/critical_services`. After that first run, set a schedule on the workflow to keep entity IDs current as services move.
 
 `build` and `deploy` run `scripts/sync-version.mjs` first, regenerating `ui/app/version.ts` from
-`app.config.json` plus the current git commit and real build/deploy wall-clock times — so the
+`app.config.ts` plus the current git commit and real build/deploy wall-clock times — so the
 in-app version footer and About page always match what was actually built and deployed, not just
-committed. Bump `app.version` in `app.config.json`; never edit `version.ts` by hand.
+committed. Bump `app.version` in `app.config.ts`; never edit `version.ts` by hand.
 
 ## License
 
