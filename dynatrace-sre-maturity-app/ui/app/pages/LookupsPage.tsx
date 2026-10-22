@@ -4,6 +4,17 @@ import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { functions } from "@dynatrace-sdk/app-utils";
 import { LOOKUP_TABLES, LookupTableConfig } from "./lookupTables";
+import {
+  INK,
+  RAIL,
+  ACCENT_SOLID,
+  cardStyle,
+  noticeStyle,
+  subTabStyle,
+  tableHeadCellStyle,
+  tableHeadRowStyle,
+  tableRowBorder,
+} from "../components/redesignStyles";
 
 const APPCI_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -33,9 +44,9 @@ const inputStyle: React.CSSProperties = {
   padding: "6px 8px",
   fontSize: 12,
   borderRadius: 6,
-  border: "1px solid var(--sre-border, #C4C8D1)",
-  background: "var(--sre-surface, transparent)",
-  color: "var(--sre-text-primary, #1A2440)",
+  border: "1px solid var(--line, #E3E6EB)",
+  background: "var(--card, transparent)",
+  color: INK.text,
 };
 
 const buttonStyle = (kind: "primary" | "danger" | "plain", disabled = false): React.CSSProperties => ({
@@ -45,9 +56,9 @@ const buttonStyle = (kind: "primary" | "danger" | "plain", disabled = false): Re
   borderRadius: 6,
   cursor: disabled ? "not-allowed" : "pointer",
   opacity: disabled ? 0.5 : 1,
-  border: kind === "plain" ? "1px solid var(--sre-border, #C4C8D1)" : "none",
-  background: kind === "primary" ? "#2E3EEA" : kind === "danger" ? "#C4233B" : "transparent",
-  color: kind === "plain" ? "var(--sre-text-primary, #1A2440)" : "#fff",
+  border: kind === "plain" ? "1px solid var(--line, #E3E6EB)" : "none",
+  background: kind === "primary" ? ACCENT_SOLID : kind === "danger" ? RAIL.fail : "transparent",
+  color: kind === "plain" ? INK.text : "#fff",
 });
 
 // Returns an error message, or null when the row is acceptable. `others` excludes the row being edited.
@@ -268,18 +279,11 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
   // A denied read looks like a missing table to `useDql`; tell the two apart so people aren't invited to
   // "create" a table they simply can't see.
   const readDenied = missingTable && /permission|forbidden|not authorized|unauthori[sz]ed|\b40[13]\b|files:read/i.test(dql.error?.message ?? "");
-  const banner = (ok: boolean): React.CSSProperties => ({
-    padding: 10,
-    marginBottom: 12,
-    borderRadius: 6,
-    fontSize: 12,
-    border: `1px solid ${ok ? "#1B7F4B" : "#C4233B"}`,
-    color: ok ? "#1B7F4B" : "#C4233B",
-  });
+  const banner = (ok: boolean): React.CSSProperties => ({ ...noticeStyle(ok ? "pass" : "fail"), marginBottom: 12 });
 
   return (
     <div>
-      <Paragraph style={{ margin: "0 0 12px", fontSize: 13, color: "var(--sre-text-secondary, #6F747F)" }}>
+      <Paragraph style={{ margin: "0 0 12px", fontSize: 13, color: INK.muted }}>
         {cfg.description} Stored in <code>{cfg.path}</code>. Changes stay on this page until you press Save; Save replaces the shared table for everyone.
       </Paragraph>
 
@@ -290,7 +294,7 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
         </div>
       )}
       {missingTable && !readDenied && (
-        <div style={{ padding: 10, marginBottom: 12, borderRadius: 6, border: "1px solid var(--sre-border, #C4C8D1)", fontSize: 12 }}>
+        <div style={{ ...noticeStyle("neutral"), marginBottom: 12 }}>
           The lookup table could not be loaded ({dql.error?.message ?? "unknown error"}). If it doesn't exist yet, add rows or import a CSV
           below and Save to create it.
         </div>
@@ -325,13 +329,13 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
           <option value="merge">Add / update by {cfg.keyLabel}</option>
           <option value="replace">Replace all rows</option>
         </select>
-        <span style={{ fontSize: 12, color: "var(--sre-text-secondary, #6F747F)" }}>
+        <span style={{ fontSize: 12, color: INK.muted }}>
           {visible.length === rows.length ? `${rows.length} rows` : `${visible.length} of ${rows.length}`}
         </span>
         <div style={{ flex: 1 }} />
         {dirty && (
           <>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "#B45309" }}>Unsaved changes</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: INK.warn }}>Unsaved changes</span>
             <button type="button" style={buttonStyle("plain", saving)} disabled={saving} onClick={discard}>
               Discard
             </button>
@@ -369,7 +373,7 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
       )}
 
       {editor && (
-        <div style={{ padding: 14, marginBottom: 14, borderRadius: 8, border: "1px solid var(--sre-border, #C4C8D1)", background: "var(--sre-card-bg, transparent)" }}>
+        <div style={{ ...cardStyle, padding: 14, marginBottom: 14, background: "var(--panel, #F7F8FA)" }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>
             {editor.index === null ? "Add row" : `Edit ${cfg.keyColumns.map((k) => rows[editor.index as number][k]).join(" / ")}`}
           </div>
@@ -387,7 +391,7 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
               </label>
             ))}
           </div>
-          {editorError && <div style={{ marginTop: 10, fontSize: 12, color: "#C4233B" }}>{editorError}</div>}
+          {editorError && <div style={{ marginTop: 10, fontSize: 12, color: INK.fail }}>{editorError}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button type="button" style={buttonStyle("primary")} onClick={applyEditor}>
               {editor.index === null ? "Add" : "Apply"}
@@ -402,13 +406,13 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
       {showLoading ? (
         <Paragraph>Loading…</Paragraph>
       ) : (
-        <div style={{ overflowX: "auto", border: "1px solid var(--sre-table-border, #E3E5EA)", borderRadius: 8 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <div style={{ ...cardStyle, overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, color: INK.text }}>
             <thead>
-              <tr style={{ background: "var(--sre-table-header-bg, #F2F3F5)", textAlign: "left" }}>
-                <th style={{ padding: "8px 10px" }} />
+              <tr style={tableHeadRowStyle}>
+                <th style={tableHeadCellStyle} />
                 {cfg.columns.map((c) => (
-                  <th key={c.key} style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
+                  <th key={c.key} style={tableHeadCellStyle}>
                     {c.label}
                   </th>
                 ))}
@@ -417,18 +421,18 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
             <tbody>
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={cfg.columns.length + 1} style={{ padding: 16, textAlign: "center", color: "var(--sre-text-secondary, #6F747F)" }}>
+                  <td colSpan={cfg.columns.length + 1} style={{ padding: 16, textAlign: "center", color: INK.muted }}>
                     {rows.length === 0 ? "No rows yet." : "No rows match the search."}
                   </td>
                 </tr>
               )}
               {visible.map(({ row, index }) => (
-                <tr key={rowKey(cfg, row)} style={{ borderTop: "1px solid var(--sre-table-border, #E3E5EA)" }}>
+                <tr key={rowKey(cfg, row)} style={{ borderTop: tableRowBorder }}>
                   <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
                     <button type="button" style={{ ...buttonStyle("plain"), padding: "2px 8px", marginRight: 6 }} onClick={() => openEditor(index)}>
                       Edit
                     </button>
-                    <button type="button" style={{ ...buttonStyle("plain"), padding: "2px 8px", color: "#C4233B" }} onClick={() => deleteRow(index)}>
+                    <button type="button" style={{ ...buttonStyle("plain"), padding: "2px 8px", color: INK.fail }} onClick={() => deleteRow(index)}>
                       Delete
                     </button>
                   </td>
@@ -457,7 +461,7 @@ export const LookupsPage = () => {
         <Heading level={3} style={{ margin: "0 0 4px" }}>{active.title}</Heading>
       </div>
 
-      <div style={{ display: "flex", gap: 4, marginBottom: 14, borderBottom: "1px solid var(--sre-border, #C4C8D1)" }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 14, borderBottom: "1px solid var(--line, #E3E6EB)" }}>
         {LOOKUP_TABLES.map((t) => {
           const isActive = t.id === activeId;
           return (
@@ -465,16 +469,7 @@ export const LookupsPage = () => {
               key={t.id}
               type="button"
               onClick={() => setActiveId(t.id)}
-              style={{
-                background: "transparent",
-                border: "none",
-                borderBottom: isActive ? "3px solid #2E3EEA" : "3px solid transparent",
-                padding: "8px 16px",
-                cursor: "pointer",
-                fontSize: 13,
-                fontWeight: isActive ? 700 : 500,
-                color: "var(--sre-text-primary, #1A2440)",
-              }}
+              style={subTabStyle(isActive)}
             >
               {t.tabLabel}
             </button>
