@@ -24,7 +24,16 @@ ${appciFromEntityTags()}
 | summarize ${countField} = count(), by:{applicationci}`;
 
 const SERVICES_QUERY = tagCodes("fetch dt.entity.service", "n");
-const UNMAPPED_QUERY = unmappedApplicationsQuery("fetch dt.entity.service");
+// Application names that resolve to no AppCI, on each entity type the L1 checks count, fetched the way those
+// checks fetch them. The same application is often spelled differently per type (a service says
+// "BillingPortal", a synthetic test says "Billing Portal"), so a name can be mapped for one type and missed
+// on another. Listing all four shows the spellings that still need a map row.
+const UNMAPPED_SERVICES_QUERY = unmappedApplicationsQuery("fetch dt.entity.service");
+const UNMAPPED_HOSTS_QUERY = unmappedApplicationsQuery("fetch dt.entity.host\n| limit 100000\n| filter lifetime[end] > asTimestamp(now()-2h)");
+const UNMAPPED_RUM_QUERY = unmappedApplicationsQuery("fetch dt.entity.application, from:now()-1000d");
+const UNMAPPED_SYNTHETIC_QUERY = unmappedApplicationsQuery("fetch dt.entity.synthetic_test");
+const UNMAPPED_KINDS = ["services", "hosts", "RUM apps", "synthetic tests"] as const;
+const UNMAPPED_KIND_ONE = ["service", "host", "RUM app", "synthetic test"] as const;
 const HOSTS_QUERY = tagCodes("fetch dt.entity.host\n| limit 100000\n| filter lifetime[end] > asTimestamp(now()-2h)", "n");
 
 const SLO_QUERY = `load "/lookups/slo"
@@ -99,7 +108,10 @@ export const CoveragePage = () => {
   const dashboards = useSource(DASHBOARD_QUERY);
   const critical = useSource(CRITICAL_QUERY);
   const workflows = useSource(WORKFLOW_QUERY);
-  const unmappedSrc = useDql({ query: UNMAPPED_QUERY });
+  const unmappedServices = useDql({ query: UNMAPPED_SERVICES_QUERY });
+  const unmappedHosts = useDql({ query: UNMAPPED_HOSTS_QUERY });
+  const unmappedRum = useDql({ query: UNMAPPED_RUM_QUERY });
+  const unmappedSynthetic = useDql({ query: UNMAPPED_SYNTHETIC_QUERY });
   const mapRowsSrc = useDql({ query: APPCI_MAP_ROWS_QUERY });
   // Rebuilt only when a source's data or state changes, so the memos below stay stable.
   const sources = useMemo(
@@ -127,14 +139,25 @@ export const CoveragePage = () => {
   );
 
   // Application names on services that no AppCI covers: the to-do list for Lookups > AppCI map.
-  const unmapped = useMemo(
-    () =>
-      (unmappedSrc.data?.records ?? []).map((rec) => {
+  const unmappedSources = [unmappedServices, unmappedHosts, unmappedRum, unmappedSynthetic];
+  const unmapped = useMemo(() => {
+    const byName = new Map<string, { name: string; counts: number[]; total: number }>();
+    [unmappedServices.data, unmappedHosts.data, unmappedRum.data, unmappedSynthetic.data].forEach((data, kind) => {
+      for (const rec of data?.records ?? []) {
         const r = rec as Record<string, unknown>;
-        return { name: str(r.appciName), n: Number(r.entities ?? 0) };
-      }),
-    [unmappedSrc.data]
-  );
+        const name = str(r.appciName);
+        if (!name) continue;
+        const entry = byName.get(name) ?? { name, counts: [0, 0, 0, 0], total: 0 };
+        const n = Number(r.entities ?? 0);
+        entry.counts[kind] += n;
+        entry.total += n;
+        byName.set(name, entry);
+      }
+    });
+    return [...byName.values()].sort((a, b) => b.total - a.total);
+  }, [unmappedServices.data, unmappedHosts.data, unmappedRum.data, unmappedSynthetic.data]);
+  // A source that failed (for example an entity type this tenant does not have) hides only its own column.
+  const unmappedFailed = UNMAPPED_KINDS.filter((_, i) => unmappedSources[i].error);
   // Map rows that point at an AppCI absent from the CMDB table: usually a typo in the code.
   const mapOrphans = useMemo(
     () =>
@@ -279,13 +302,19 @@ export const CoveragePage = () => {
             Application names with no AppCI ({unmapped.length})
           </div>
           <Paragraph style={{ margin: "0 0 8px", fontSize: 12, color: MUTED }}>
-            Services carry these <code>Application:&lt;name&gt;</code> tags, but no <code>applicationci</code> tag and no row in the
-            AppCI map, so the scorecards cannot see them. Add each name (without its environment suffix) on Lookups &gt; AppCI map.
+            Services, hosts, RUM applications or synthetic tests carry these <code>Application:&lt;name&gt;</code> tags, but no{" "}
+            <code>applicationci</code> tag and no row in the AppCI map, so the scorecards cannot see them. Add each name (without its
+            environment suffix) on Lookups &gt; AppCI map. The same application is often spelled differently per type (for example
+            "BillingPortal" on services and "Billing Portal" on synthetic tests): each spelling needs its own row.
+            {unmappedFailed.length > 0 && <span style={{ color: "#B45309" }}> Could not read: {unmappedFailed.join(", ")}.</span>}
           </Paragraph>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {unmapped.slice(0, 60).map((u) => (
               <span key={u.name} style={{ padding: "3px 10px", borderRadius: 12, border: "1px solid var(--sre-border, #C4C8D1)", fontSize: 12 }}>
-                {u.name} <span style={{ color: MUTED }}>({u.n} services)</span>
+                {u.name}{" "}
+                <span style={{ color: MUTED }}>
+                  ({UNMAPPED_KINDS.map((k, i) => (u.counts[i] > 0 ? `${u.counts[i]} ${u.counts[i] === 1 ? UNMAPPED_KIND_ONE[i] : k}` : "")).filter(Boolean).join(", ")})
+                </span>
               </span>
             ))}
             {unmapped.length > 60 && <span style={{ fontSize: 12, color: MUTED }}>…and {unmapped.length - 60} more</span>}

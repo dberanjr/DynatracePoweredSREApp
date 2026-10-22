@@ -217,7 +217,7 @@ exist`.
 
 1. **Lookups** tab: all three tables load and show your rows.
 2. Run the critical-services workflow manually. It should finish green.
-3. Open **Coverage**. Every application you expect should show services and some of the other signals. The section **Application names with no AppCI** lists every `Application:<Name>` tag that resolves to nothing, with its service count: add those names to the AppCI map. Fix remaining gaps (tags, names) until the apps you care about are mostly filled in.
+3. Open **Coverage**. Every application you expect should show services and some of the other signals. The section **Application names with no AppCI** lists every `Application:<Name>` tag that resolves to nothing, with its count per entity type (services, hosts, RUM applications, synthetic tests): add those names to the AppCI map. The same application is often spelled differently per type (`BillingPortal` on services, `Billing Portal` on synthetic tests), and each spelling needs its own row. Fix remaining gaps (tags, names) until the apps you care about are mostly filled in.
 4. Open **Scorecards**, pick an AppCI from the header picker, and confirm L1–L5 cards render.
 5. The maturity trend chart stays empty until the snapshot workflow has run at least once.
 

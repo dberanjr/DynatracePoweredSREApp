@@ -427,27 +427,38 @@ ${appciFromEntityTags()}
 // app passed regardless of real automation. Now requires an actual Automation
 // Engine WORKFLOW_EXECUTION whose title starts with the app's code — same
 // convention as the ITSM Integration check (L3 #3).
-export const BULK_L5_QUERY = `fetch dt.system.events, from:now()-30d
-| filter event.provider == "AUTOMATION_ENGINE"
-| filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appciFromWorkflowTitle()}
-| filter stringLength(applicationci) == 3
-| summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{applicationci}
-| lookup [
-    fetch dt.davis.problems
-    ${appciFromProblemTags()}
-    | filter isNotNull(appci)
-    | filter dt.davis.is_duplicate == false
-    | fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"
-        and isNotNull(labels.alerting_profile)
-    | summarize
-        totalProblems = count(),
-        enrichedProblems = countIf(hasItsmProfile == true),
-        by:{appci}
-  ], sourceField:applicationci, lookupField:appci, fields:{totalProblems, enrichedProblems}
+// FIXED (2026-10-22): the query used to start from workflow executions, so an application with problems but
+// no workflows got no row at all and its enrichment credit was lost, while the per-app scorecard (which
+// starts from the application) gave it that credit. It now starts from problems, appends the workflow
+// counts, and merges, so every application with either signal is scored the same as on the scorecard.
+export const BULK_L5_QUERY = `fetch dt.davis.problems
+${appciFromProblemTags()}
+| filter isNotNull(appci)
+| filter dt.davis.is_duplicate == false
+| fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"
+    and isNotNull(labels.alerting_profile)
+| summarize
+    totalProblems = count(),
+    enrichedProblems = countIf(hasItsmProfile == true),
+    by:{applicationci = appci}
+| append [
+    fetch dt.system.events, from:now()-30d
+    | filter event.provider == "AUTOMATION_ENGINE"
+    | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
+    ${appciFromWorkflowTitle()}
+    | filter stringLength(applicationci) == 3
+    | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{applicationci}
+  ]
+| summarize
+    totalProblems = sum(totalProblems),
+    enrichedProblems = sum(enrichedProblems),
+    workflowCount = sum(workflowCount),
+    by:{applicationci}
+| filter stringLength(applicationci) <= 3
 | fieldsAdd
     totalProblems = if(isNull(totalProblems), 0, else: totalProblems),
-    enrichedProblems = if(isNull(enrichedProblems), 0, else: enrichedProblems)
+    enrichedProblems = if(isNull(enrichedProblems), 0, else: enrichedProblems),
+    workflowCount = if(isNull(workflowCount), 0, else: workflowCount)
 | fieldsAdd enrichPct = if(totalProblems > 0,
     round(toDouble(enrichedProblems) * 100.0 / toDouble(totalProblems), decimals:0),
     else: 0.0)

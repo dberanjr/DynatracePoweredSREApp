@@ -146,6 +146,35 @@ that need no customer input. All four are fixed and verified:
    services only the first `Application` tag is used; this affects 6 of 2,542 prod services (0.2%) that carry two
    different applications, so it was left.
 
+### Found in the browser, fixed afterwards
+
+Mapping one spelling in the running app exposed two more issues.
+
+5. **L5 bulk query dropped applications without workflows, and used a different window from the scorecard.** It
+   started from workflow executions, so an application with problems but no workflows had no row (its
+   enrichment credit was lost), and because the problems lookup sat in a subquery next to a 30-day fetch it
+   inherited that 30-day window, whereas the scorecard's problems use the request default. For `mem` the
+   leaderboard said 3 and the scorecard 2. The query now starts from problems, appends workflow counts and
+   merges (`BULK_L5_QUERY`), so every application with either signal is scored as the scorecard scores it.
+   Verified for all four mapped apps: scorecard vs bulk `crm` 1/1, `mem` 2/2, `doc` 1/1, `bil` 1/1. The snapshot
+   now includes applications that exist only at L5 (6 processed instead of 5).
+6. **Coverage only listed unmapped names on services.** The same application is spelled differently per entity
+   type: services say `BillingPortal`, synthetic tests say `Billing Portal`. With no row for the second
+   spelling, BIL's RUM / Synthetics check read "Not configured". Adding the row flipped it (L1 5/7 → 6/7,
+   current maturity L1 → L2). The Coverage list now covers services, hosts, RUM applications and synthetic
+   tests, with per-type counts; in nonprod it shows 66 names, some of which exist only on hosts.
+
+**Scores move as coverage improves.** The same alias attributed 27 synthetic-monitor outage problems to BIL
+("Http monitor global outage", all single-event availability), so alert noise went from 3 of 8 (38%) to 30 of 35
+(86%) and L3 fell from 3/7 to 2/7. The check classifies by shape (one event, availability) and cannot tell a
+flapping monitor from a real outage. Expect mapping work to change scores in both directions, and expect the
+trend chart to step at those points.
+
+**Enrichment window (decided: keep the default).** The L5 "Incident Auto-Enrichment" problems have no explicit time
+range, so Dynatrace's default (about two hours) applies, and an application with no problem in that window reads
+"No problems", which fails (unlike L3, where no problems counts as n/a). The scorecard and the leaderboard now
+agree on this. Confirmed acceptable by the project owner on 2026-10-22; no change.
+
 New hard dependencies: scoring queries now also load the CMDB table (fix 1) and `/lookups/slo-dashboards`
 (fix 3), joining `/lookups/appci_map`, `/lookups/slo`, `/lookups/guardians` and `/lookups/critical_services`. A
 tenant missing any of them fails the affected query, as before for the others.
