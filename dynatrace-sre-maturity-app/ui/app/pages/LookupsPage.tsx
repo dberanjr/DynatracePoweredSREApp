@@ -4,6 +4,7 @@ import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { functions } from "@dynatrace-sdk/app-utils";
 import { LOOKUP_TABLES, LookupTableConfig } from "./lookupTables";
+import { parseCsv, toCsv, unguardCell } from "./lookupCsv";
 import {
   INK,
   RAIL,
@@ -70,44 +71,6 @@ function validateRow(cfg: LookupTableConfig, row: Row, others: Row[]): string | 
   return null;
 }
 
-// Minimal RFC 4180 parser: quoted fields, "" escapes, commas/newlines inside quotes, CRLF, BOM.
-function parseCsv(text: string): string[][] {
-  const out: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let inQuotes = false;
-  const src = text.replace(/^\uFEFF/, "");
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (inQuotes) {
-      if (ch === '"' && src[i + 1] === '"') {
-        field += '"';
-        i++;
-      } else if (ch === '"') {
-        inQuotes = false;
-      } else {
-        field += ch;
-      }
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ",") {
-      row.push(field);
-      field = "";
-    } else if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && src[i + 1] === "\n") i++;
-      row.push(field);
-      field = "";
-      if (row.some((f) => f.trim() !== "")) out.push(row);
-      row = [];
-    } else {
-      field += ch;
-    }
-  }
-  row.push(field);
-  if (row.some((f) => f.trim() !== "")) out.push(row);
-  return out;
-}
-
 // Turns CSV text into rows, or a list of problems. All-or-nothing: a half-applied file is
 // harder to reason about than a rejected one.
 function rowsFromCsv(cfg: LookupTableConfig, text: string): { rows: Row[]; errors: string[]; ignoredColumns: string[] } {
@@ -125,7 +88,7 @@ function rowsFromCsv(cfg: LookupTableConfig, text: string): { rows: Row[]; error
   table.slice(1).forEach((cells, i) => {
     const row = emptyRow(cfg);
     colIndex.forEach((key, ci) => {
-      if (key) row[key] = str(cells[ci]).replace(/[\r\n\t^]/g, " ");
+      if (key) row[key] = unguardCell(str(cells[ci])).replace(/[\r\n\t^]/g, " ");
     });
     const normalised = normalise(cfg, row);
     const err = validateRow(cfg, normalised, rows);
@@ -255,6 +218,26 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
     }
   };
 
+  // Exports the SAVED table (the baseline), not the staged edits: the file is for moving the shared table to
+  // another tenant or editing it offline, and a half-finished edit session shouldn't leak into it. Nothing
+  // saved yet gives a header-only template, which is the starting point for filling in an empty tenant.
+  const exportCsv = () => {
+    const saved = JSON.parse(baseline) as Row[];
+    const csv = toCsv(cfg.columns.map((c) => c.key), saved);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${cfg.id}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setImportNote({
+      ok: true,
+      lines: [saved.length ? `Exported ${saved.length} saved rows to ${a.download}.${dirty ? " Unsaved changes on this page are not in the file." : ""}` : `Nothing saved yet, so ${a.download} holds the header row only, as a template to fill in.`],
+    });
+  };
+
   const save = async () => {
     setSaving(true);
     setSaveResult(null);
@@ -322,6 +305,9 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
             e.target.value = ""; // allow re-selecting the same file
           }}
         />
+        <button type="button" style={buttonStyle("plain", showLoading)} disabled={showLoading} onClick={exportCsv}>
+          Export CSV
+        </button>
         <button type="button" style={buttonStyle("plain")} onClick={() => fileInput.current?.click()}>
           Import CSV…
         </button>

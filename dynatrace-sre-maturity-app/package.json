@@ -7,6 +7,7 @@
     "generate:workflows": "node scripts/generate-snapshot-workflow.mjs",
     "check:workflows": "node scripts/generate-snapshot-workflow.mjs --check",
     "check:readiness": "node scripts/check-readiness-registry.mjs",
+    "check:lookup-csv": "node scripts/check-lookup-csv.mjs",
     "build": "node scripts/sync-version.mjs && dt-app build",
     "start": "node scripts/sync-version.mjs && dt-app dev",
     "create:function": "dt-app function create",
