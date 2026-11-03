@@ -249,6 +249,18 @@ export const AboutPage = () => {
             This app queries Dynatrace Grail data within your tenant. No data leaves Dynatrace.
           </Paragraph>
         </div>
+
+        {/* Name credit at very bottom */}
+        <div
+          style={{
+            textAlign: "center",
+            fontSize: 13,
+            color: "var(--sre-text-secondary, #6F747F)",
+            paddingTop: 8,
+          }}
+        >
+          Nate Kunz
+        </div>
       </Flex>
     </Flex>
   );
