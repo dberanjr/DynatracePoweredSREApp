@@ -1,5 +1,5 @@
 appci,entity_name,severity,business_impact
-abc,ABC Payment Service,critical,revenue
-abc,ABC Auth API,high,security
-xyz,XYZ Claims Processor,critical,regulatory
-xyz,XYZ Member Portal,high,member-experience
+abc,/api/payments/authorize,critical,revenue
+abc,/api/auth/token,high,security
+xyz,/api/claims/submit,critical,regulatory
+xyz,/api/members/search,high,member-experience

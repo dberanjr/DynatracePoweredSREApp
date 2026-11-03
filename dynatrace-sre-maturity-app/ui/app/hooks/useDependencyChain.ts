@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
+import { appciFromEntityTags } from "../queries/maturityQueries";
 
 export type ChainDirection = "forward" | "backward";
 
@@ -82,11 +83,11 @@ function buildLevelQuery(originId: string, direction: ChainDirection, hops: numb
 ${traverses}
 | dedup id
 | fieldsAdd depId = toString(id), depName = name, parentId = ${parentExpr}
-| lookup [fetch dt.entity.service | fields id, tags],
-    sourceField: depId, lookupField: id, fields: {lookupTags = tags}
-| fieldsAdd appciList = arrayDistinct(arrayRemoveNulls(iCollectArray(
-    if(matchesPhrase(lookupTags[], "applicationci:*"), splitString(lookupTags[], ":")[1])
-  )))
+| lookup [
+    fetch dt.entity.service
+    ${appciFromEntityTags()}
+    | fields id, applicationci
+  ], sourceField: depId, lookupField: id, fields: {appciList = applicationci}
 | lookup [
     load "/lookups/critical_services"
     | filter entity_ids != "-"

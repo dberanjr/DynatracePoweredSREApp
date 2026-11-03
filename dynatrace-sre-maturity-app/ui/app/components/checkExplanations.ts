@@ -30,7 +30,7 @@ export const CHECK_EXPLANATIONS: Record<string, string> = {
   "4. SLO Dashboards Published":
     "Counts dashboards for this AppCI from the /lookups/slo-dashboards table - dashboards whose name starts with a 3-letter AppCI token and contains 'SLO' (standalone uppercase). The table is refreshed daily at 06:00 UTC by a workflow reading the documents API, itemized per dashboard. Pass = at least one dashboard. The modal reads the Documents API live via the getDashboardDetail app function.",
   "5. SRE Assessment in ARD":
-    "Checks ServiceNow CMDB import bizevents (last 24h) for a tier assigned to this applicationci. Pass = a tier is present.",
+    "Checks that this applicationci has a tier. The CMDB table (Lookups tab) must give the application a business criticality, or a ServiceNow import event with a tier must have arrived in the last 24h. Pass = a tier is present.",
   "6. Critical Services Tagged":
     "Whether this app's critical services are tagged in Dynatrace, so ITSM can route them at priority. Reads /lookups/critical_services: Pass = at least one listed critical service resolves to a real entity ID. Fail = critical services are listed for this AppCI but none resolve. N/A (counted as a pass) = no critical services are listed for this AppCI at all.",
 
@@ -64,9 +64,9 @@ export const CHECK_EXPLANATIONS: Record<string, string> = {
 
   // L5 - Autonomous Reliability
   "1. Repetitive Tasks Identified":
-    "Counts workflow bizevents (event.type containing 'workflow') for this applicationci in the last 7 days. Pass = at least one workflow event.",
+    "Counts Automation Engine workflows that ran in the last 30 days and belong to this applicationci. A workflow belongs to it when the first word of its title is the 3-letter code, or an application name in the AppCI map (for example 'MemberHub Validation' or 'CrmSuite_PRD …'). Pass = at least one.",
   "2. Workflow Automation":
-    "Pass when any workflow events exist for this applicationci in the last 7 days.",
+    "Same signal as Repetitive Tasks Identified: at least one Automation Engine workflow that belongs to this applicationci (by the code in its title, or an application name in the AppCI map) ran in the last 30 days.",
   "3. E2E Remediation Automated":
     "Not yet detected - reported as fail by default.",
   "4. Incident Auto-Enrichment":

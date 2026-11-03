@@ -3,6 +3,7 @@
 // Keep in sync with ScorecardsPage.tsx when queries change.
 
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
+import { appciFromEntityTags, appciFromProblemTags, appciFromWorkflowTitle, hasTierLookup } from "../queries/maturityQueries";
 
 export interface CheckDetailConfig {
   level: "L1" | "L2" | "L3" | "L4" | "L5";
@@ -139,20 +140,7 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
     detailQuery: (appCI: string) => `fetch dt.entity.host
 | limit 100000
 | filter lifetime[end] > asTimestamp(now()-2h)
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(
-      splitString(
-        arrayRemoveNulls(
-          iCollectArray(
-            if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-          )
-        )[], ":"
-      )[1]
-    )
-  )
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(splitString(applicationci[], ",")[0])
-  )
+${appciFromEntityTags()}
 | expand applicationci
 | filter applicationci == lower("${appCI}")
 | dedup id
@@ -188,18 +176,7 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
 | filter id in [
     fetch dt.entity.host
     | filter lifetime[end] > asTimestamp(now()-2h)
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(
-          splitString(
-            arrayRemoveNulls(
-              iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-              )
-            )[], ":"
-          )[1]
-        )
-      )
-    | fieldsAdd applicationci = arrayDistinct(iCollectArray(splitString(applicationci[], ",")[0]))
+    ${appciFromEntityTags()}
     | expand applicationci
     | filter applicationci == lower("${appCI}")
     | dedup id
@@ -217,10 +194,7 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
     secondaryLabel: "Hosts active per day by monitoring mode (7d)",
     scorecardSnippet: `fetch dt.entity.host
 | filter lifetime[end] > asTimestamp(now()-2h)
-| fieldsAdd applicationci = arrayDistinct(iCollectArray(
-    splitString(arrayRemoveNulls(iCollectArray(
-      if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-    ))[], ":"  )[1]))
+${appciFromEntityTags()}
 | expand applicationci
 // PaaS-injected hosts (ECS Fargate, EKS Fargate, etc.) never get a
 // monitoringMode value — PaaS OneAgent has no partial mode, it's always
@@ -244,20 +218,7 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
       "Ensure OneAgent is installed on all service hosts and processes. Confirm that HTTP/gRPC traffic is flowing through the monitored process. If a service exists but is not tagged, add the 'applicationci:<code>' tag via host metadata, tag rules, or the entity API.",
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.service
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(
-      splitString(
-        arrayRemoveNulls(
-          iCollectArray(
-            if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-          )
-        )[], ":"
-      )[1]
-    )
-  )
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(splitString(applicationci[], ",")[0])
-  )
+${appciFromEntityTags()}
 | expand applicationci
 | filter applicationci == lower("${appCI}")
 | dedup id
@@ -272,20 +233,7 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
     secondaryQuery: (appCI: string) => `fetch spans, from:now()-2h, scanLimitGBytes:-1
 | lookup [
     fetch dt.entity.service
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(
-          splitString(
-            arrayRemoveNulls(
-              iCollectArray(
-                if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-              )
-            )[], ":"
-          )[1]
-        )
-      )
-    | fieldsAdd applicationci = arrayDistinct(
-        iCollectArray(splitString(applicationci[], ",")[0])
-      )
+    ${appciFromEntityTags()}
     | expand applicationci
     | filter applicationci == lower("${appCI}")
     | dedup id
@@ -299,10 +247,7 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
     secondaryLabel: "Trace volume by outcome (15-min buckets, 2h)",
     serviceRowClick: true,
     scorecardSnippet: `fetch dt.entity.service
-| fieldsAdd applicationci = arrayDistinct(iCollectArray(
-    splitString(arrayRemoveNulls(iCollectArray(
-      if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-    ))[], ":"  )[1]))
+${appciFromEntityTags()}
 | expand applicationci
 | summarize serviceCount = count(), by:{applicationci}
 
@@ -364,20 +309,7 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
       "Smartscape discovery is automatic once OneAgent is installed and services are tagged. Ensure services are correctly tagged with 'applicationci:<code>'. Full topology discovery may take 1–2 hours after initial instrumentation.",
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.service
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(
-      splitString(
-        arrayRemoveNulls(
-          iCollectArray(
-            if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-          )
-        )[], ":"
-      )[1]
-    )
-  )
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(splitString(applicationci[], ",")[0])
-  )
+${appciFromEntityTags()}
 | expand applicationci
 | filter applicationci == lower("${appCI}")
 | dedup id
@@ -580,9 +512,9 @@ fetch dt.entity.service
       "For frontend applications: inject the RUM JavaScript snippet via OneAgent automatic injection or manual instrumentation, and tag the resulting Dynatrace Application entity. Create browser clickpath or HTTP monitor synthetics for critical user journeys.",
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.application, from:now()-1000d
-| expand tags
-| parse tags, "'applicationci:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+${appciFromEntityTags()}
+| expand applicationci
+| filter applicationci == lower("${appCI}")
 | dedup entity.name
 | fields app = entity.name, type = "RUM",
     active = if(lifetime[end] > now()-7d, "Active", else: "Inactive")
@@ -613,20 +545,7 @@ fetch dt.entity.synthetic_test
       "Golden signals are automatic with Full-Stack OneAgent. Ensure services are correctly tagged. To explicitly define SLIs, navigate to SLO Management and create SLOs referencing golden-signal metrics (request rate, error rate, latency) for this application's services.",
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.service
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(
-      splitString(
-        arrayRemoveNulls(
-          iCollectArray(
-            if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))
-          )
-        )[], ":"
-      )[1]
-    )
-  )
-| fieldsAdd applicationci = arrayDistinct(
-    iCollectArray(splitString(applicationci[], ",")[0])
-  )
+${appciFromEntityTags()}
 | expand applicationci
 | filter applicationci == lower("${appCI}")
 | dedup id
@@ -651,8 +570,7 @@ fetch dt.entity.synthetic_test
   }, interval:30m, from:now()-6h,
   filter: { dt.entity.service in [
       fetch dt.entity.service
-      | fieldsAdd applicationci = arrayDistinct(iCollectArray(splitString(arrayRemoveNulls(iCollectArray(if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))))[], ":")[1]))
-      | fieldsAdd applicationci = arrayDistinct(iCollectArray(splitString(applicationci[], ",")[0]))
+      ${appciFromEntityTags()}
       | expand applicationci
       | filter applicationci == lower("${appCI}")
       | fields id
@@ -662,8 +580,7 @@ fetch dt.entity.synthetic_test
     timeseries p95 = percentile(dt.service.request.response_time, 95, rollup: avg), interval:30m, from:now()-6h,
       filter: { dt.entity.service in [
           fetch dt.entity.service
-          | fieldsAdd applicationci = arrayDistinct(iCollectArray(splitString(arrayRemoveNulls(iCollectArray(if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))))[], ":")[1]))
-          | fieldsAdd applicationci = arrayDistinct(iCollectArray(splitString(applicationci[], ",")[0]))
+          ${appciFromEntityTags()}
           | expand applicationci
           | filter applicationci == lower("${appCI}")
           | fields id
@@ -676,8 +593,7 @@ fetch dt.entity.synthetic_test
     timeseries cpu = avg(dt.process.cpu.usage), interval:30m, from:now()-6h,
       filter: { dt.entity.process_group in [
           fetch dt.entity.process_group
-          | fieldsAdd applicationci = arrayDistinct(iCollectArray(splitString(arrayRemoveNulls(iCollectArray(if(matchesPhrase(tags[], "*applicationci*"), lower(tags[]))))[], ":")[1]))
-          | fieldsAdd applicationci = arrayDistinct(iCollectArray(splitString(applicationci[], ",")[0]))
+          ${appciFromEntityTags()}
           | expand applicationci
           | filter applicationci == lower("${appCI}")
           | fields id
@@ -852,18 +768,16 @@ load "/lookups/slo-dashboards"
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      "Verifies that this application has a CMDB tier assignment imported from ServiceNow. The check looks for a workflow bizevent of type 'workflow.import.servicenow.appci' in the last 24 hours that carries a non-null 'tier' field. The tier (1–4) determines the SRE engagement level and which maturity checks are applicable. The card shows the full assessment record — CI name, tier, owner, support group, and escalation group. The chart proves the CMDB sync runs reliably by counting daily import events over the last 7 days.",
+      "Verifies that this application has a tier (business criticality) assigned. The tier (1–4) determines the SRE engagement level and which maturity checks apply. The check passes when the application's row in the CMDB table (maintained on the Lookups tab, the same table the identity bar and AppCI picker read) has a business criticality, or when a ServiceNow import event carried a tier for it in the last 24 hours (the original source, still honored). The card shows the CMDB record: name, tier, owner, support group and managing director. The chart counts ServiceNow import events over the last 7 days; it is empty if no such import runs in this environment.",
     passLogic:
-      "Pass: a bizevent of type 'workflow.import.servicenow.appci' exists in the last 24 hours with a non-null tier for this ApplicationCI.",
+      "Pass: this ApplicationCI's CMDB row has a non-blank business criticality, or a 'workflow.import.servicenow.appci' bizevent with a non-null tier arrived in the last 24 hours.",
     guidance:
-      "Ensure the ServiceNow→Dynatrace CMDB import workflow is running and populating tier data for this application. Contact the SRE platform team if no tier data appears after 24 hours.",
+      "Set the application's business criticality in the CMDB table (Lookups tab → CMDB owner mapping), for example '1 - critical'. If the CMDB is the source of truth, load it from a ServiceNow export rather than typing it. The tier decides which checks apply to this application, so it should be assigned before anything else is judged.",
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch bizevents, from:now()-24h
-| filter event.type == "workflow.import.servicenow.appci"
+    // eslint-disable-next-line noSecrets/no-secrets
+    detailQuery: (appCI: string) => `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
 | filter lower(applicationci) == lower("${appCI}")
-| filter isNotNull(tier)
-| fields ciName = ciname, tier, owner = app_owner_name, supportGroup = app_support_group_email, escalationGroup = escalation_group, timestamp
-| sort timestamp desc
+| fields ciName = name, tier = business_criticality, status = operational_status, owner = owned_by, supportGroup = support_group, managingDirector = \`managed_by.u_managing_director\`
 | limit 10`,
     secondaryQuery: (appCI: string) => `fetch bizevents, from:now()-7d
 | filter event.type == "workflow.import.servicenow.appci"
@@ -871,13 +785,13 @@ load "/lookups/slo-dashboards"
 | summarize importCount = count(), by:{timestamp = bin(timestamp, 24h)}
 | sort timestamp asc`,
     secondaryChartType: "bar",
-    secondaryLabel: "CMDB sync frequency (7d, daily import events)",
-    scorecardSnippet: `fetch bizevents, from:now()-24h
-| filter event.type == "workflow.import.servicenow.appci"
-| filter isNotNull(tier)
-| summarize hasTier = count(), by:{applicationci = lower(applicationci)}
+    secondaryLabel: "ServiceNow import events (7d, daily). Empty means no such import runs here",
+    scorecardSnippet: `// Scorecard pass/fail source: the CMDB row's business criticality, or a ServiceNow import tier
+// (replace "abc" with an AppCI to run this as is)
+data record(applicationci = "abc")
+${hasTierLookup()}
 
-// Pass: hasTier > 0  (CMDB tier is present for this ApplicationCI)`,
+// Pass: hasTier > 0`,
   },
 
   "6. Critical Services Tagged": {
@@ -933,7 +847,7 @@ load "/lookups/critical_services"
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+${appciFromProblemTags()}
 | filter isNotNull(appci) and appci == lower("${appCI}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | fieldsAdd entityCount = arraySize(affected_entity_ids)
@@ -952,7 +866,7 @@ load "/lookups/critical_services"
     problemRowClick: true,
     secondaryQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+${appciFromProblemTags()}
 | filter isNotNull(appci) and appci == lower("${appCI}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | fieldsAdd classification = if(matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1,
@@ -967,8 +881,7 @@ load "/lookups/critical_services"
     donutCenterLabel: "problems (7d)",
     scorecardSnippet: `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-| fieldsAdd appci = splitString(splitString(
-    toString(entity_tags), "applicationci:")[1], "\\"")[0]
+${appciFromProblemTags()}
 | filter isNotNull(appci)
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | fieldsAdd isCausal = matchesValue(event.category, array("ERROR", "SLOWDOWN"))
@@ -1174,7 +1087,7 @@ fetch events, from:now()-30d
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+${appciFromProblemTags()}
 | filter isNotNull(appci) and appci == lower("${appCI}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | filter eventCount == 1 and matchesValue(event.category,
@@ -1189,7 +1102,7 @@ fetch events, from:now()-30d
     problemRowClick: true,
     secondaryQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+${appciFromProblemTags()}
 | filter isNotNull(appci) and appci == lower("${appCI}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | filter eventCount == 1 and matchesValue(event.category,
@@ -1228,7 +1141,7 @@ fetch events, from:now()-30d
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+${appciFromProblemTags()}
 | filter isNotNull(appci) and appci == lower("${appCI}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | filter matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
@@ -1244,7 +1157,7 @@ fetch events, from:now()-30d
     problemRowClick: true,
     secondaryQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+${appciFromProblemTags()}
 | filter isNotNull(appci) and appci == lower("${appCI}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | filter matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
@@ -1622,7 +1535,8 @@ fetch events, from:now()-30d
     detailQuery: (appCI: string) => `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-| filter lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " "))) == lower("${appCI}")
+${appciFromWorkflowTitle("wfCode")}
+| filter wfCode == lower("${appCI}")
 | summarize
     executions = countDistinct(\`dt.automation_engine.workflow_execution.id\`),
     succeeded = countIf(\`dt.automation_engine.state\` == "SUCCESS"),
@@ -1635,8 +1549,7 @@ fetch events, from:now()-30d
     scorecardSnippet: `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-| fieldsAdd wfAppci = lower(arrayFirst(splitString(
-    \`dt.automation_engine.workflow.title\`, " ")))
+${appciFromWorkflowTitle("wfAppci")}
 | filter stringLength(wfAppci) == 3
 | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`),
   by:{wfAppci}
@@ -1662,14 +1575,14 @@ fetch events, from:now()-30d
     detailQuery: (appCI: string) => `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-| filter lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " "))) == lower("${appCI}")
+${appciFromWorkflowTitle("wfCode")}
+| filter wfCode == lower("${appCI}")
 | summarize count = countDistinct(\`dt.automation_engine.workflow_execution.id\`), by:{timestamp = bin(timestamp, 1d)}
 | sort timestamp asc`,
     scorecardSnippet: `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-| fieldsAdd wfAppci = lower(arrayFirst(splitString(
-    \`dt.automation_engine.workflow.title\`, " ")))
+${appciFromWorkflowTitle("wfAppci")}
 | filter stringLength(wfAppci) == 3
 | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`),
   by:{wfAppci}
@@ -1710,7 +1623,7 @@ fetch events, from:now()-30d
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.davis.problems
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+${appciFromProblemTags()}
 | filter isNotNull(appci) and appci == lower("${appCI}")
 | fieldsAdd isEnriched = toString(labels.alerting_profile) != "[\\"Default\\"]"
     and isNotNull(labels.alerting_profile)
