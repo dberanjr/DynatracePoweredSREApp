@@ -9,7 +9,7 @@ import { CHECK_DETAIL_CONFIGS, LEVEL_META, CheckDetailConfig } from "./checkDeta
 import { HardcodedBadge } from "./HardcodedBadge";
 import { SmartscapeViewMenu } from "./SmartscapeViewMenu";
 
-import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
+import { APP_CI_FIELD, LOAD, APP_CI_LABEL, APP_CI_CLOUD_TAG } from "../settings/appSettings";
 interface Props {
   checkKey: string;
   currentValue: string;
@@ -944,7 +944,7 @@ function DataPanel({
                     tf: "now-24h;now",
                   });
                   const hash = new URLSearchParams({
-                    filtering: `tags = "ApplicationCI:${appCI.toLowerCase()}" `,
+                    filtering: `tags = "${APP_CI_CLOUD_TAG}:${appCI.toLowerCase()}" `,
                   });
                   const url = `${envUrl}/ui/apps/dynatrace.clouds/smartscape/services?${qs.toString()}#${hash.toString()}`;
                   window.open(url, "_blank");
@@ -1220,7 +1220,7 @@ function buildCloudTypeFilterUrl(appCI: string, rawType: string, resourceType?: 
   // timeframe the Clouds app last had active — see cloudResourceRowClick above.
   const qs = new URLSearchParams({ perspective: "health", tf: "now-24h;now" });
   const hash = new URLSearchParams({
-    filtering: `tags = "ApplicationCI:${appCI.toLowerCase()}" type = "${friendlyResourceType(rawType, resourceType)}" `,
+    filtering: `tags = "${APP_CI_CLOUD_TAG}:${appCI.toLowerCase()}" type = "${friendlyResourceType(rawType, resourceType)}" `,
   });
   return `${envUrl}/ui/apps/dynatrace.clouds/smartscape/services?${qs.toString()}#${hash.toString()}`;
 }
@@ -1489,8 +1489,8 @@ function useAppInfo(appCI: string) {
 // resources span multiple accounts.
 function useCloudAccountInfo(appCI: string) {
   const query = `smartscapeNodes "AWS*"
-| fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
-| filter lower(ApplicationCI) == lower("${appCI}")
+| fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
+| filter lower(${APP_CI_CLOUD_TAG}) == lower("${appCI}")
 | summarize accountIds = collectDistinct(aws.account.id)
 | expand accountIds
 | lookup [
@@ -1658,7 +1658,7 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                   borderRadius: 12,
                 }}
               >
-                ApplicationCI: {appCI}
+                {APP_CI_LABEL}: {appCI}
               </span>
               {appInfo.appName && (
                 <span

@@ -27,6 +27,7 @@ import { SmartscapeViewMenu, ActiveProblemLink, openProblem } from "./Smartscape
 import { severityColor, severityRank } from "./dependencyUtils";
 import { ErrorBoundary } from "./ErrorBoundary";
 
+import { APP_CI_LABEL } from "../settings/appSettings";
 type LayoutMode = "horizontal" | "vertical" | "force";
 type RenderStyle = "tiles" | "nodes";
 type ViewMode = "standard" | "perf" | "critical";
@@ -139,7 +140,7 @@ function DependencyNodeCard({ data }: NodeProps<NodeData>) {
             </span>
           ))
         ) : (
-          <span style={{ fontSize: 10, color: "var(--sre-text-secondary)", fontStyle: "italic" }}>Unresolved AppCI</span>
+          <span style={{ fontSize: 10, color: "var(--sre-text-secondary)", fontStyle: "italic" }}>Unresolved {APP_CI_LABEL}</span>
         )}
       </div>
       {data.problemRole && data.problemId && (

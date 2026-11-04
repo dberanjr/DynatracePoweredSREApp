@@ -29,7 +29,7 @@ import { appciFromEntityTags, APPCI_MAP_PATH } from "./queries/maturityQueries";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 import { DemoModeToggleButton, DemoModeBanner } from "./components/DemoModeToggle";
 
-import { APP_CI_FIELD, LOAD } from "./settings/appSettings";
+import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "./settings/appSettings";
 export interface Timeframe {
   from: string;
   to: string;
@@ -139,13 +139,13 @@ export const App = () => {
                 }}
               />
             )}
-            <Heading level={6}>ApplicationCI:</Heading>
+            <Heading level={6}>{APP_CI_LABEL}:</Heading>
             <Select
               name="appci-selector"
               value={selectedAppCI}
               onChange={(val) => setSelectedAppCI(val as string | null)}
             >
-              <SelectTrigger placeholder={appciLoading ? "Loading..." : "Select AppCI"} style={{ minWidth: 180 }} />
+              <SelectTrigger placeholder={appciLoading ? "Loading..." : `Select ${APP_CI_LABEL}`} style={{ minWidth: 180 }} />
               <SelectContent>
                 <SelectFilter />
                 {appciOptions.map((opt) => (
@@ -166,10 +166,10 @@ export const App = () => {
         <DemoModeBanner />
         {mapMissing && location.pathname !== "/lookups" && (
           <MessageContainer variant="warning" style={{ margin: "8px 16px" }}>
-            <MessageContainer.Title>AppCI map not found</MessageContainer.Title>
+            <MessageContainer.Title>{APP_CI_LABEL} map not found</MessageContainer.Title>
             <MessageContainer.Description>
               The lookup {APPCI_MAP_PATH} does not exist in this environment, so scores cannot be resolved to an
-              AppCI and most pages will show errors. Create it on the Lookups tab (one row per application name).
+              {APP_CI_LABEL} and most pages will show errors. Create it on the Lookups tab (one row per application name).
             </MessageContainer.Description>
             <MessageContainer.Actions>
               <Link to="/lookups">Open Lookups</Link>

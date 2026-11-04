@@ -5,7 +5,7 @@ import { useDql } from "../hooks/useDql";
 import { functions } from "@dynatrace-sdk/app-utils";
 import { LOOKUP_TABLES, LookupTableConfig } from "./lookupTables";
 import { isDemoMode } from "../demo/demoMode";
-import { APP_CI_FIELD, LOOKUP_SETTINGS } from "../settings/appSettings";
+import { APP_CI_FIELD, LOOKUP_SETTINGS, APP_CI_LABEL } from "../settings/appSettings";
 import { defaultLookupSettings, type LookupKey } from "../settings/lookupDefs";
 import { parseCsv, toCsv, unguardCell } from "./lookupCsv";
 import {
@@ -68,7 +68,7 @@ const buttonStyle = (kind: "primary" | "danger" | "plain", disabled = false): Re
 // Returns an error message, or null when the row is acceptable. `others` excludes the row being edited.
 function validateRow(cfg: LookupTableConfig, row: Row, others: Row[]): string | null {
   for (const c of cfg.columns) if (c.required && !row[c.key].trim()) return `${c.label.replace(/ \(.*\)$/, "")} is required.`;
-  if (!APPCI_PATTERN.test(row[cfg.appciKey].trim())) return "AppCI may only contain letters, digits, _ and -.";
+  if (!APPCI_PATTERN.test(row[cfg.appciKey].trim())) return `${APP_CI_LABEL} may only contain letters, digits, _ and -.`;
   const key = rowKey(cfg, row);
   if (others.some((r) => rowKey(cfg, r) === key)) return `A row for ${cfg.keyLabel} "${cfg.keyColumns.map((k) => row[k].trim()).join(" / ")}" already exists.`;
   return null;

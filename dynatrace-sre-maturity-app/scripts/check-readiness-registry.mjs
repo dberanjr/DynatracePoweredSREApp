@@ -32,7 +32,9 @@ const mapped = [...registry.matchAll(/\{ id: "(L\d-\d+)", level: "L\d", name: "(
 }));
 
 const inputIds = new Set([...registry.matchAll(/\{ id: "(IN-\d+)", name:/g)].map((m) => m[1]));
-const inputProbes = [...registry.matchAll(/\{ id: "(IN-\d+)", name: "[^"]+", description: "[^"]*", fix: "[^"]*", probe: (?:"(\w+)"|null) \}/g)].map((m) => ({ id: m[1], probe: m[2] }));
+// A text field is a "..." or `...` literal (the latter when it interpolates the configured AppCI label).
+const STR = "(?:\"[^\"]*\"|`[^`]*`)";
+const inputProbes = [...registry.matchAll(new RegExp(String.raw`\{ id: "(IN-\d+)", name: ${STR}, description: ${STR}, fix: ${STR}, probe: (?:"(\w+)"|null) \}`, "g"))].map((m) => ({ id: m[1], probe: m[2] }));
 const probeKeys = new Set([...registry.matchAll(/^ {4}key: "(\w+)",$/gm)].map((m) => m[1]));
 const queryKeys = new Set([...queries.slice(queries.indexOf("export const READINESS_QUERIES")).matchAll(/^ {2}(\w+): `/gm)].map((m) => m[1]));
 

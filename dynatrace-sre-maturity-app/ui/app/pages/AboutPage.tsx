@@ -4,6 +4,7 @@ import { Paragraph } from "@dynatrace/strato-components/typography";
 import { APP_VERSION, COMMIT_HASH, BUILD_DATE, DEPLOY_DATE } from "../version";
 import { getAppName } from "@dynatrace-sdk/app-environment";
 
+import { APP_CI_LABEL } from "../settings/appSettings";
 // Dynatrace brand palette (matches LandingPage / app design system)
 const brand = {
   dark: "#1A2440",
@@ -26,7 +27,7 @@ const CONFIG = {
   license: "Apache License 2.0",
   environment: "Registered on your current Dynatrace tenant",
   description:
-    "An SRE maturity assessment app that scores applications (by ApplicationCI) across a five-level reliability model — observability, measured reliability, AI-assisted operations, and beyond — using live Dynatrace Grail data.",
+    `An SRE maturity assessment app that scores applications (by ${APP_CI_LABEL}) across a five-level reliability model — observability, measured reliability, AI-assisted operations, and beyond — using live Dynatrace Grail data.`,
 };
 
 // Grail scopes the app requests (from app.config.ts `scopes`), with a purpose each.

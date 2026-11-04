@@ -10,7 +10,7 @@
  */
 
 export const DEFAULT_APP_CI_FIELD = DEFAULT_APPCI_FIELD;
-export const DEFAULT_APP_CI_LABEL = "ApplicationCI";
+export const DEFAULT_APP_CI_LABEL = "AppCI";
 /** Company name from the build (.env COMPANY_NAME → generated constants.ts); Settings can override it at runtime. */
 export const DEFAULT_COMPANY_NAME = BUILD_COMPANY_NAME;
 export const DEFAULT_COMPANY_LOGO_URL = "";
@@ -36,6 +36,8 @@ export interface AppSettings {
   appCiField: string;
   /** Human-readable label for that identifier shown in the UI. */
   appCiLabel: string;
+  /** Cloud resource tag key override; blank = derive from the identifier field. */
+  cloudTagKey: string;
   /** Organization name shown in headings on the landing page and leaderboard. */
   companyName: string;
   /** Optional background logo on the landing page (relative path, https URL or data:image). Blank = none. */
@@ -82,7 +84,8 @@ export function loadSettings(): AppSettings {
   const companyName = typeof s.companyName === "string" && s.companyName.trim() ? s.companyName.trim() : DEFAULT_COMPANY_NAME;
   const companyLogoUrl =
     typeof s.companyLogoUrl === "string" && !validateCompanyLogoUrl(s.companyLogoUrl) ? s.companyLogoUrl.trim() : DEFAULT_COMPANY_LOGO_URL;
-  return { appCiField: field, appCiLabel: label, companyName, companyLogoUrl, lookups: normalizeLookupSettings(s.lookups), catalog: normalizeCatalogSettings(s.catalog) };
+  const cloudTagKey = typeof s.cloudTagKey === "string" && !validateAppCiField(s.cloudTagKey) ? s.cloudTagKey.trim() : "";
+  return { appCiField: field, appCiLabel: label, cloudTagKey, companyName, companyLogoUrl, lookups: normalizeLookupSettings(s.lookups), catalog: normalizeCatalogSettings(s.catalog) };
 }
 
 export function saveSettings(next: AppSettings): void {
@@ -91,6 +94,7 @@ export function saveSettings(next: AppSettings): void {
     JSON.stringify({
       appCiField: next.appCiField.trim(),
       appCiLabel: next.appCiLabel.trim() || DEFAULT_APP_CI_LABEL,
+      cloudTagKey: next.cloudTagKey.trim(),
       companyName: next.companyName.trim() || DEFAULT_COMPANY_NAME,
       companyLogoUrl: next.companyLogoUrl.trim(),
       lookups: next.lookups,
@@ -120,7 +124,11 @@ export const LOOKUP_SETTINGS: LookupSettings = loaded.lookups;
 
 export { defaultLookupSettings, defaultCatalogSettings };
 /** Resolved config for the query layer. */
-export const SRE_CONFIG: SreConfig = resolveConfig(loaded.appCiField, loaded.lookups, loaded.catalog);
+export const SRE_CONFIG: SreConfig = resolveConfig(loaded.appCiField, loaded.lookups, loaded.catalog, loaded.cloudTagKey);
+/** Cloud resource / guardian tag key (e.g. ApplicationCI), case-sensitive. */
+export const APP_CI_CLOUD_TAG: string = SRE_CONFIG.cloudTagKey;
+/** The override as saved (blank = derived). */
+export const CLOUD_TAG_OVERRIDE: string = loaded.cloudTagKey;
 
 // Publish for queries/maturityQueries.ts, which has no imports (the workflow generator loads it directly)
 // and reads this when it is first evaluated. ui/main.tsx imports this module before the app so it is set in time.

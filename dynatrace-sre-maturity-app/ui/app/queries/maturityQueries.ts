@@ -19,11 +19,12 @@
 // APPCI is the customer's application identifier field (entity tag key, DQL alias, ID column of app-managed
 // lookups). LOAD.<table> is `load "<their path>"` plus a rename of their columns to the names used below.
 // Defaults reproduce the original queries exactly: applicationci and the /lookups/* paths.
-type SreConfigShape = { appciField: string; loads: Record<string, string>; paths: Record<string, string> };
+type SreConfigShape = { appciField: string; cloudTagKey: string; loads: Record<string, string>; paths: Record<string, string> };
 const SRE_CONFIG = (globalThis as unknown as Record<string, SreConfigShape | undefined>)["__SRE_CONFIG__"];
 if (!SRE_CONFIG) throw new Error("maturityQueries: settings were not published before this module loaded (import settings/appSettings first).");
 export const APPCI = SRE_CONFIG.appciField;
 export const LOAD = SRE_CONFIG.loads;
+export const CLOUD_TAG = SRE_CONFIG.cloudTagKey;
 export const LOOKUP_PATHS = SRE_CONFIG.paths;
 
 export const APPCI_MAP_PATH = LOOKUP_PATHS["appciMap"];
@@ -212,17 +213,17 @@ ${appciFromEntityTags()}
   ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{logCount}
 | lookup [
     smartscapeNodes "AWS*"
-    | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+    | fieldsFlatten \`tags:aws\`, fields:{${CLOUD_TAG}}
     | append [
         smartscapeNodes "AZURE*"
-        | fieldsFlatten \`tags:azure\`, fields:{ApplicationCI}
+        | fieldsFlatten \`tags:azure\`, fields:{${CLOUD_TAG}}
       ]
     | append [
         smartscapeNodes "GCP*"
-        | fieldsFlatten \`tags:gcp_labels\`, fields:{ApplicationCI}
+        | fieldsFlatten \`tags:gcp_labels\`, fields:{${CLOUD_TAG}}
       ]
-    | filter isNotNull(ApplicationCI)
-    | fieldsAdd ${APPCI} = lower(ApplicationCI)
+    | filter isNotNull(${CLOUD_TAG})
+    | fieldsAdd ${APPCI} = lower(${CLOUD_TAG})
     | summarize cloudCount = count(), by:{${APPCI}}
   ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{cloudCount}
 | lookup [
@@ -397,18 +398,18 @@ ${appciFromEntityTags()}
   ], sourceField:${APPCI}, lookupField:appci, fields:{burnAlerts}
 | lookup [
     smartscapeNodes "AWS*"
-    | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
-    | filter isNotNull(ApplicationCI)
+    | fieldsFlatten \`tags:aws\`, fields:{${CLOUD_TAG}}
+    | filter isNotNull(${CLOUD_TAG})
     | summarize
         cloudTotal = count(),
         scaleTargets = countIf(matchesValue(type, "AWS_AUTOSCALING_AUTOSCALINGGROUP", "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET", "AWS_EKS_NODEGROUP")),
-        by:{appci = lower(ApplicationCI)}
+        by:{appci = lower(${CLOUD_TAG})}
   ], sourceField:${APPCI}, lookupField:appci, fields:{cloudTotal, scaleTargets}
 | lookup [
     fetch events, from:now()-30d
     | filter event.kind == "SDLC_EVENT"
     | filter event.type == "validation" and event.status == "finished"
-    | fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"ApplicationCI\\":[\\"")[1], "\\"")[0])
+    | fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"${CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
     | filter isNotNull(appci)
     | fieldsAdd trig = coalesce(\`dt.automation_engine.workflow_execution.trigger.type\`, "Manual")
     | summarize srgEventTriggered = countIf(trig != "Schedule" and trig != "Manual"), by:{appci}
@@ -533,16 +534,16 @@ ${resolvedFlag}
 
   // IN-06: cloud resources (AWS, Azure, GCP) that carry an `ApplicationCI` tag or label.
   cloud: `smartscapeNodes "AWS*"
-| fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+| fieldsFlatten \`tags:aws\`, fields:{${CLOUD_TAG}}
 | append [
     smartscapeNodes "AZURE*"
-    | fieldsFlatten \`tags:azure\`, fields:{ApplicationCI}
+    | fieldsFlatten \`tags:azure\`, fields:{${CLOUD_TAG}}
   ]
 | append [
     smartscapeNodes "GCP*"
-    | fieldsFlatten \`tags:gcp_labels\`, fields:{ApplicationCI}
+    | fieldsFlatten \`tags:gcp_labels\`, fields:{${CLOUD_TAG}}
   ]
-| summarize total = count(), ok = countIf(isNotNull(ApplicationCI))`,
+| summarize total = count(), ok = countIf(isNotNull(${CLOUD_TAG}))`,
 
   // IN-07: active RUM applications and synthetic tests that resolve to an AppCI.
   rumSynthetic: `fetch dt.entity.application, from:now()-1000d
@@ -645,16 +646,16 @@ ${appciFromEntityTags()}
 | summarize total = count()`,
 
     cloud: `smartscapeNodes "AWS*"
-| fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+| fieldsFlatten \`tags:aws\`, fields:{${CLOUD_TAG}}
 | append [
     smartscapeNodes "AZURE*"
-    | fieldsFlatten \`tags:azure\`, fields:{ApplicationCI}
+    | fieldsFlatten \`tags:azure\`, fields:{${CLOUD_TAG}}
   ]
 | append [
     smartscapeNodes "GCP*"
-    | fieldsFlatten \`tags:gcp_labels\`, fields:{ApplicationCI}
+    | fieldsFlatten \`tags:gcp_labels\`, fields:{${CLOUD_TAG}}
   ]
-| filter lower(toString(ApplicationCI)) == "${a}"
+| filter lower(toString(${CLOUD_TAG})) == "${a}"
 | summarize total = count()`,
 
     rumSynthetic: `fetch dt.entity.application, from:now()-1000d
@@ -684,7 +685,7 @@ ${appciFromEntityTags()}
 
     srgEvents: `fetch events, from:now()-30d
 | filter event.kind == "SDLC_EVENT" and event.type == "validation" and event.status == "finished"
-| fieldsAdd srgAppci = lower(splitString(splitString(dt.srg.tags, "\\"ApplicationCI\\":[\\"")[1], "\\"")[0])
+| fieldsAdd srgAppci = lower(splitString(splitString(dt.srg.tags, "\\"${CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
 | filter srgAppci == "${a}"
 | summarize total = count()`,
 

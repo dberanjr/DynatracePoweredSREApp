@@ -39,6 +39,7 @@ import {
   tableRowBorder,
 } from "../components/redesignStyles";
 
+import { APP_CI_LABEL } from "../settings/appSettings";
 // Data readiness. Two views of the same question, "does this environment provide what the checks read?":
 //   - This environment: each input, measured across everything. Which checks does each one hold up?
 //   - One application: why does THIS application's scorecard complain? Each gap is either an environment
@@ -504,7 +505,7 @@ function ApplicationView({
   const count = (v: Verdict) => findings.filter((f) => f.verdict === v).length;
 
   if (!appCI) {
-    return <div style={noticeBox}>Pick an ApplicationCI in the header to see why its scorecard complains.</div>;
+    return <div style={noticeBox}>Pick an {APP_CI_LABEL} in the header to see why its scorecard complains.</div>;
   }
 
   return (

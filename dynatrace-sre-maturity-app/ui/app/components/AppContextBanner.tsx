@@ -5,7 +5,7 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDql } from "../hooks/useDql";
 import { RefreshOverlay } from "./RefreshOverlay";
 
-import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
+import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "../settings/appSettings";
 import { PROFILE_FIELDS, PROFILE_SELECT, profileValue, tierChipColor, tierInfo } from "../settings/profile";
 interface Props {
   appCI: string;
@@ -144,7 +144,7 @@ export const AppContextBanner = ({ appCI }: Props) => {
           borderRadius: 8,
           border: "3px solid #1A2440",
         }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: 0.5, textTransform: "uppercase" }}>AppCI</div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: 0.5, textTransform: "uppercase" }}>{APP_CI_LABEL}</div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", lineHeight: 1.3, marginTop: 3 }}>
             {appci.toUpperCase()}
           </div>

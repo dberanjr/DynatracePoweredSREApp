@@ -3,6 +3,7 @@ import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { DependencyChainResult, DependencyNode, MAX_LEVELS } from "../hooks/useDependencyChain";
 import { severityColor } from "./dependencyUtils";
 
+import { APP_CI_LABEL } from "../settings/appSettings";
 interface Props {
   direction: "upstream" | "downstream";
   chain: DependencyChainResult;
@@ -334,7 +335,7 @@ export const DependencySummaryPanel = ({ direction, chain, levels, onSelectServi
 
       <div>
         <Heading level={6} style={{ marginBottom: 6 }}>
-          Unique AppCIs {direction} ({rankedAppCIs.length})
+          Unique {APP_CI_LABEL}s {direction} ({rankedAppCIs.length})
         </Heading>
         {rankedAppCIs.length === 0 ? (
           <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6, fontSize: 11 }}>None resolved</Paragraph>

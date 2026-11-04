@@ -18,7 +18,7 @@ import {
   tableRowBorder,
 } from "../components/redesignStyles";
 
-import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
+import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "../settings/appSettings";
 // Tagging / onboarding coverage: for every active application in the CMDB table, how much of its
 // data the scorecards can actually find. Read-only: it measures, it never changes tenant config.
 // Each signal is its own query so a missing lookup or a failing source degrades one column, not the page.
@@ -77,13 +77,13 @@ interface Signal {
 }
 
 const SIGNALS: Signal[] = [
-  { key: "services", label: "Services", how: `Services tagged ${APP_CI_FIELD}:<code>, or tagged Application:<name> with that name mapped to the code on Lookups > AppCI map` },
-  { key: "hosts", label: "Hosts", how: `Hosts tagged ${APP_CI_FIELD}:<code>, or tagged Application:<name> mapped to the code on Lookups > AppCI map` },
+  { key: "services", label: "Services", how: `Services tagged ${APP_CI_FIELD}:<code>, or tagged Application:<name> with that name mapped to the code on Lookups > ${APP_CI_LABEL} map` },
+  { key: "hosts", label: "Hosts", how: `Hosts tagged ${APP_CI_FIELD}:<code>, or tagged Application:<name> mapped to the code on Lookups > ${APP_CI_LABEL} map` },
   { key: "slos", label: "SLOs", how: "SLO names that start with the code (from /lookups/slo)" },
   { key: "guardians", label: "Guardians", how: `Site Reliability Guardians tagged ${APP_CI_FIELD}:<code> (from /lookups/guardians)` },
   { key: "dashboards", label: "SLO dashboards", how: "Dashboards named <code> … SLO (from /lookups/slo-dashboards)" },
   { key: "critical", label: "Critical services", how: "Rows in the critical services seed; resolved = matched to a Dynatrace entity" },
-  { key: "workflows", label: "Workflows", how: "Automation workflows whose title starts with the code, or with an application name in the AppCI map (last 30 days)" },
+  { key: "workflows", label: "Workflows", how: `Automation workflows whose title starts with the code, or with an application name in the ${APP_CI_LABEL} map (last 30 days)` },
 ];
 
 interface Counts {
@@ -235,8 +235,8 @@ export const CoveragePage = () => {
         </div>
         {!loading && !cmdb.error && apps.length > 0 && taggedApps === 0 && (
           <div style={{ ...noticeStyle("warn"), margin: 13 }}>
-            No service resolves to a CMDB AppCI, so the leaderboard and daily snapshot will be empty. Services resolve through an{" "}
-            <code>{APP_CI_FIELD}:&lt;code&gt;</code> tag or through the AppCI map on the Lookups tab.
+            No service resolves to a CMDB {APP_CI_LABEL}, so the leaderboard and daily snapshot will be empty. Services resolve through an{" "}
+            <code>{APP_CI_FIELD}:&lt;code&gt;</code> tag or through the {APP_CI_LABEL} map on the Lookups tab.
           </div>
         )}
         {loading ? (
@@ -248,7 +248,7 @@ export const CoveragePage = () => {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={tableHeadRowStyle}>
-                  <th style={tableHeadCellStyle}>AppCI</th>
+                  <th style={tableHeadCellStyle}>{APP_CI_LABEL}</th>
                   <th style={tableHeadCellStyle}>Name</th>
                   <th style={tableHeadCellStyle}>Tier</th>
                   {SIGNALS.map((s) => (
@@ -328,11 +328,11 @@ export const CoveragePage = () => {
       )}
 
       {unmapped.length > 0 && (
-        <Section title="Application names with no AppCI" meta={`${unmapped.length}`}>
+        <Section title={`Application names with no ${APP_CI_LABEL}`} meta={`${unmapped.length}`}>
           <Paragraph style={{ margin: "0 0 8px", fontSize: 12, color: INK.muted }}>
             Services, hosts, RUM applications or synthetic tests carry these <code>Application:&lt;name&gt;</code> tags, but no{" "}
-            <code>{APP_CI_FIELD}</code> tag and no row in the AppCI map, so the scorecards cannot see them. Add each name (without its
-            environment suffix) on Lookups &gt; AppCI map. The same application is often spelled differently per type (for example
+            <code>{APP_CI_FIELD}</code> tag and no row in the {APP_CI_LABEL} map, so the scorecards cannot see them. Add each name (without its
+            environment suffix) on Lookups &gt; {APP_CI_LABEL} map. The same application is often spelled differently per type (for example
             "BillingPortal" on services and "Billing Portal" on synthetic tests): each spelling needs its own row.
             {unmappedFailed.length > 0 && <span style={{ color: INK.warn }}> Could not read: {unmappedFailed.join(", ")}.</span>}
           </Paragraph>
@@ -351,9 +351,9 @@ export const CoveragePage = () => {
       )}
 
       {mapOrphans.length > 0 && (
-        <Section title="AppCI map rows that point outside the CMDB table" meta={`${mapOrphans.length}`}>
+        <Section title={`${APP_CI_LABEL} map rows that point outside the CMDB table`} meta={`${mapOrphans.length}`}>
           <Paragraph style={{ margin: "0 0 8px", fontSize: 12, color: INK.muted }}>
-            These map rows name an AppCI that has no active CMDB row, which is usually a typo in the code.
+            These map rows name an {APP_CI_LABEL} that has no active CMDB row, which is usually a typo in the code.
           </Paragraph>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {mapOrphans.slice(0, 40).map((m) => (

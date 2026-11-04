@@ -14,7 +14,7 @@ import { useDependencyChain } from "../hooks/useDependencyChain";
 import { ActiveProblemLink } from "../components/SmartscapeViewMenu";
 import { appciFromEntityTags } from "../queries/maturityQueries";
 
-import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
+import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "../settings/appSettings";
 const MAX_LEVELS = 8;
 
 const STATUS_QUERY = (appCI: string) => `${LOAD.cmdb}
@@ -250,7 +250,7 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
             </div>
           ) : (
             <Paragraph style={{ color: "rgba(255,255,255,.5)", fontSize: 12 }}>
-              {isInProduction ? "Loading service overview…" : "Not available until an In-Production AppCI is selected."}
+              {isInProduction ? "Loading service overview…" : `Not available until an In-Production ${APP_CI_LABEL} is selected.`}
             </Paragraph>
           )}
         </div>

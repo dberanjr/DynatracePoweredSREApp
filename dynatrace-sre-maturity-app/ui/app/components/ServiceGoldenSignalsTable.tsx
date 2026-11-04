@@ -7,7 +7,7 @@ import { severityColor, severityLabel, severityRank, formatDurationUs } from "./
 import { openProblem } from "./SmartscapeViewMenu";
 import { appciFromEntityTags } from "../queries/maturityQueries";
 
-import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
+import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "../settings/appSettings";
 export type SeverityFilterValue = "high" | "medium" | "low" | "none";
 
 function severityBucket(severity: string | null): SeverityFilterValue {
@@ -296,10 +296,10 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
     return (
       <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6 }}>
         {restrictToServiceIds && restrictToServiceIds.size > 0
-          ? "None of the flagged services matched this AppCI's service list."
+          ? `None of the flagged services matched this ${APP_CI_LABEL}'s service list.`
           : severityFilter.size > 0
             ? "No services match the selected severity filter."
-            : "No services found for this AppCI."}
+            : `No services found for this ${APP_CI_LABEL}.`}
       </Paragraph>
     );
   }

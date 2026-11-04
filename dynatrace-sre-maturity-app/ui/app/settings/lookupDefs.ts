@@ -140,13 +140,13 @@ export function normalizeCatalogSettings(stored: unknown): CatalogSettings {
     for (const [k, v] of Object.entries(s.labels as Record<string, unknown>)) if (typeof v === "string" && v.trim()) out.labels[k] = v.trim();
   }
   if (Array.isArray(s.extras)) {
-    out.extras = s.extras
+    out.extras = (s.extras as Array<Partial<ExtraField> | null>)
       .filter((e): e is ExtraField => !!e && typeof e.label === "string" && typeof e.column === "string" && !!e.label.trim() && !validateColumn(e.column, false))
       .slice(0, MAX_EXTRA_FIELDS)
       .map((e) => ({ label: e.label.trim(), column: e.column.trim() }));
   }
   if (Array.isArray(s.tiers)) {
-    const tiers = s.tiers
+    const tiers = (s.tiers as Array<Partial<TierRule> | null>)
       .filter((t): t is TierRule => !!t && typeof t.value === "string" && !!t.value.trim())
       .map((t) => ({ value: t.value.trim(), label: typeof t.label === "string" ? t.label.trim() : "", critical: !!t.critical }));
     if (tiers.length) out.tiers = tiers;
@@ -267,6 +267,8 @@ export function buildProfileFields(lookups: LookupSettings, catalog: CatalogSett
 export interface SreConfig {
   /** Application identifier field: entity tag key, DQL alias, and the ID column of app-managed lookups. */
   appciField: string;
+  /** Tag key on cloud resources (smartscapeNodes: AWS tags, Azure tags, GCP labels) and guardians. */
+  cloudTagKey: string;
   /** `load "<path>"` plus renames of the customer's columns to the app's names, per lookup table. */
   loads: Record<LookupKey, string>;
   paths: Record<LookupKey, string>;
@@ -278,7 +280,7 @@ export interface SreConfig {
   defaultTiers: boolean;
 }
 
-export function resolveConfig(appciField: string, lookups: LookupSettings, catalog: CatalogSettings = defaultCatalogSettings()): SreConfig {
+export function resolveConfig(appciField: string, lookups: LookupSettings, catalog: CatalogSettings = defaultCatalogSettings(), cloudTagKeyOverride = ""): SreConfig {
   const loads = {} as Record<LookupKey, string>;
   const paths = {} as Record<LookupKey, string>;
   for (const k of LOOKUP_KEYS) {
@@ -287,6 +289,7 @@ export function resolveConfig(appciField: string, lookups: LookupSettings, catal
   }
   return {
     appciField,
+    cloudTagKey: resolveCloudTagKey(appciField, cloudTagKeyOverride),
     loads,
     paths,
     profileFields: buildProfileFields(lookups, catalog),
@@ -296,6 +299,15 @@ export function resolveConfig(appciField: string, lookups: LookupSettings, catal
 }
 
 export const DEFAULT_APPCI_FIELD = "applicationci";
+/** Tag key the original deployment's cloud resources (AWS/Azure/GCP) and guardians carry. Case-sensitive in Grail. */
+export const DEFAULT_CLOUD_TAG_KEY = "ApplicationCI";
+
+/**
+ * Cloud resource / guardian tag key. Unset: the original "ApplicationCI" while the identifier is the original
+ * "applicationci", otherwise the identifier field as typed (tag keys are case-sensitive: override it if yours differs).
+ */
+export const resolveCloudTagKey = (appciField: string, override: string): string =>
+  override.trim() || (appciField === DEFAULT_APPCI_FIELD ? DEFAULT_CLOUD_TAG_KEY : appciField);
 export const defaultConfig = (): SreConfig => resolveConfig(DEFAULT_APPCI_FIELD, defaultLookupSettings());
 
 /** The config the app publishes at startup (see settings/appSettings.ts) and the workflow generator sets. */

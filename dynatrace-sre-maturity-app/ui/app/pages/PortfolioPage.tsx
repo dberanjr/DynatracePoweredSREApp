@@ -5,7 +5,7 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { MaturityLeaderboard, TierMaturityData } from "../components/MaturityLeaderboard";
 
-import { APP_CI_FIELD } from "../settings/appSettings";
+import { APP_CI_FIELD, APP_CI_LABEL } from "../settings/appSettings";
 // --- Styled components ---
 
 function TierBadge({ tier }: { tier: string }) {
@@ -300,7 +300,7 @@ export const PortfolioPage = () => {
                       background: "var(--sre-surface, #fff)",
                       zIndex: 1,
                     }}>
-                      {col}
+                      {col === "AppCI" ? APP_CI_LABEL : col}
                     </th>
                   ))}
                 </tr>

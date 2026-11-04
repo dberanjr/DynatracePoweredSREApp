@@ -3,6 +3,7 @@ import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { Surface } from "@dynatrace/strato-components-preview/layouts";
 
+import { APP_CI_LABEL } from "../settings/appSettings";
 interface Props {
   children: React.ReactNode;
   /** Renders a small inline fallback instead of a full-page Surface card —
@@ -52,7 +53,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               {this.state.error?.message || "An unexpected error occurred."}
             </Paragraph>
             <Paragraph>
-              Try selecting a different ApplicationCI or timeframe, or reload the page.
+              Try selecting a different {APP_CI_LABEL} or timeframe, or reload the page.
             </Paragraph>
           </Flex>
         </Surface>

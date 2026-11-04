@@ -12,6 +12,8 @@ import {
   DEFAULT_APP_CI_LABEL,
   LOOKUP_SETTINGS,
   CATALOG_SETTINGS,
+  CLOUD_TAG_OVERRIDE,
+  APP_CI_CLOUD_TAG,
   defaultLookupSettings,
   resetSettings,
   saveSettings,
@@ -364,6 +366,7 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
 export const SettingsPage = () => {
   const [field, setField] = useState(APP_CI_FIELD);
   const [label, setLabel] = useState(APP_CI_LABEL);
+  const [cloudTag, setCloudTag] = useState(CLOUD_TAG_OVERRIDE);
   const [companyName, setCompanyName] = useState(COMPANY_NAME);
   const [logoUrl, setLogoUrl] = useState(COMPANY_LOGO_URL);
   const [lookups, setLookups] = useState<LookupSettings>(() => structuredClone(LOOKUP_SETTINGS));
@@ -380,9 +383,11 @@ export const SettingsPage = () => {
   const logoError = validateCompanyLogoUrl(logoUrl);
   const catalogValid =
     catalog.extras.every((e) => e.label.trim() && !validateColumn(e.column, false)) && catalog.tiers.every((t) => t.value.trim());
-  const valid = !fieldError && !logoError && lookupsValid && catalogValid;
+  const cloudTagError = cloudTag.trim() ? validateAppCiField(cloudTag) : null;
+  const valid = !fieldError && !cloudTagError && !logoError && lookupsValid && catalogValid;
   const dirty =
     field.trim() !== APP_CI_FIELD ||
+    cloudTag.trim() !== CLOUD_TAG_OVERRIDE ||
     (companyName.trim() || DEFAULT_COMPANY_NAME) !== COMPANY_NAME ||
     logoUrl.trim() !== COMPANY_LOGO_URL ||
     (label.trim() || DEFAULT_APP_CI_LABEL) !== APP_CI_LABEL ||
@@ -396,7 +401,7 @@ export const SettingsPage = () => {
       clean[k].path = clean[k].path.trim();
       for (const f of Object.keys(clean[k].columns)) clean[k].columns[f] = clean[k].columns[f].trim();
     }
-    saveSettings({ appCiField: field, appCiLabel: label, companyName, companyLogoUrl: logoUrl, lookups: clean, catalog });
+    saveSettings({ appCiField: field, appCiLabel: label, cloudTagKey: cloudTag, companyName, companyLogoUrl: logoUrl, lookups: clean, catalog });
     window.location.reload();
   };
 
@@ -467,6 +472,26 @@ export const SettingsPage = () => {
             `The key your records and entity tags use, e.g. an entity tag "${field.trim()}:abc" or a log attribute named ${field.trim()}. Default: ${DEFAULT_APP_CI_FIELD}.`}
         </div>
 
+        <label htmlFor="appci-cloud-tag" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
+          Cloud resource tag key (optional)
+        </label>
+        <input
+          id="appci-cloud-tag"
+          style={{ ...inputStyle, maxWidth: 420 }}
+          value={cloudTag}
+          onChange={(e) => setCloudTag(e.target.value)}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder={`(auto: ${APP_CI_CLOUD_TAG})`}
+        />
+        <ErrorText msg={cloudTagError} />
+        {!cloudTagError && (
+          <div style={{ fontSize: 12, marginTop: 4, color: muted }}>
+            The tag key on your AWS / Azure / GCP resources and Site Reliability Guardians. Unlike entity tags it is case-sensitive, so use it exactly as
+            it appears (e.g. <code>UTAN</code>). Leave blank to use {APP_CI_CLOUD_TAG}.
+          </div>
+        )}
+
         <label htmlFor="appci-label" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
           Display label
         </label>
@@ -505,6 +530,7 @@ export const SettingsPage = () => {
           onClick={() => {
             setField(DEFAULT_APP_CI_FIELD);
             setLabel(DEFAULT_APP_CI_LABEL);
+            setCloudTag("");
             setCompanyName(DEFAULT_COMPANY_NAME);
             setLogoUrl(DEFAULT_COMPANY_LOGO_URL);
             setLookups(defaultLookupSettings());
@@ -517,7 +543,7 @@ export const SettingsPage = () => {
           style={buttonStyle(false)}
           title="Download these settings as JSON for: npm run generate:workflows -- --config settings.json"
           onClick={() => {
-            const blob = new Blob([JSON.stringify({ appCiField: APP_CI_FIELD, lookups: LOOKUP_SETTINGS, catalog: CATALOG_SETTINGS }, null, 2)], { type: "application/json" });
+            const blob = new Blob([JSON.stringify({ appCiField: APP_CI_FIELD, cloudTagKey: CLOUD_TAG_OVERRIDE, lookups: LOOKUP_SETTINGS, catalog: CATALOG_SETTINGS }, null, 2)], { type: "application/json" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
             a.download = "sre-maturity-settings.json";

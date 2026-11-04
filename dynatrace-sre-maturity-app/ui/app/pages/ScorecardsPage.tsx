@@ -11,7 +11,7 @@ import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOv
 import { LevelId, LevelRecord } from "../components/checkStatus";
 import { appciFromEntityTags, appciFromProblemTags, hasTierLookup, appciFromWorkflowTitle } from "../queries/maturityQueries";
 
-import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
+import { APP_CI_FIELD, LOAD, APP_CI_LABEL, APP_CI_CLOUD_TAG } from "../settings/appSettings";
 interface Props {
   appCI: string;
   timeframe: { from: string; to: string };
@@ -26,7 +26,7 @@ const runbooksLiveOverride: LiveCheckOverride = {
   appFunctionName: "getRunbookDetail",
   toStatus: (result) => {
     const count = ((result as { runbooks?: unknown[] })?.runbooks ?? []).length;
-    return count > 0 ? `pass ${count} runbook(s)` : "fail No AppCI runbooks";
+    return count > 0 ? `pass ${count} runbook(s)` : `fail No ${APP_CI_LABEL} runbooks`;
   },
 };
 
@@ -73,7 +73,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 // Cluster-name-prefix detection, NOT workload tags — K8s workloads (dt.entity.cloud_application)
 // are often tagged with a sub-application's CI (e.g. a shared EKS cluster hosting several
 // namespaces), while the cluster itself is named "<appci>-<region>-<env>". Matching on the
-// cluster name correctly reflects the parent ApplicationCI for portfolio-style apps.
+// cluster name correctly reflects the parent ${APP_CI_LABEL} for portfolio-style apps.
 | lookup [
     fetch dt.entity.kubernetes_cluster
     | fieldsAdd ${APP_CI_FIELD} = lower(splitString(entity.name, "-")[0])
@@ -124,17 +124,17 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 // verify against, but a wrong field name just yields 0 rows, not an error.)
 | lookup [
     smartscapeNodes "AWS*"
-    | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
+    | fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
     | append [
         smartscapeNodes "AZURE*"
-        | fieldsFlatten \`tags:azure\`, fields:{ApplicationCI}
+        | fieldsFlatten \`tags:azure\`, fields:{${APP_CI_CLOUD_TAG}}
       ]
     | append [
         smartscapeNodes "GCP*"
-        | fieldsFlatten \`tags:gcp_labels\`, fields:{ApplicationCI}
+        | fieldsFlatten \`tags:gcp_labels\`, fields:{${APP_CI_CLOUD_TAG}}
       ]
-    | filter isNotNull(ApplicationCI)
-    | fieldsAdd ${APP_CI_FIELD} = lower(ApplicationCI)
+    | filter isNotNull(${APP_CI_CLOUD_TAG})
+    | fieldsAdd ${APP_CI_FIELD} = lower(${APP_CI_CLOUD_TAG})
     | summarize cloudCount = count(), by:{${APP_CI_FIELD}}
   ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{cloudCount}
 | fieldsRename cloudResources = cloudCount
@@ -234,7 +234,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
   ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{serviceCount}
 | fieldsRename goldenSignalServices = serviceCount
 
-// Signal 2: SLOs created (from the /lookups/slo table; AppCI = first 3 chars of the SLO name)
+// Signal 2: SLOs created (from the /lookups/slo table; ${APP_CI_LABEL} = first 3 chars of the SLO name)
 | lookup [
     ${LOAD.slo}
     | fieldsAdd appci = lower(substring(slo, from:0, to:3))
@@ -251,7 +251,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 
 // Signal 4: SLO dashboards published (from /lookups/slo-dashboards; itemized one row
 //   per dashboard, refreshed daily at 06:00 UTC by workflow — counts dashboards whose
-//   name starts with a 3-letter AppCI token and contains "SLO")
+//   name starts with a 3-letter ${APP_CI_LABEL} token and contains "SLO")
 | lookup [
     ${LOAD.sloDashboards}
     | fieldsAdd appci = lower(appci)
@@ -296,7 +296,7 @@ ${hasTierLookup()}
         else: "fail None found"),
     \`4. SLO Dashboards Published\` = if(dashboards > 0,
         concat("pass ", toString(dashboards), " dashboards"),
-        else: "fail No AppCI dashboards"),
+        else: "fail No ${APP_CI_LABEL} dashboards"),
     \`5. SRE Assessment in ARD\` = if(sreAssessment > 0,
         "pass CMDB tier assigned",
         else: "fail No tier data"),
@@ -304,7 +304,7 @@ ${hasTierLookup()}
         concat("pass ", toString(resolved), " of ", toString(criticalCount), " tagged services resolved"),
         else: if(criticalCount > 0,
             concat("fail Listed but unresolved (0/", toString(criticalCount), ")"),
-            else: "n/a No critical services listed for this AppCI"))
+            else: "n/a No critical services listed for this ${APP_CI_LABEL}"))
 
 | fieldsAdd passCount =
     if(goldenSignalServices > 0, 1, else: 0)
@@ -368,7 +368,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
     | fieldsRename ${APP_CI_FIELD} = appci
   ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{total7d, causalActive, causalClosed, causalTotal, causalWithCause, noiseTotal}
 
-// ITSM Integration: a workflow named "<AppCI> Production Dynatrace Alerts" exists (last 30 days)
+// ITSM Integration: a workflow named "<${APP_CI_LABEL}> Production Dynatrace Alerts" exists (last 30 days)
 | lookup [
     fetch dt.system.events, from:now()-30d
     | filter event.provider == "AUTOMATION_ENGINE"
@@ -379,7 +379,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
     | summarize itsmWorkflows = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppci}
   ], sourceField:${APP_CI_FIELD}, lookupField:wfAppci, fields:{itsmWorkflows}
 
-// CI/CD + DORA: deployments from any CI/CD platform (last 30 days), per AppCI
+// CI/CD + DORA: deployments from any CI/CD platform (last 30 days), per ${APP_CI_LABEL}
 //   covers GitHub Actions CDK deployments AND Harness pipeline deployments
 //   source: CUSTOM_DEPLOYMENT events (application_ci field required)
 | lookup [
@@ -478,8 +478,8 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 
 // Signal 1: SLO burn-rate alerts (30d)
 //   Davis CUSTOM_ALERT problems raised by SLO burn-rate metric events. Alert names
-//   follow the tenant convention "<APPCI> - SLO <name> for Availability or Performance
-//   Burn Rate is above <threshold>", so the AppCI is the 3-char token before " - ".
+//   follow the tenant convention "<${APP_CI_LABEL}> - SLO <name> for Availability or Performance
+//   Burn Rate is above <threshold>", so the ${APP_CI_LABEL} is the 3-char token before " - ".
 //   CAVEAT: this detects burn-rate alerts that FIRED, not alert configs that exist.
 //   A correctly-configured alert on a consistently healthy SLO will not appear here
 //   (alert configs live in anomaly-detector settings objects, not queryable in DQL).
@@ -502,14 +502,14 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 //   they live in K8s workload YAML, which needs a separate per-mechanism evaluation.
 | lookup [
     smartscapeNodes "AWS*"
-    | fieldsFlatten \`tags:aws\`, fields:{ApplicationCI}
-    | filter isNotNull(ApplicationCI)
+    | fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
+    | filter isNotNull(${APP_CI_CLOUD_TAG})
     | summarize
         cloudTotal = count(),
         asgCount = countIf(type == "AWS_AUTOSCALING_AUTOSCALINGGROUP"),
         ecsScale = countIf(type == "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET"),
         ngCount = countIf(type == "AWS_EKS_NODEGROUP"),
-        by:{appci = lower(ApplicationCI)}
+        by:{appci = lower(${APP_CI_CLOUD_TAG})}
   ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{cloudTotal, asgCount, ecsScale, ngCount}
 
 // Signal 3: Deployments (30d) — same CUSTOM_DEPLOYMENT source as the L3 CI/CD check
@@ -521,14 +521,14 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
   ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{deployCount}
 
 // Signal 4: Site Reliability Guardian validations (30d)
-//   SRG emits SDLC_EVENT validation events carrying dt.srg.tags with the ApplicationCI.
+//   SRG emits SDLC_EVENT validation events carrying dt.srg.tags with the ${APP_CI_LABEL}.
 //   trigger.type distinguishes a guardian fired BY a deployment (the L4 goal) from one
 //   merely running on a cron schedule.
 | lookup [
     fetch events, from:now()-30d
     | filter event.kind == "SDLC_EVENT"
     | filter event.type == "validation" and event.status == "finished"
-    | fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"ApplicationCI\\":[\\"")[1], "\\"")[0])
+    | fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"${APP_CI_CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
     | filter isNotNull(appci)
     | fieldsAdd trig = coalesce(\`dt.automation_engine.workflow_execution.trigger.type\`, "Manual")
     | summarize
