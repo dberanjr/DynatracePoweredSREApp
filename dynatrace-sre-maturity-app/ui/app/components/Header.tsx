@@ -10,6 +10,7 @@ const navItems = [
   { to: "/coverage", label: "Coverage" },
   { to: "/readiness", label: "Readiness" },
   { to: "/lookups", label: "Lookups" },
+  { to: "/settings", label: "Settings" },
   { to: "/about", label: "About" },
 ];
 

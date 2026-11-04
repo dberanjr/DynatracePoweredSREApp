@@ -5,6 +5,7 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { MaturityLeaderboard, TierMaturityData } from "../components/MaturityLeaderboard";
 
+import { APP_CI_FIELD } from "../settings/appSettings";
 // --- Styled components ---
 
 function TierBadge({ tier }: { tier: string }) {
@@ -163,7 +164,7 @@ function PortfolioSummary({
 export const PortfolioPage = () => {
   const appInventoryQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
+| parse tags, "'${APP_CI_FIELD}:' LD:appci"
 | filter isNotNull(appci)
 | fieldsAdd appci = upper(appci)
 | filter stringLength(appci) <= 3
@@ -173,11 +174,11 @@ export const PortfolioPage = () => {
 | lookup [
     fetch bizevents, from:now()-48h
     | filter event.type == "workflow.import.servicenow.appci"
-    | fieldsAdd applicationci = upper(applicationci)
+    | fieldsAdd ${APP_CI_FIELD} = upper(${APP_CI_FIELD})
     | sort timestamp desc
-    | dedup applicationci
-    | fields applicationci, ciname, tier, app_owner_name
-  ], sourceField:appci, lookupField:applicationci, prefix:"cmdb."
+    | dedup ${APP_CI_FIELD}
+    | fields ${APP_CI_FIELD}, ciname, tier, app_owner_name
+  ], sourceField:appci, lookupField:${APP_CI_FIELD}, prefix:"cmdb."
 | fields
     AppCI = appci,
     Name = \`cmdb.ciname\`,

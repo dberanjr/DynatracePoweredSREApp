@@ -8,6 +8,7 @@ import { InfographicList } from "../components/InfographicList";
 import { SparklineCard } from "../components/SparklineCard";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 
+import { APP_CI_FIELD } from "../settings/appSettings";
 interface Props {
   appCI: string;
   timeframe: { from: string; to: string };
@@ -18,7 +19,7 @@ export const ProblemAnalyticsPage = ({ appCI, timeframe }: Props) => {
 
   // Link to the new Davis Problems app filtered to this AppCI
   const problemsAppBase = `${getEnvironmentUrl().replace(/\/+$/, "")}/ui/apps/dynatrace.davis.problems/`;
-  const tagFilter = encodeURIComponent(`"Entity tags" = "applicationci:${appCI.toLowerCase()}"`);
+  const tagFilter = encodeURIComponent(`"Entity tags" = "${APP_CI_FIELD}:${appCI.toLowerCase()}"`);
   const fromParam = encodeURIComponent(timeframe.from);
   const toParam = encodeURIComponent(timeframe.to);
   const allProblemsUrl = `${problemsAppBase}?from=${fromParam}&to=${toParam}&filters=${tagFilter}`;
@@ -30,7 +31,7 @@ export const ProblemAnalyticsPage = ({ appCI, timeframe }: Props) => {
 
   // Common filter — joins davis problems with the AppCI tag
   const problemBase = `fetch dt.davis.problems, ${tf}
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+| fieldsAdd appci = splitString(splitString(toString(entity_tags), "${APP_CI_FIELD}:")[1], "\\"")[0]
 | filter event.kind == "DAVIS_PROBLEM" and dt.davis.is_duplicate == false
 | filter lower(appci) == lower("${appCI}")`;
 
@@ -101,7 +102,7 @@ export const ProblemAnalyticsPage = ({ appCI, timeframe }: Props) => {
 | fieldsAdd dt.entity.service = if(startsWith(affected_entity_ids[0],"SERVICE"), affected_entity_ids[0])
 | fieldsAdd Service = entityName(dt.entity.service)
 | filter isNotNull(Service)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "applicationci:")[1], "\\"")[0]
+| fieldsAdd appci = splitString(splitString(toString(entity_tags), "${APP_CI_FIELD}:")[1], "\\"")[0]
 | filter lower(appci) == lower("${appCI}")
 | summarize Problems = count(), by:{Service}
 | sort Problems desc

@@ -175,6 +175,22 @@ async function upload(t: TableDef, filePath: string, displayName: string, descri
   if (!resp.ok) throw new Error(`Lookup upload to ${filePath} failed: ${resp.status} ${await resp.text()}`);
 }
 
+// The reference deployment's ID column; the tables above are written with it and re-keyed per request.
+const DEFAULT_FIELD = 'applicationci';
+function withField(t: TableDef, field: string): TableDef {
+  const sub = (v: string) => (v === DEFAULT_FIELD ? field : v);
+  return {
+    ...t,
+    lookupField: sub(t.lookupField),
+    columns: t.columns.map(sub),
+    required: t.required.map(sub),
+    appciColumn: sub(t.appciColumn),
+    lowercase: t.lowercase.map(sub),
+    keyColumns: t.keyColumns.map(sub),
+    reject: t.reject && { ...t.reject, column: sub(t.reject.column) },
+  };
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const errText = (e: unknown) => (e instanceof Error ? e.message : JSON.stringify(e));
 
@@ -221,12 +237,18 @@ export default async function (input: unknown = undefined) {
   // App-invoked calls pass the payload directly; `dtctl exec function` wraps it as { payload }.
   const raw = (input && typeof input === 'object' && 'payload' in (input as Record<string, unknown>)
     ? (input as { payload?: unknown }).payload
-    : input) as { table?: string; rows?: unknown } | undefined;
+    : input) as { table?: string; rows?: unknown; appciField?: string } | undefined;
 
   // Only known tables: the path is never taken from the caller, so this function can't be
   // used to overwrite arbitrary lookups.
-  const t = raw?.table ? TABLES[raw.table] : undefined;
-  if (!t) throw new Error(`Unknown table "${String(raw?.table)}". Expected one of: ${Object.keys(TABLES).join(', ')}.`);
+  const base = raw?.table ? TABLES[raw.table] : undefined;
+  if (!base) throw new Error(`Unknown table "${String(raw?.table)}". Expected one of: ${Object.keys(TABLES).join(', ')}.`);
+
+  // The application identifier field is a user setting (Settings page): the ID column of the app-managed
+  // tables is named after it. Validated as a plain DQL identifier because it becomes a column name.
+  const field = String(raw?.appciField || DEFAULT_FIELD).trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(field)) throw new Error(`Invalid application identifier field "${field}".`);
+  const t = withField(base, field);
 
   const rows = validate(t, raw?.rows);
 

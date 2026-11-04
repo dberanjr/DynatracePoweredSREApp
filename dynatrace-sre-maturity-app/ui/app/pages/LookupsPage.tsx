@@ -4,6 +4,8 @@ import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { functions } from "@dynatrace-sdk/app-utils";
 import { LOOKUP_TABLES, LookupTableConfig } from "./lookupTables";
+import { APP_CI_FIELD, LOOKUP_SETTINGS } from "../settings/appSettings";
+import { defaultLookupSettings, type LookupKey } from "../settings/lookupDefs";
 import { parseCsv, toCsv, unguardCell } from "./lookupCsv";
 import {
   INK,
@@ -242,7 +244,7 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
     setSaving(true);
     setSaveResult(null);
     try {
-      const res = await functions.call("saveLookup", { data: { table: cfg.id, rows } });
+      const res = await functions.call("saveLookup", { data: { table: cfg.id, rows, appciField: APP_CI_FIELD } });
       const body = (await res.json()) as { saved: number; backedUp: number };
       setBaseline(serialize(rows));
       setConfirmSave(false);
@@ -264,8 +266,25 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
   const readDenied = missingTable && /permission|forbidden|not authorized|unauthori[sz]ed|\b40[13]\b|files:read/i.test(dql.error?.message ?? "");
   const banner = (ok: boolean): React.CSSProperties => ({ ...noticeStyle(ok ? "pass" : "fail"), marginBottom: 12 });
 
+  // Settings can point a table at the customer's own table / columns. This editor only manages the app's own
+  // table (fixed path and layout), so say so when the two differ rather than silently editing the wrong one.
+  const settingsKey: LookupKey | null = cfg.id === "cmdb" ? "cmdb" : cfg.id === "appci_map" ? "appciMap" : null;
+  const remapped = (() => {
+    if (!settingsKey) return false;
+    const def = defaultLookupSettings()[settingsKey];
+    const cur = LOOKUP_SETTINGS[settingsKey];
+    return cur.path !== def.path || Object.keys(def.columns).some((c) => cur.columns[c] !== def.columns[c]);
+  })();
+
   return (
     <div>
+      {remapped && (
+        <div style={banner(false)}>
+          Settings point this table at <code>{settingsKey ? LOOKUP_SETTINGS[settingsKey].path : ""}</code> with custom column names, but this
+          editor manages the app's own table at <code>{cfg.path}</code>. Changes saved here will not affect what the app reads. Edit your own
+          table where you maintain it, or reset the mapping in Settings.
+        </div>
+      )}
       <Paragraph style={{ margin: "0 0 12px", fontSize: 13, color: INK.muted }}>
         {cfg.description} Stored in <code>{cfg.path}</code>. Changes stay on this page until you press Save; Save replaces the shared table for everyone.
       </Paragraph>

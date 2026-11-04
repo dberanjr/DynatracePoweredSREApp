@@ -22,11 +22,13 @@ import { ProblemAnalyticsPage } from "./pages/ProblemAnalyticsPage";
 import { AboutPage } from "./pages/AboutPage";
 import { DefinitionsPage } from "./pages/DefinitionsPage";
 import { LookupsPage } from "./pages/LookupsPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { CoveragePage } from "./pages/CoveragePage";
 import { ReadinessPage } from "./pages/ReadinessPage";
 import { appciFromEntityTags, APPCI_MAP_PATH } from "./queries/maturityQueries";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 
+import { APP_CI_FIELD, LOAD } from "./settings/appSettings";
 export interface Timeframe {
   from: string;
   to: string;
@@ -35,25 +37,25 @@ export interface Timeframe {
 // Try loading from lookup table first.
 // All non-retired applications (In Production + Implementing), one row per
 // applicationci, carrying the human-readable application name, sorted A→Z.
-const APPCI_LOOKUP_QUERY = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
+const APPCI_LOOKUP_QUERY = `${LOAD.cmdb}
 | filter operational_status != "Retired"
-| filter isNotNull(applicationci)
-| summarize appName = takeFirst(name), by:{applicationci}
-| sort applicationci asc
-| fields applicationci, appName
+| filter isNotNull(${APP_CI_FIELD})
+| summarize appName = takeFirst(name), by:{${APP_CI_FIELD}}
+| sort ${APP_CI_FIELD} asc
+| fields ${APP_CI_FIELD}, appName
 | limit 10000`;
 
 // Fallback: derive AppCI values from entity tags (no application name available)
 const APPCI_FALLBACK_QUERY = `fetch dt.entity.service
 ${appciFromEntityTags()}
-| expand applicationci
-| filter isNotNull(applicationci)
-| fieldsAdd appci = upper(applicationci)
+| expand ${APP_CI_FIELD}
+| filter isNotNull(${APP_CI_FIELD})
+| fieldsAdd appci = upper(${APP_CI_FIELD})
 | filter stringLength(appci) <= 3
 | dedup appci
 | sort appci asc
 | fieldsAdd appName = ""
-| fields applicationci = appci, appName
+| fields ${APP_CI_FIELD} = appci, appName
 | limit 10000`;
 
 // Timeframe isn't a meaningful concept in this app yet (every page effectively
@@ -97,7 +99,7 @@ export const App = () => {
   const appciOptions = useMemo(() => {
     if (!appciData?.records) return [];
     return appciData.records.map((r: Record<string, unknown>) => ({
-      code: String(r.applicationci),
+      code: String(r[APP_CI_FIELD]),
       name: r.appName != null ? String(r.appName) : "",
     }));
   }, [appciData]);
@@ -187,6 +189,7 @@ export const App = () => {
             <Route path="/lookups" element={<ErrorBoundary><LookupsPage /></ErrorBoundary>} />
             <Route path="/portfolio" element={<ErrorBoundary><PortfolioPage /></ErrorBoundary>} />
             <Route path="/data" element={<ErrorBoundary><Data /></ErrorBoundary>} />
+            <Route path="/settings" element={<ErrorBoundary><SettingsPage /></ErrorBoundary>} />
             <Route path="/about" element={<ErrorBoundary><AboutPage /></ErrorBoundary>} />
           </Routes>
         </ErrorBoundary>

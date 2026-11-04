@@ -5,6 +5,7 @@
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { appciFromEntityTags, appciFromProblemTags, appciFromWorkflowTitle, hasTierLookup } from "../queries/maturityQueries";
 
+import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
 export interface CheckDetailConfig {
   level: "L1" | "L2" | "L3" | "L4" | "L5";
   levelColor: string;
@@ -135,14 +136,14 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
     passLogic:
       "Pass: at least one host is tagged with this ApplicationCI and was alive in the last 2 hours.",
     guidance:
-      "Deploy OneAgent on all hosts serving this application. Tag them with the 'applicationci:<code>' host metadata tag. Ensure hosts are in Full-Stack mode for the richest signal coverage. Infrastructure mode provides limited observability; Discovery mode means OneAgent is not installed, only lightweight scanning is active. PaaS/container workloads (ECS Fargate, EKS Fargate) don't expose a monitoringMode at all but are inherently full-stack once OneAgent is injected.",
+      `Deploy OneAgent on all hosts serving this application. Tag them with the '${APP_CI_FIELD}:<code>' host metadata tag. Ensure hosts are in Full-Stack mode for the richest signal coverage. Infrastructure mode provides limited observability; Discovery mode means OneAgent is not installed, only lightweight scanning is active. PaaS/container workloads (ECS Fargate, EKS Fargate) don't expose a monitoringMode at all but are inherently full-stack once OneAgent is injected.`,
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.host
 | limit 100000
 | filter lifetime[end] > asTimestamp(now()-2h)
 ${appciFromEntityTags()}
-| expand applicationci
-| filter applicationci == lower("${appCI}")
+| expand ${APP_CI_FIELD}
+| filter ${APP_CI_FIELD} == lower("${appCI}")
 | dedup id
 | lookup [
     fetch logs, samplingRatio:1000, from:now()-2h
@@ -177,8 +178,8 @@ ${appciFromEntityTags()}
     fetch dt.entity.host
     | filter lifetime[end] > asTimestamp(now()-2h)
     ${appciFromEntityTags()}
-    | expand applicationci
-    | filter applicationci == lower("${appCI}")
+    | expand ${APP_CI_FIELD}
+    | filter ${APP_CI_FIELD} == lower("${appCI}")
     | dedup id
     | fields id
   ]
@@ -195,14 +196,14 @@ ${appciFromEntityTags()}
     scorecardSnippet: `fetch dt.entity.host
 | filter lifetime[end] > asTimestamp(now()-2h)
 ${appciFromEntityTags()}
-| expand applicationci
+| expand ${APP_CI_FIELD}
 // PaaS-injected hosts (ECS Fargate, EKS Fargate, etc.) never get a
 // monitoringMode value — PaaS OneAgent has no partial mode, it's always
 // full-stack or not present at all — so a null mode here still counts.
 | summarize
     hostCount      = count(),
     fullStackCount = countIf(monitoringMode == "FULL_STACK" or isNull(monitoringMode)),
-  by:{applicationci}
+  by:{${APP_CI_FIELD}}
 
 // Pass:  hostCount > 0
 // Display: "pass <fullStack>/<hostCount> Full-Stack"`,
@@ -215,12 +216,12 @@ ${appciFromEntityTags()}
       "Verifies that at least one service entity tagged with this ApplicationCI is emitting distributed traces. Services appear in Dynatrace when OneAgent captures HTTP or RPC traffic between processes. Click any service row to open it in Distributed Tracing (last 2 hours). Note: dependency count uses the service topology 'calls' relationship, which reflects direct downstream service connections.",
     passLogic: "Pass: at least one service (dt.entity.service) is tagged with this ApplicationCI.",
     guidance:
-      "Ensure OneAgent is installed on all service hosts and processes. Confirm that HTTP/gRPC traffic is flowing through the monitored process. If a service exists but is not tagged, add the 'applicationci:<code>' tag via host metadata, tag rules, or the entity API.",
+      `Ensure OneAgent is installed on all service hosts and processes. Confirm that HTTP/gRPC traffic is flowing through the monitored process. If a service exists but is not tagged, add the '${APP_CI_FIELD}:<code>' tag via host metadata, tag rules, or the entity API.`,
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.service
 ${appciFromEntityTags()}
-| expand applicationci
-| filter applicationci == lower("${appCI}")
+| expand ${APP_CI_FIELD}
+| filter ${APP_CI_FIELD} == lower("${appCI}")
 | dedup id
 | lookup [
     fetch spans, from:now()-1h, scanLimitGBytes:-1
@@ -234,8 +235,8 @@ ${appciFromEntityTags()}
 | lookup [
     fetch dt.entity.service
     ${appciFromEntityTags()}
-    | expand applicationci
-    | filter applicationci == lower("${appCI}")
+    | expand ${APP_CI_FIELD}
+    | filter ${APP_CI_FIELD} == lower("${appCI}")
     | dedup id
     | fields id
   ], sourceField:dt.entity.service, lookupField:id
@@ -248,8 +249,8 @@ ${appciFromEntityTags()}
     serviceRowClick: true,
     scorecardSnippet: `fetch dt.entity.service
 ${appciFromEntityTags()}
-| expand applicationci
-| summarize serviceCount = count(), by:{applicationci}
+| expand ${APP_CI_FIELD}
+| summarize serviceCount = count(), by:{${APP_CI_FIELD}}
 
 // Pass: serviceCount > 0
 // Display: "pass <count> services"`,
@@ -263,10 +264,10 @@ ${appciFromEntityTags()}
     passLogic:
       "Pass: at least one log record carrying this ApplicationCI exists in the selected timeframe (sampled at 1:1000).",
     guidance:
-      "Configure log ingest via OneAgent log monitoring or the Dynatrace Log Ingest API. Ensure the 'applicationci' field is set on log records — typically via host metadata propagation or a log enrichment rule in OpenPipeline.",
+      `Configure log ingest via OneAgent log monitoring or the Dynatrace Log Ingest API. Ensure the '${APP_CI_FIELD}' field is set on log records — typically via host metadata propagation or a log enrichment rule in OpenPipeline.`,
     chartType: "table",
     detailQuery: (appCI: string) => `fetch logs, samplingRatio:1000, from:now()-1h
-| filter isNotNull(applicationci) and lower(applicationci) == lower("${appCI}")
+| filter isNotNull(${APP_CI_FIELD}) and lower(${APP_CI_FIELD}) == lower("${appCI}")
 // host.name is only populated when a node-level OneAgent tags the log (classic
 // hosts, Cloud Native Full Stack). Firehose/OpenPipeline-ingested PaaS logs
 // (ECS Fargate, etc.) never get host.name, so fall back to container_name and
@@ -283,7 +284,7 @@ ${appciFromEntityTags()}
 | fields type, source, totalLogs, errorLogs, warnLogs
 | limit 200`,
     secondaryQuery: (appCI: string) => `fetch logs, samplingRatio:1000, from:now()-24h
-| filter isNotNull(applicationci) and lower(applicationci) == lower("${appCI}")
+| filter isNotNull(${APP_CI_FIELD}) and lower(${APP_CI_FIELD}) == lower("${appCI}")
 | summarize logCount = sum(dt.system.sampling_ratio), by:{timestamp = bin(timestamp, 1h), status = coalesce(loglevel, "UNKNOWN")}
 | sort timestamp asc`,
     secondaryChartType: "stackedBar",
@@ -291,8 +292,8 @@ ${appciFromEntityTags()}
     logHostRowClick: true,
     samplingNote: "Sampled at 1:1000 — log counts are estimates, extrapolated to the true volume.",
     scorecardSnippet: `fetch logs, samplingRatio:1000
-| filter isNotNull(applicationci)
-| summarize logCount = count(), by:{applicationci}
+| filter isNotNull(${APP_CI_FIELD})
+| summarize logCount = count(), by:{${APP_CI_FIELD}}
 
 // Pass: logCount > 0
 // Sampled at 1:1000 to keep query cost low (existence check only, not extrapolated)`,
@@ -306,12 +307,12 @@ ${appciFromEntityTags()}
     passLogic:
       "Pass: at least one service is tagged with this ApplicationCI (same signal as Tracing Validated).",
     guidance:
-      "Smartscape discovery is automatic once OneAgent is installed and services are tagged. Ensure services are correctly tagged with 'applicationci:<code>'. Full topology discovery may take 1–2 hours after initial instrumentation.",
+      `Smartscape discovery is automatic once OneAgent is installed and services are tagged. Ensure services are correctly tagged with '${APP_CI_FIELD}:<code>'. Full topology discovery may take 1–2 hours after initial instrumentation.`,
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.service
 ${appciFromEntityTags()}
-| expand applicationci
-| filter applicationci == lower("${appCI}")
+| expand ${APP_CI_FIELD}
+| filter ${APP_CI_FIELD} == lower("${appCI}")
 | dedup id
 | fieldsFlatten calls, prefix:"calls_"
 | fieldsAdd downstreamIds = \`calls_dt.entity.service\`
@@ -334,8 +335,8 @@ ${appciFromEntityTags()}
 // If tagged services exist, Dynatrace has built the topology map.
 
 fetch dt.entity.service
-| fieldsAdd applicationci = ... // tag extraction (same as Tracing Validated)
-| summarize serviceCount = count(), by:{applicationci}
+| fieldsAdd ${APP_CI_FIELD} = ... // tag extraction (same as Tracing Validated)
+| summarize serviceCount = count(), by:{${APP_CI_FIELD}}
 
 // Pass: serviceCount > 0 (same signal as Tracing Validated)`,
   },
@@ -348,7 +349,7 @@ fetch dt.entity.service
     passLogic:
       "N/A (counted as a pass): no Kubernetes cluster matches this ApplicationCI — not every app runs on K8s. When a cluster does match: Pass requires the Cloud Native Full Stack OneAgent Operator DaemonSet to be present and fully ready, plus K8s-scoped tracing and logs both flowing for the cluster. Fail: a cluster matches but the operator isn't healthy or a signal is missing.",
     guidance:
-      "Connect your Kubernetes cluster to Dynatrace via the Kubernetes Operator. Name clusters with the '<applicationci>-<region>-<env>' convention so they're attributable to the owning app. Investigate workloads where running < desired (scheduling/capacity issue) or where health events are climbing (crash loop, OOM, or scheduling instability) first.",
+      `Connect your Kubernetes cluster to Dynatrace via the Kubernetes Operator. Name clusters with the '<${APP_CI_FIELD}>-<region>-<env>' convention so they're attributable to the owning app. Investigate workloads where running < desired (scheduling/capacity issue) or where health events are climbing (crash loop, OOM, or scheduling instability) first.`,
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.kubernetes_cluster
 | filter startsWith(lower(entity.name), concat(lower("${appCI}"), "-"))
@@ -421,8 +422,8 @@ fetch dt.entity.service
     secondaryLabel: "Kubernetes events by type (24h, hourly)",
     secondaryChartClusterClick: true,
     scorecardSnippet: `fetch dt.entity.kubernetes_cluster
-| fieldsAdd applicationci = lower(splitString(entity.name, "-")[0])
-| summarize k8sClusterCount = count(), by:{applicationci}
+| fieldsAdd ${APP_CI_FIELD} = lower(splitString(entity.name, "-")[0])
+| summarize k8sClusterCount = count(), by:{${APP_CI_FIELD}}
 
 // Pass: k8sClusterCount > 0
 // N/A:  k8sClusterCount == 0 (no K8s — not a failure for non-K8s apps)
@@ -493,7 +494,7 @@ fetch dt.entity.service
     smartscapeNodes "GCP*"
     | fieldsFlatten \`tags:gcp_labels\`, fields:{ApplicationCI}
   ]
-| summarize cloudCount = count(), by:{applicationci = lower(ApplicationCI)}
+| summarize cloudCount = count(), by:{${APP_CI_FIELD} = lower(ApplicationCI)}
 
 // Pass: cloudCount > 0
 // N/A:  cloudCount == 0 (no cloud resources — not a failure for non-cloud apps)
@@ -513,22 +514,22 @@ fetch dt.entity.service
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.application, from:now()-1000d
 ${appciFromEntityTags()}
-| expand applicationci
-| filter applicationci == lower("${appCI}")
+| expand ${APP_CI_FIELD}
+| filter ${APP_CI_FIELD} == lower("${appCI}")
 | dedup entity.name
 | fields app = entity.name, type = "RUM",
     active = if(lifetime[end] > now()-7d, "Active", else: "Inactive")
 | sort active asc, app asc`,
     scorecardSnippet: `// RUM: application entities active in last 7 days
 fetch dt.entity.application, from:now()-1000d
-| fieldsAdd applicationci = ... // tag extraction
+| fieldsAdd ${APP_CI_FIELD} = ... // tag extraction
 | fieldsAdd rumActive = if(lifetime[end] > now()-7d, true, else: false)
-| summarize rumCount = countIf(rumActive == true), by:{applicationci}
+| summarize rumCount = countIf(rumActive == true), by:{${APP_CI_FIELD}}
 
 // Synthetics
 fetch dt.entity.synthetic_test
-| fieldsAdd applicationci = ... // tag extraction
-| summarize synCount = count(), by:{applicationci}
+| fieldsAdd ${APP_CI_FIELD} = ... // tag extraction
+| summarize synCount = count(), by:{${APP_CI_FIELD}}
 
 // Pass: rumCount > 0 OR synCount > 0`,
   },
@@ -546,8 +547,8 @@ fetch dt.entity.synthetic_test
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.entity.service
 ${appciFromEntityTags()}
-| expand applicationci
-| filter applicationci == lower("${appCI}")
+| expand ${APP_CI_FIELD}
+| filter ${APP_CI_FIELD} == lower("${appCI}")
 | dedup id
 | fields id, entity.name
 | limit 500
@@ -571,8 +572,8 @@ ${appciFromEntityTags()}
   filter: { dt.entity.service in [
       fetch dt.entity.service
       ${appciFromEntityTags()}
-      | expand applicationci
-      | filter applicationci == lower("${appCI}")
+      | expand ${APP_CI_FIELD}
+      | filter ${APP_CI_FIELD} == lower("${appCI}")
       | fields id
   ] }
 | fieldsAdd k = 1
@@ -581,8 +582,8 @@ ${appciFromEntityTags()}
       filter: { dt.entity.service in [
           fetch dt.entity.service
           ${appciFromEntityTags()}
-          | expand applicationci
-          | filter applicationci == lower("${appCI}")
+          | expand ${APP_CI_FIELD}
+          | filter ${APP_CI_FIELD} == lower("${appCI}")
           | fields id
       ] }
     | fieldsAdd k = 1
@@ -594,8 +595,8 @@ ${appciFromEntityTags()}
       filter: { dt.entity.process_group in [
           fetch dt.entity.process_group
           ${appciFromEntityTags()}
-          | expand applicationci
-          | filter applicationci == lower("${appCI}")
+          | expand ${APP_CI_FIELD}
+          | filter ${APP_CI_FIELD} == lower("${appCI}")
           | fields id
       ] }
     | fieldsAdd k = 1
@@ -617,8 +618,8 @@ ${appciFromEntityTags()}
     },
     serviceMapRowClick: true,
     scorecardSnippet: `fetch dt.entity.service
-| fieldsAdd applicationci = ... // tag extraction
-| summarize serviceCount = count(), by:{applicationci}
+| fieldsAdd ${APP_CI_FIELD} = ... // tag extraction
+| summarize serviceCount = count(), by:{${APP_CI_FIELD}}
 
 // Golden signals (error rate, throughput, latency) are emitted
 // automatically by Full-Stack OneAgent for every traced service.
@@ -663,7 +664,7 @@ ${appciFromEntityTags()}
     secondaryLabel: "SLO count by type (parsed from SLO name)",
     sloRowClick: true,
     scorecardSnippet: `// Source: /lookups/slo  (refreshed hourly by workflow "Refresh /lookups/slo (SLOs by AppCI)")
-load "/lookups/slo"
+${LOAD.slo}
 | fieldsAdd appci = lower(substring(slo, from:0, to:3))
 | summarize sloCount = count(), by:{appci}
 
@@ -678,9 +679,9 @@ load "/lookups/slo"
     description:
       "Counts Site Reliability Guardians (SRGs) configured for this ApplicationCI. SRGs automate reliability validation by evaluating SLOs, metrics, and events against defined thresholds during deployments or on a schedule. This check calls the Guardian Settings API live (via an app function) rather than a scheduled lookup table — the Automation Engine workflow that used to populate a /lookups/guardians table proved unreliable to keep in sync, so guardian detail is now fetched fresh every time this modal opens. The table lists each guardian's name, objective count, and trigger kind; click a row to open that guardian's validation results. The secondary panel expands every guardian's individual objectives, showing exactly what's being validated.",
     passLogic:
-      "Pass: at least one SRG is found tagged with this ApplicationCI's appci code (case-insensitive, applicationci or appci tag key).",
+      `Pass: at least one SRG is found tagged with this ApplicationCI's appci code (case-insensitive, ${APP_CI_FIELD} or appci tag key).`,
     guidance:
-      "Create an SRG in Dynatrace → Site Reliability Guardian, tag it with 'applicationci:<code>', and define evaluation objectives for the app's critical SLOs. SRGs are most impactful when triggered automatically by deployment events.",
+      `Create an SRG in Dynatrace → Site Reliability Guardian, tag it with '${APP_CI_FIELD}:<code>', and define evaluation objectives for the app's critical SLOs. SRGs are most impactful when triggered automatically by deployment events.`,
     chartType: "table",
     appFunction: {
       name: "getGuardianDetail",
@@ -709,10 +710,10 @@ load "/lookups/slo"
     guardianRowClick: true,
     scorecardSnippet: `// Scorecard pass/fail source: /lookups/guardians
 // (one row per guardian, refreshed on a schedule by an Automation Engine workflow)
-load "/lookups/guardians"
+${LOAD.guardians}
 | fieldsAdd appci = lower(appci)
 | summarize guardianCount = count(), by:{appci}
-// joined via lookup(), sourceField:applicationci, lookupField:appci
+// joined via lookup(), sourceField:${APP_CI_FIELD}, lookupField:appci
 
 // Pass: guardianCount > 0
 //
@@ -750,10 +751,10 @@ load "/lookups/guardians"
     dashboardRowClick: true,
     scorecardSnippet: `// Scorecard pass/fail source: /lookups/slo-dashboards
 // (one row per dashboard, refreshed on a schedule by an Automation Engine workflow)
-load "/lookups/slo-dashboards"
+${LOAD.sloDashboards}
 | fieldsAdd appci = lower(appci)
 | summarize dashboardCount = count(), by:{appci}
-// joined via lookup(), sourceField:applicationci, lookupField:appci
+// joined via lookup(), sourceField:${APP_CI_FIELD}, lookupField:appci
 
 // Pass: dashboardCount > 0
 //
@@ -775,20 +776,20 @@ load "/lookups/slo-dashboards"
       "Set the application's business criticality in the CMDB table (Lookups tab → CMDB owner mapping), for example '1 - critical'. If the CMDB is the source of truth, load it from a ServiceNow export rather than typing it. The tier decides which checks apply to this application, so it should be assigned before anything else is judged.",
     chartType: "table",
     // eslint-disable-next-line noSecrets/no-secrets
-    detailQuery: (appCI: string) => `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
-| filter lower(applicationci) == lower("${appCI}")
+    detailQuery: (appCI: string) => `${LOAD.cmdb}
+| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
 | fields ciName = name, tier = business_criticality, status = operational_status, owner = owned_by, supportGroup = support_group, managingDirector = \`managed_by.u_managing_director\`
 | limit 10`,
     secondaryQuery: (appCI: string) => `fetch bizevents, from:now()-7d
 | filter event.type == "workflow.import.servicenow.appci"
-| filter lower(applicationci) == lower("${appCI}")
+| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
 | summarize importCount = count(), by:{timestamp = bin(timestamp, 24h)}
 | sort timestamp asc`,
     secondaryChartType: "bar",
     secondaryLabel: "ServiceNow import events (7d, daily). Empty means no such import runs here",
     scorecardSnippet: `// Scorecard pass/fail source: the CMDB row's business criticality, or a ServiceNow import tier
 // (replace "abc" with an AppCI to run this as is)
-data record(applicationci = "abc")
+data record(${APP_CI_FIELD} = "abc")
 ${hasTierLookup()}
 
 // Pass: hasTier > 0`,
@@ -804,7 +805,7 @@ ${hasTierLookup()}
     guidance:
       "Work down the table starting with unresolved high-severity rows — those are business-critical services Dynatrace can't yet tie back to a monitored entity. Resolution happens upstream in the BigPanda/CMDB pipeline that feeds this lookup; improving the tenant-wide 38% resolution rate is a data-hygiene effort owned by the configuration-management team, tracked separately from this app.",
     chartType: "table",
-    detailQuery: (appCI: string) => `load "/lookups/critical_services"
+    detailQuery: (appCI: string) => `${LOAD.criticalServices}
 | filter lower(appci) == lower("${appCI}")
 | fieldsAdd resolved = entity_ids != "-"
 | fieldsAdd severityRank = if(lower(severity) == "high", 1,
@@ -815,12 +816,12 @@ ${hasTierLookup()}
 | limit 200`,
     scorecardSnippet: `// Wired to /lookups/critical_services (refreshed daily at 06:00 UTC)
 // Note the table name uses an UNDERSCORE, not a hyphen.
-load "/lookups/critical_services"
+${LOAD.criticalServices}
 | fieldsAdd appci = lower(appci)
 | summarize criticalCount = count(),
             resolved = countIf(entity_ids != "-"),
             by:{appci}
-// joined via lookup(), sourceField:applicationci, lookupField:appci
+// joined via lookup(), sourceField:${APP_CI_FIELD}, lookupField:appci
 
 // Pass: resolved > 0 (at least one listed service's entity_ids resolved)
 // Fail: criticalCount > 0 but resolved == 0 (listed, none resolved)
@@ -1430,7 +1431,7 @@ smartscapeNodes "AWS*"
     passLogic:
       "Pass: at least one guardian validation was triggered by a deployment event (trigger type is neither Schedule nor Manual). Warn: guardian validations are running but only on a schedule. Fail: deployments occur with no guardian validation at all, or neither exists. Only a genuine pass scores toward the L4 total.",
     guidance:
-      "Change the guardian's workflow trigger from a schedule to an event trigger matched on CUSTOM_DEPLOYMENT events for the application, so every release is automatically validated against its SLOs. In the workflow, set the validation timeframe to the window immediately following the deployment. Pair this with the L2 Site Reliability Guardians check — a guardian must exist and carry the applicationci tag before it can be wired to deployments. Teams already onboarded through the Jira/Terraform SRE onboarding pipeline get the guardian created automatically; the remaining step is the deployment trigger.",
+      `Change the guardian's workflow trigger from a schedule to an event trigger matched on CUSTOM_DEPLOYMENT events for the application, so every release is automatically validated against its SLOs. In the workflow, set the validation timeframe to the window immediately following the deployment. Pair this with the L2 Site Reliability Guardians check — a guardian must exist and carry the ${APP_CI_FIELD} tag before it can be wired to deployments. Teams already onboarded through the Jira/Terraform SRE onboarding pipeline get the guardian created automatically; the remaining step is the deployment trigger.`,
     chartType: "table",
     detailQuery: (appCI: string) => `fetch events, from:now()-30d
 | filter event.kind == "SDLC_EVENT"
@@ -1511,11 +1512,11 @@ fetch events, from:now()-30d
 //
 //   fetch bizevents, from:now()-30d
 //   | filter event.type == "slo.errorbudget.gate"
-//   | filter lower(applicationci) == lower("<AppCI>")
+//   | filter lower(${APP_CI_FIELD}) == lower("<AppCI>")
 //   | summarize
 //       gateChecks  = count(),
 //       gateBlocked = countIf(gate.decision == "blocked"),
-//     by:{applicationci}
+//     by:{${APP_CI_FIELD}}
 //
 // Pass: gateChecks > 0  (error budget is consulted before release)`,
   },
@@ -1607,8 +1608,8 @@ ${appciFromWorkflowTitle("wfAppci")}
 //   fetch bizevents
 //   | filter event.type == "remediation.completed"
 //       or event.type == "auto.remediation.triggered"
-//   | filter lower(applicationci) == lower("<AppCI>")
-//   | summarize count = count(), by:{applicationci}`,
+//   | filter lower(${APP_CI_FIELD}) == lower("<AppCI>")
+//   | summarize count = count(), by:{${APP_CI_FIELD}}`,
   },
 
   "4. Incident Auto-Enrichment": {
@@ -1661,8 +1662,8 @@ ${appciFromProblemTags()}
 //   fetch bizevents
 //   | filter event.type == "postmortem.created"
 //       or event.type == "ptask.created"
-//   | filter lower(applicationci) == lower("<AppCI>")
-//   | summarize count = count(), by:{applicationci}`,
+//   | filter lower(${APP_CI_FIELD}) == lower("<AppCI>")
+//   | summarize count = count(), by:{${APP_CI_FIELD}}`,
   },
 };
 

@@ -3,7 +3,7 @@ import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { APP_VERSION } from "../version";
 import { getAppName } from "@dynatrace-sdk/app-environment";
-import { COMPANY_NAME } from "../constants";
+import { COMPANY_NAME, COMPANY_LOGO_URL } from "../settings/appSettings";
 
 // Dynatrace brand palette from POTX template
 const brand = {
@@ -412,9 +412,9 @@ export const LandingPage = () => {
 
         </div>
 
-        {/* CareSource — blended directly into the dark background */}
-        <img
-          src="./assets/caresource.jpeg"
+        {/* Customer logo (Settings → Organization) — blended directly into the dark background */}
+        {COMPANY_LOGO_URL && <img
+          src={COMPANY_LOGO_URL}
           alt=""
           style={{
             position: "absolute",
@@ -429,7 +429,7 @@ export const LandingPage = () => {
             maskImage: "linear-gradient(to right, transparent 0%, transparent 10%, black 50%, black 100%)",
             WebkitMaskImage: "linear-gradient(to right, transparent 0%, transparent 10%, black 50%, black 100%)",
           }}
-        />
+        />}
 
         {/* Enterprise maturity badge overlaid on the right */}
         <EnterpriseBadge />

@@ -18,6 +18,7 @@ import {
   tableRowBorder,
 } from "../components/redesignStyles";
 
+import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
 // Tagging / onboarding coverage: for every active application in the CMDB table, how much of its
 // data the scorecards can actually find. Read-only: it measures, it never changes tenant config.
 // Each signal is its own query so a missing lookup or a failing source degrades one column, not the page.
@@ -26,16 +27,16 @@ import {
 // than 3 characters; those are flagged instead of silently disappearing.
 
 // eslint-disable-next-line noSecrets/no-secrets
-const CMDB_QUERY = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
+const CMDB_QUERY = `${LOAD.cmdb}
 | filter operational_status != "Retired"
-| fields applicationci, name, business_criticality, operational_status
+| fields ${APP_CI_FIELD}, name, business_criticality, operational_status
 | limit 10000`;
 
-// AppCI codes found in `applicationci:<code>` tags on one entity type, with how many entities carry each.
+// AppCI codes found in `${APP_CI_FIELD}:<code>` tags on one entity type, with how many entities carry each.
 const tagCodes = (entityFetch: string, countField: string) => `${entityFetch}
 ${appciFromEntityTags()}
-| expand applicationci
-| summarize ${countField} = count(), by:{applicationci}`;
+| expand ${APP_CI_FIELD}
+| summarize ${countField} = count(), by:{${APP_CI_FIELD}}`;
 
 const SERVICES_QUERY = tagCodes("fetch dt.entity.service", "n");
 // Application names that resolve to no AppCI, on each entity type the L1 checks count, fetched the way those
@@ -50,23 +51,23 @@ const UNMAPPED_KINDS = ["services", "hosts", "RUM apps", "synthetic tests"] as c
 const UNMAPPED_KIND_ONE = ["service", "host", "RUM app", "synthetic test"] as const;
 const HOSTS_QUERY = tagCodes("fetch dt.entity.host\n| limit 100000\n| filter lifetime[end] > asTimestamp(now()-2h)", "n");
 
-const SLO_QUERY = `load "/lookups/slo"
-| fieldsAdd applicationci = lower(substring(slo, from:0, to:3))
-| summarize n = count(), by:{applicationci}`;
-const GUARDIAN_QUERY = `load "/lookups/guardians"
-| fieldsAdd applicationci = lower(appci)
-| summarize n = count(), by:{applicationci}`;
-const DASHBOARD_QUERY = `load "/lookups/slo-dashboards"
-| fieldsAdd applicationci = lower(appci)
-| summarize n = count(), by:{applicationci}`;
-const CRITICAL_QUERY = `load "/lookups/critical_services"
-| fieldsAdd applicationci = lower(appci)
-| summarize n = count(), resolved = countIf(entity_ids != "-"), by:{applicationci}`;
+const SLO_QUERY = `${LOAD.slo}
+| fieldsAdd ${APP_CI_FIELD} = lower(substring(slo, from:0, to:3))
+| summarize n = count(), by:{${APP_CI_FIELD}}`;
+const GUARDIAN_QUERY = `${LOAD.guardians}
+| fieldsAdd ${APP_CI_FIELD} = lower(appci)
+| summarize n = count(), by:{${APP_CI_FIELD}}`;
+const DASHBOARD_QUERY = `${LOAD.sloDashboards}
+| fieldsAdd ${APP_CI_FIELD} = lower(appci)
+| summarize n = count(), by:{${APP_CI_FIELD}}`;
+const CRITICAL_QUERY = `${LOAD.criticalServices}
+| fieldsAdd ${APP_CI_FIELD} = lower(appci)
+| summarize n = count(), resolved = countIf(entity_ids != "-"), by:{${APP_CI_FIELD}}`;
 const WORKFLOW_QUERY = `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
 ${appciFromWorkflowTitle()}
-| summarize n = countDistinct(\`dt.automation_engine.workflow.id\`), by:{applicationci}`;
+| summarize n = countDistinct(\`dt.automation_engine.workflow.id\`), by:{${APP_CI_FIELD}}`;
 
 interface Signal {
   key: "services" | "hosts" | "slos" | "guardians" | "dashboards" | "critical" | "workflows";
@@ -76,10 +77,10 @@ interface Signal {
 }
 
 const SIGNALS: Signal[] = [
-  { key: "services", label: "Services", how: "Services tagged applicationci:<code>, or tagged Application:<name> with that name mapped to the code on Lookups > AppCI map" },
-  { key: "hosts", label: "Hosts", how: "Hosts tagged applicationci:<code>, or tagged Application:<name> mapped to the code on Lookups > AppCI map" },
+  { key: "services", label: "Services", how: `Services tagged ${APP_CI_FIELD}:<code>, or tagged Application:<name> with that name mapped to the code on Lookups > AppCI map` },
+  { key: "hosts", label: "Hosts", how: `Hosts tagged ${APP_CI_FIELD}:<code>, or tagged Application:<name> mapped to the code on Lookups > AppCI map` },
   { key: "slos", label: "SLOs", how: "SLO names that start with the code (from /lookups/slo)" },
-  { key: "guardians", label: "Guardians", how: "Site Reliability Guardians tagged applicationci:<code> (from /lookups/guardians)" },
+  { key: "guardians", label: "Guardians", how: `Site Reliability Guardians tagged ${APP_CI_FIELD}:<code> (from /lookups/guardians)` },
   { key: "dashboards", label: "SLO dashboards", how: "Dashboards named <code> … SLO (from /lookups/slo-dashboards)" },
   { key: "critical", label: "Critical services", how: "Rows in the critical services seed; resolved = matched to a Dynatrace entity" },
   { key: "workflows", label: "Workflows", how: "Automation workflows whose title starts with the code, or with an application name in the AppCI map (last 30 days)" },
@@ -97,7 +98,8 @@ function useSource(query: string) {
     const m = new Map<string, Counts>();
     for (const rec of data?.records ?? []) {
       const r = rec as Record<string, unknown>;
-      const code = typeof r.applicationci === "string" ? r.applicationci.trim().toLowerCase() : "";
+      const rawCode = r[APP_CI_FIELD];
+      const code = typeof rawCode === "string" ? rawCode.trim().toLowerCase() : "";
       if (!code) continue;
       m.set(code, { n: Number(r.n ?? 0), resolved: r.resolved === undefined ? undefined : Number(r.resolved) });
     }
@@ -143,7 +145,7 @@ export const CoveragePage = () => {
   const apps = useMemo(() => {
     const rows = (cmdb.data?.records ?? []).map((rec) => {
       const r = rec as Record<string, unknown>;
-      const code = str(r.applicationci);
+      const code = str(r[APP_CI_FIELD]);
       const key = code.toLowerCase();
       const found = SIGNALS.filter((s) => (sources[s.key].map.get(key)?.n ?? 0) > 0).length;
       return { code, key, name: str(r.name), tier: str(r.business_criticality), found, tooLong: code.length > 3 };
@@ -185,7 +187,7 @@ export const CoveragePage = () => {
       (mapRowsSrc.data?.records ?? [])
         .map((rec) => {
           const r = rec as Record<string, unknown>;
-          return { name: str(r.app_name), code: str(r.applicationci) };
+          return { name: str(r.app_name), code: str(r[APP_CI_FIELD]) };
         })
         .filter((m) => m.code && !cmdbKeys.has(m.code.toLowerCase())),
     [mapRowsSrc.data, cmdbKeys]
@@ -234,7 +236,7 @@ export const CoveragePage = () => {
         {!loading && !cmdb.error && apps.length > 0 && taggedApps === 0 && (
           <div style={{ ...noticeStyle("warn"), margin: 13 }}>
             No service resolves to a CMDB AppCI, so the leaderboard and daily snapshot will be empty. Services resolve through an{" "}
-            <code>applicationci:&lt;code&gt;</code> tag or through the AppCI map on the Lookups tab.
+            <code>{APP_CI_FIELD}:&lt;code&gt;</code> tag or through the AppCI map on the Lookups tab.
           </div>
         )}
         {loading ? (
@@ -310,7 +312,7 @@ export const CoveragePage = () => {
       {orphans.length > 0 && (
         <Section title="Tagged codes that aren't in the CMDB table" meta={`${orphans.length}`}>
           <Paragraph style={{ margin: "0 0 8px", fontSize: 12, color: INK.muted }}>
-            Services carry these <code>applicationci</code> tag values, but no CMDB row matches. They are usually typos, a
+            Services carry these <code>{APP_CI_FIELD}</code> tag values, but no CMDB row matches. They are usually typos, a
             different spelling than the CMDB code, or applications that were never registered. Fix the tag, or add the
             application on the Lookups tab.
           </Paragraph>
@@ -329,7 +331,7 @@ export const CoveragePage = () => {
         <Section title="Application names with no AppCI" meta={`${unmapped.length}`}>
           <Paragraph style={{ margin: "0 0 8px", fontSize: 12, color: INK.muted }}>
             Services, hosts, RUM applications or synthetic tests carry these <code>Application:&lt;name&gt;</code> tags, but no{" "}
-            <code>applicationci</code> tag and no row in the AppCI map, so the scorecards cannot see them. Add each name (without its
+            <code>{APP_CI_FIELD}</code> tag and no row in the AppCI map, so the scorecards cannot see them. Add each name (without its
             environment suffix) on Lookups &gt; AppCI map. The same application is often spelled differently per type (for example
             "BillingPortal" on services and "Billing Portal" on synthetic tests): each spelling needs its own row.
             {unmappedFailed.length > 0 && <span style={{ color: INK.warn }}> Could not read: {unmappedFailed.join(", ")}.</span>}

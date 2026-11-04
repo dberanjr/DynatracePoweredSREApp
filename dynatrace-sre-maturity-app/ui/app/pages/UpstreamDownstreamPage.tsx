@@ -14,10 +14,11 @@ import { useDependencyChain } from "../hooks/useDependencyChain";
 import { ActiveProblemLink } from "../components/SmartscapeViewMenu";
 import { appciFromEntityTags } from "../queries/maturityQueries";
 
+import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
 const MAX_LEVELS = 8;
 
-const STATUS_QUERY = (appCI: string) => `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
-| filter lower(applicationci) == lower("${appCI}")
+const STATUS_QUERY = (appCI: string) => `${LOAD.cmdb}
+| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
 | fields operational_status
 | limit 1`;
 
@@ -49,12 +50,12 @@ const ROOT_METRICS_QUERY = (serviceId: string) => `timeseries {
 // ServiceGoldenSignalsTable's critical/problem joins (no timeseries lookups).
 const SUMMARY_QUERY = (appCI: string) => `fetch dt.entity.service
 ${appciFromEntityTags()}
-| expand applicationci
-| filter applicationci == lower("${appCI}")
+| expand ${APP_CI_FIELD}
+| filter ${APP_CI_FIELD} == lower("${appCI}")
 | dedup id
 | fields id
 | lookup [
-    load "/lookups/critical_services"
+    ${LOAD.criticalServices}
     | filter lower(appci) == lower("${appCI}")
     | filter entity_ids != "-"
     | fieldsAdd idList = splitString(entity_ids, " ")

@@ -1,3 +1,5 @@
+// Must be first: publishes the user settings that the query modules read when they load.
+import "./app/settings/appSettings";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { AppRoot } from "@dynatrace/strato-components/core";

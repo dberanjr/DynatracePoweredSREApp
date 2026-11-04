@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { appciFromEntityTags } from "../queries/maturityQueries";
 
+import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
 export type ChainDirection = "forward" | "backward";
 
 export interface DependencyNode {
@@ -86,10 +87,10 @@ ${traverses}
 | lookup [
     fetch dt.entity.service
     ${appciFromEntityTags()}
-    | fields id, applicationci
-  ], sourceField: depId, lookupField: id, fields: {appciList = applicationci}
+    | fields id, ${APP_CI_FIELD}
+  ], sourceField: depId, lookupField: id, fields: {appciList = ${APP_CI_FIELD}}
 | lookup [
-    load "/lookups/critical_services"
+    ${LOAD.criticalServices}
     | filter entity_ids != "-"
     | fieldsAdd idList = splitString(entity_ids, " ")
     | expand idList

@@ -9,6 +9,7 @@ import { CHECK_DETAIL_CONFIGS, LEVEL_META, CheckDetailConfig } from "./checkDeta
 import { HardcodedBadge } from "./HardcodedBadge";
 import { SmartscapeViewMenu } from "./SmartscapeViewMenu";
 
+import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
 interface Props {
   checkKey: string;
   currentValue: string;
@@ -820,7 +821,7 @@ function DataPanel({
 
   const appFn = config?.appFunction;
   const fnResult = useAppFunction<unknown>(
-    { name: appFn?.name ?? "__unused__", data: { appCI } },
+    { name: appFn?.name ?? "__unused__", data: { appCI, appCiField: APP_CI_FIELD } },
     { autoFetch: !!appFn, autoFetchOnUpdate: true }
   );
 
@@ -1435,7 +1436,7 @@ function SecondaryDataPanel({
 }) {
   const dqlResult = useDqlWithCache({ query });
   const fnResult = useAppFunction<unknown>(
-    { name: appFunction?.name ?? "__unused__", data: { appCI } },
+    { name: appFunction?.name ?? "__unused__", data: { appCI, appCiField: APP_CI_FIELD } },
     { autoFetch: !!appFunction, autoFetchOnUpdate: true }
   );
   const isLoading = appFunction ? fnResult.isLoading : dqlResult.isLoading;
@@ -1470,8 +1471,8 @@ function SecondaryDataPanel({
 }
 
 function useAppInfo(appCI: string) {
-  const query = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
-| filter lower(applicationci) == lower("${appCI}")
+  const query = `${LOAD.cmdb}
+| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
 | fields appName = name, tier = business_criticality, owner = owned_by
 | limit 1`;
   const { data } = useDqlWithCache({ query });

@@ -4,21 +4,22 @@ import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDql, useAppFunction } from "@dynatrace-sdk/react-hooks";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
-import { COMPANY_NAME } from "../constants";
+import { COMPANY_NAME } from "../settings/appSettings";
 import { BULK_L1_QUERY, BULK_L2_QUERY, BULK_L3_QUERY, BULK_L4_QUERY, BULK_L5_QUERY } from "../queries/maturityQueries";
 
 
 
+import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
 // ── CMDB info ──
 // Primary: CMDB lookup table
-const CMDB_LOOKUP_QUERY = `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
-| fieldsAdd appci = lower(applicationci)
+const CMDB_LOOKUP_QUERY = `${LOAD.cmdb}
+| fieldsAdd appci = lower(${APP_CI_FIELD})
 | fields appci, ciname = name, tier = business_criticality, app_owner_name = owned_by`;
 
 // Fallback: bizevents ServiceNow import
 const CMDB_FALLBACK_QUERY = `fetch bizevents, from:now()-48h
 | filter event.type == "workflow.import.servicenow.appci"
-| fieldsAdd appci = lower(applicationci)
+| fieldsAdd appci = lower(${APP_CI_FIELD})
 | filter isNotNull(appci)
 | filter stringLength(appci) <= 3
 | sort timestamp desc
@@ -161,7 +162,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
     // Build lookup maps
     const makeMap = (records: Record<string, unknown>[] | undefined, scoreKey: string) => {
       const m = new Map<string, number>();
-      (records || []).forEach((r) => m.set(String(r.applicationci), Number(r[scoreKey] || 0)));
+      (records || []).forEach((r) => m.set(String(r[APP_CI_FIELD]), Number(r[scoreKey] || 0)));
       return m;
     };
     const l1Map = makeMap(l1Data.records as Record<string, unknown>[], "l1Score");

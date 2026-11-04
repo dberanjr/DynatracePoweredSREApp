@@ -1,3 +1,4 @@
+import { APP_CI_FIELD } from "../settings/appSettings";
 // Describes each lookup table the "Lookups" tab can maintain. Keep in sync with TABLES in
 // api/saveLookup.function.ts, which holds the authoritative validation and file layout.
 
@@ -34,7 +35,7 @@ export const LOOKUP_TABLES: LookupTableConfig[] = [
     path: "/lookups/dynatrace/cmdb_appci_owner_mapping",
     backupPath: "/lookups/dynatrace/cmdb_appci_owner_mapping_backup",
     columns: [
-      { key: "applicationci", label: "AppCI", required: true },
+      { key: `${APP_CI_FIELD}`, label: "AppCI", required: true },
       { key: "name", label: "Name", required: true },
       { key: "operational_status", label: "Operational status" },
       { key: "business_criticality", label: "Business criticality" },
@@ -46,9 +47,9 @@ export const LOOKUP_TABLES: LookupTableConfig[] = [
       { key: "managed_by.u_vp", label: "VP" },
       { key: "managed_by.u_director", label: "Director" },
     ],
-    appciKey: "applicationci",
+    appciKey: `${APP_CI_FIELD}`,
     lowercase: [],
-    keyColumns: ["applicationci"],
+    keyColumns: [`${APP_CI_FIELD}`],
     keyLabel: "AppCI",
   },
   {
@@ -75,15 +76,15 @@ export const LOOKUP_TABLES: LookupTableConfig[] = [
     tabLabel: "AppCI map",
     title: "AppCI Map — Application Tag to AppCI",
     description:
-      "Translates the application name in your tenant's Application tag to its 3-letter AppCI, so entities, hosts and problems can be scored without an applicationci tag. Enter the name WITHOUT its environment suffix: the tag Application:BillingPortal::CRT (or ::SPT, ::PRD) is matched by the name billingportal. Names are matched case-insensitively. Several names can share one AppCI; a name can have only one.",
+      `Translates the application name in your tenant's Application tag to its 3-letter AppCI, so entities, hosts and problems can be scored without an ${APP_CI_FIELD} tag. Enter the name WITHOUT its environment suffix: the tag Application:BillingPortal::CRT (or ::SPT, ::PRD) is matched by the name billingportal. Names are matched case-insensitively. Several names can share one AppCI; a name can have only one.`,
     path: "/lookups/appci_map",
     backupPath: "/lookups/appci_map_backup",
     columns: [
       { key: "app_name", label: "Application name (no environment suffix)", required: true },
-      { key: "applicationci", label: "AppCI", required: true },
+      { key: `${APP_CI_FIELD}`, label: "AppCI", required: true },
     ],
-    appciKey: "applicationci",
-    lowercase: ["app_name", "applicationci"],
+    appciKey: `${APP_CI_FIELD}`,
+    lowercase: ["app_name", `${APP_CI_FIELD}`],
     keyColumns: ["app_name"],
     keyLabel: "Application name",
   },

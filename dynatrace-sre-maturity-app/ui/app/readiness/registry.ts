@@ -1,5 +1,6 @@
 import { READINESS_QUERIES, readinessAppQueries } from "../queries/maturityQueries";
 
+import { APP_CI_FIELD } from "../settings/appSettings";
 // The data-readiness registry: what each check needs (an "input"), how to measure it (a "probe"), and how to
 // read the result. See docs/superpowers/specs/2026-10-22-data-readiness-design.md.
 //
@@ -126,7 +127,7 @@ export const PROBES: ProbeDef[] = [
     query: Q.logs,
     window: "a ~1-in-1000 sample of the last 2 hours of logs",
     produces: ["IN-04"],
-    interpret: (rec) => ({ "IN-04": ratio(num(rec[0]?.ok), num(rec[0]?.total), "sampled logs carry an applicationci attribute") }),
+    interpret: (rec) => ({ "IN-04": ratio(num(rec[0]?.ok), num(rec[0]?.total), `sampled logs carry an ${APP_CI_FIELD} attribute`) }),
   },
   {
     key: "k8s",
@@ -228,15 +229,15 @@ export const PROBES: ProbeDef[] = [
 ];
 
 export const INPUTS: InputDef[] = [
-  { id: "IN-01", name: "AppCI resolution", description: "Services and hosts can be tied to an AppCI, by an applicationci tag or by an Application tag listed in the AppCI map. Every score is keyed on it.", fix: "Tag services and hosts with applicationci:<code>, or add each application name to the AppCI map on the Lookups tab.", probe: "resolution" },
+  { id: "IN-01", name: "AppCI resolution", description: `Services and hosts can be tied to an AppCI, by an ${APP_CI_FIELD} tag or by an Application tag listed in the AppCI map. Every score is keyed on it.`, fix: `Tag services and hosts with ${APP_CI_FIELD}:<code>, or add each application name to the AppCI map on the Lookups tab.`, probe: "resolution" },
   { id: "IN-02", name: "CMDB table with tiers", description: "The CMDB lookup lists the active applications, each with a business criticality (its tier).", fix: "Set a business criticality for each application in the CMDB table on the Lookups tab.", probe: "cmdb" },
   { id: "IN-03", name: "AppCI map", description: "The lookup that translates an Application tag name into an AppCI exists and has rows.", fix: "Create the AppCI map on the Lookups tab, with one row per application name.", probe: "map" },
-  { id: "IN-04", name: "Log attribution", description: "Log records carry an applicationci attribute, so logs can be counted per application.", fix: "Add an applicationci attribute to log records at ingest, for example with an OpenPipeline processor that derives it from host or Kubernetes metadata.", probe: "logs" },
+  { id: "IN-04", name: "Log attribution", description: `Log records carry an ${APP_CI_FIELD} attribute, so logs can be counted per application.`, fix: `Add an ${APP_CI_FIELD} attribute to log records at ingest, for example with an OpenPipeline processor that derives it from host or Kubernetes metadata.`, probe: "logs" },
   { id: "IN-05", name: "Kubernetes attribution", description: "Kubernetes clusters are named so that they start with an AppCI, which is how the scorecard attributes them.", fix: "Name Kubernetes clusters so they start with the AppCI, or extend the app to attribute clusters through workload tags.", probe: "k8s" },
   { id: "IN-06", name: "Cloud attribution", description: "Cloud resources (AWS, Azure, GCP) carry an ApplicationCI tag or label.", fix: "Tag or label cloud resources with ApplicationCI.", probe: "cloud" },
   { id: "IN-07", name: "RUM and synthetic tagging", description: "Active RUM applications and synthetic tests can be tied to an AppCI.", fix: "Tag RUM applications and synthetic tests with their application, and add each spelling to the AppCI map.", probe: "rumSynthetic" },
   { id: "IN-08", name: "SLO convention", description: "SLOs follow a naming or tagging convention that identifies their application.", fix: "Name SLOs with the AppCI as a prefix, or tag them.", probe: null },
-  { id: "IN-09", name: "Guardians tagged", description: "Site Reliability Guardians carry an AppCI tag.", fix: "Tag each Site Reliability Guardian with applicationci:<code>.", probe: null },
+  { id: "IN-09", name: "Guardians tagged", description: "Site Reliability Guardians carry an AppCI tag.", fix: `Tag each Site Reliability Guardian with ${APP_CI_FIELD}:<code>.`, probe: null },
   { id: "IN-10", name: "SLO dashboards named", description: "SLO dashboards follow the naming convention that identifies their application.", fix: "Name SLO dashboards with the AppCI as a prefix and include 'SLO'.", probe: null },
   { id: "IN-11", name: "Runbook notebooks", description: "Runbooks are notebooks whose names identify their application.", fix: "Name runbook notebooks with the AppCI as a prefix and include 'Runbook'.", probe: null },
   { id: "IN-12", name: "Critical-services seed", description: "The critical-services list has rows, and they resolve to real Dynatrace entities.", fix: "List the application's critical endpoints or services on the Lookups tab, using names Dynatrace actually sees.", probe: "seed" },
@@ -342,7 +343,7 @@ export const APP_INTERPRETERS: Record<string, AppInterpret> = {
     return { "IN-02": ok > 0 ? { status: "ready", evidence: `${appCode(a)} has a tier in the CMDB table` } : { status: "missing", evidence: `${appCode(a)} is in the CMDB table but has no business criticality` } };
   },
   logs: (rec, a) => {
-    const evidence = `Sampled logs carrying applicationci=${appCode(a)}: ${fmt(one(rec))}`;
+    const evidence = `Sampled logs carrying ${APP_CI_FIELD}=${appCode(a)}: ${fmt(one(rec))}`;
     return { "IN-04": one(rec) > 0 ? { status: "ready", evidence } : { status: "missing", evidence, note: "Logs are sampled about 1 in 1000, so a very low-volume application can be missed." } };
   },
   k8s: (rec, a) => {

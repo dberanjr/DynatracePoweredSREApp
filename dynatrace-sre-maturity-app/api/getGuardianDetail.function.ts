@@ -31,7 +31,8 @@ export default async function (input: unknown = undefined) {
   // Accept either shape so the same function is testable both ways.
   const raw = (input && typeof input === 'object' && 'payload' in (input as Record<string, unknown>)
     ? (input as { payload?: unknown }).payload
-    : input) as { appCI?: string } | undefined;
+    : input) as { appCI?: string; appCiField?: string } | undefined;
+  const appCiField = String(raw?.appCiField || 'applicationci').trim().toLowerCase();
   const appCI = String(raw?.appCI || '').trim().toLowerCase();
   if (!appCI) return { guardians: [] };
 
@@ -52,7 +53,7 @@ export default async function (input: unknown = undefined) {
       if (i > 0) {
         const k = String(t).slice(0, i).trim().toLowerCase();
         const val = String(t).slice(i + 1).trim().toLowerCase();
-        if ((k === 'applicationci' || k === 'appci') && val === appCI) matches = true;
+        if ((k === appCiField || k === 'appci') && val === appCI) matches = true;
       }
     }
     if (!matches) continue;

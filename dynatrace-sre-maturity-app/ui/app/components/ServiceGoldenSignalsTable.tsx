@@ -7,6 +7,7 @@ import { severityColor, severityLabel, severityRank, formatDurationUs } from "./
 import { openProblem } from "./SmartscapeViewMenu";
 import { appciFromEntityTags } from "../queries/maturityQueries";
 
+import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
 export type SeverityFilterValue = "high" | "medium" | "low" | "none";
 
 function severityBucket(severity: string | null): SeverityFilterValue {
@@ -53,8 +54,8 @@ interface Props {
 //    down to one.
 const buildQuery = (appCI: string) => `fetch dt.entity.service
 ${appciFromEntityTags()}
-| expand applicationci
-| filter applicationci == lower("${appCI}")
+| expand ${APP_CI_FIELD}
+| filter ${APP_CI_FIELD} == lower("${appCI}")
 | dedup id
 | fields id, entity.name, calls
 | limit 500
@@ -69,7 +70,7 @@ ${appciFromEntityTags()}
 | fieldsAdd errorRate = if(isNotNull(req) and req > 0, round(fail * 100.0 / req, decimals:2), else: 0)
 | fieldsAdd p95Us = p95
 | lookup [
-    load "/lookups/critical_services"
+    ${LOAD.criticalServices}
     | filter lower(appci) == lower("${appCI}")
     | filter entity_ids != "-"
     | fieldsAdd idList = splitString(entity_ids, " ")

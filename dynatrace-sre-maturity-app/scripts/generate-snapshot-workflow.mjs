@@ -19,6 +19,20 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const check = process.argv.includes("--check");
+// Settings. maturityQueries.ts reads the app's settings (identifier field, lookup paths and column mapping)
+// from a global the app publishes at startup; do the same here so generated workflows match the app.
+//   default                         the original deployment (applicationci, /lookups/* paths)
+//   --config settings.json          the settings JSON the app stores (Settings page -> "Export settings"),
+//                                   or just { "appCiField": "...", "lookups": { ... } }
+const core = await import(pathToFileURL(join(root, "ui/app/settings/lookupDefs.ts")).href);
+const configArg = process.argv.indexOf("--config");
+let sreConfig = core.defaultConfig();
+if (configArg > 0) {
+  const stored = JSON.parse(readFileSync(process.argv[configArg + 1], "utf8"));
+  const field = typeof stored.appCiField === "string" && stored.appCiField.trim() ? stored.appCiField.trim() : core.DEFAULT_APPCI_FIELD;
+  sreConfig = core.resolveConfig(field, core.normalizeLookupSettings(stored.lookups));
+}
+globalThis[core.CONFIG_GLOBAL_KEY] = sreConfig;
 const q = await import(pathToFileURL(join(root, "ui/app/queries/maturityQueries.ts")).href);
 
 // A DQL string as a JS template literal: escape what a template literal would otherwise interpret.

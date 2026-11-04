@@ -5,6 +5,7 @@ import { KpiCard } from "../components/KpiCard";
 import { ChartCard } from "../components/ChartCard";
 import { TableCard } from "../components/TableCard";
 
+import { APP_CI_FIELD } from "../settings/appSettings";
 interface Props {
   appCI: string;
   timeframe: { from: string; to: string };
@@ -25,7 +26,7 @@ export const AiOpsPage = ({ appCI, timeframe }: Props) => {
 | lookup [
     fetch dt.entity.service
     | expand tags
-    | parse tags, "'applicationci:' LD:appci"
+    | parse tags, "'${APP_CI_FIELD}:' LD:appci"
     | filter lower(appci) == lower("${appCI}")
     | dedup id
     | fieldsAdd idStr = toString(id)

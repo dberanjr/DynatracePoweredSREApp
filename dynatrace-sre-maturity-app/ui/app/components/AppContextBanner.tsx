@@ -5,6 +5,7 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { RefreshOverlay } from "./RefreshOverlay";
 
+import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
 interface Props {
   appCI: string;
 }
@@ -63,11 +64,11 @@ function Chip({ label, value, valueColor }: { label: string; value: string; valu
 }
 
 const PROFILE_LOOKUP = (appCI: string) =>
-  `load "/lookups/dynatrace/cmdb_appci_owner_mapping"
-| filter lower(applicationci) == lower("${appCI}")
+  `${LOAD.cmdb}
+| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
 | fields
     name,
-    applicationci,
+    ${APP_CI_FIELD},
     business_criticality,
     operational_status,
     \`managed_by.u_managing_director\`,
@@ -77,7 +78,7 @@ const PROFILE_LOOKUP = (appCI: string) =>
 const PROFILE_FALLBACK = (appCI: string) =>
   `fetch bizevents, from:now()-48h
 | filter event.type == "workflow.import.servicenow.appci"
-| filter lower(applicationci) == lower("${appCI}")
+| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
 | sort timestamp desc
 | limit 1`;
 
@@ -119,7 +120,7 @@ export const AppContextBanner = ({ appCI }: Props) => {
 
   const r = (currentRecord || cacheRef.current) as Record<string, unknown>;
   const name = String(r.name || r.ciname || "");
-  const appci = String(r.applicationci || appCI);
+  const appci = String(r[APP_CI_FIELD] || appCI);
   const criticality = String(r.business_criticality || r.tier || "\u2014");
   const status = String(r.operational_status || r.install_status || r.u_operational_status || "In Production");
   const director = String(r["managed_by.u_managing_director"] || r.app_owner_name || "\u2014");

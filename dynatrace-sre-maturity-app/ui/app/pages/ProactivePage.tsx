@@ -5,6 +5,7 @@ import { KpiCard } from "../components/KpiCard";
 import { ChartCard } from "../components/ChartCard";
 import { TableCard } from "../components/TableCard";
 
+import { APP_CI_FIELD } from "../settings/appSettings";
 interface Props {
   appCI: string;
   timeframe: { from: string; to: string };
@@ -17,7 +18,7 @@ export const ProactivePage = ({ appCI, timeframe }: Props) => {
   const eventFilter = `fetch events, ${tf}
 | filter event.kind == "DAVIS_EVENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'applicationci:' LD:appci"
+| parse affected_entity_tags, "'${APP_CI_FIELD}:' LD:appci"
 | filter isNotNull(appci)
 | filter lower(appci) == lower("${appCI}")`;
 
@@ -26,7 +27,7 @@ export const ProactivePage = ({ appCI, timeframe }: Props) => {
 | filter event.kind == "DAVIS_EVENT"
 | filter event.type == "CUSTOM_DEPLOYMENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'applicationci:' LD:appci"
+| parse affected_entity_tags, "'${APP_CI_FIELD}:' LD:appci"
 | filter isNotNull(appci)
 | filter lower(appci) == lower("${appCI}")
 | summarize \`Count\` = count()`;
@@ -41,22 +42,22 @@ export const ProactivePage = ({ appCI, timeframe }: Props) => {
 
   const serviceCountQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
+| parse tags, "'${APP_CI_FIELD}:' LD:appci"
 | filter lower(appci) == lower("${appCI}")
 | dedup id
 | summarize \`Count\` = count()`;
 
   const k8sCountQuery = `fetch dt.entity.cloud_application
 | expand tags
-| filter contains(lower(tags), "applicationci")
+| filter contains(lower(tags), "${APP_CI_FIELD}")
 | parse tags, "LD:key ':' LD:value"
-| filter contains(lower(key), "applicationci")
+| filter contains(lower(key), "${APP_CI_FIELD}")
 | filter lower(value) == lower("${appCI}")
 | dedup id
 | summarize \`Count\` = count()`;
 
   const awsCountQuery = `fetch bizevents, from:now()-24h
-| filter event.type=="workflow.summary.cloud.aws" and lower(applicationci)==lower("${appCI}")
+| filter event.type=="workflow.summary.cloud.aws" and lower(${APP_CI_FIELD})==lower("${appCI}")
 | filter type != "RUM_APPLICATION"
 | summarize \`Count\` = count()`;
 
@@ -65,7 +66,7 @@ export const ProactivePage = ({ appCI, timeframe }: Props) => {
 | filter event.kind == "DAVIS_EVENT"
 | filter event.type == "CUSTOM_DEPLOYMENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'applicationci:' LD:appci"
+| parse affected_entity_tags, "'${APP_CI_FIELD}:' LD:appci"
 | filter isNotNull(appci)
 | filter lower(appci) == lower("${appCI}")
 | makeTimeseries Deployments = count()`;
@@ -81,7 +82,7 @@ export const ProactivePage = ({ appCI, timeframe }: Props) => {
   // ── Table queries ──
   const serviceListQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'applicationci:' LD:appci"
+| parse tags, "'${APP_CI_FIELD}:' LD:appci"
 | filter lower(appci) == lower("${appCI}")
 | dedup entity.name
 | fields Service = entity.name
@@ -90,9 +91,9 @@ export const ProactivePage = ({ appCI, timeframe }: Props) => {
 
   const k8sListQuery = `fetch dt.entity.cloud_application
 | expand tags
-| filter contains(lower(tags), "applicationci")
+| filter contains(lower(tags), "${APP_CI_FIELD}")
 | parse tags, "LD:key ':' LD:value"
-| filter contains(lower(key), "applicationci")
+| filter contains(lower(key), "${APP_CI_FIELD}")
 | filter lower(value) == lower("${appCI}")
 | dedup id
 | fields Workload = entity.name
@@ -100,7 +101,7 @@ export const ProactivePage = ({ appCI, timeframe }: Props) => {
 | limit 50`;
 
   const awsDevicesQuery = `fetch bizevents, from:now()-24h
-| filter event.type=="workflow.summary.cloud.aws" and lower(applicationci)==lower("${appCI}")
+| filter event.type=="workflow.summary.cloud.aws" and lower(${APP_CI_FIELD})==lower("${appCI}")
 | filter type != "RUM_APPLICATION"
 | summarize Count = count(), by:{type}
 | sort Count desc`;

@@ -1,3 +1,4 @@
+import { APP_CI_FIELD } from "../settings/appSettings";
 // Human-readable explanations of how each scorecard check is calculated.
 // Keyed by the exact check label (column name) produced by the L1-L5 DQL
 // queries in ScorecardsPage.tsx. Shown in the hover tooltip next to each check.
@@ -6,23 +7,23 @@
 export const CHECK_EXPLANATIONS: Record<string, string> = {
   // L1 - Full Observability
   "1. OneAgent Deployed":
-    "Counts hosts (dt.entity.host) tagged with this applicationci that were alive in the last 2 hours, and shows how many run Full-Stack vs the total. PaaS-injected hosts (ECS Fargate, EKS Fargate, etc.) report a blank monitoringMode but are inherently full-stack, so they're counted as Full-Stack too. Pass = at least one host found.",
+    `Counts hosts (dt.entity.host) tagged with this ${APP_CI_FIELD} that were alive in the last 2 hours, and shows how many run Full-Stack vs the total. PaaS-injected hosts (ECS Fargate, EKS Fargate, etc.) report a blank monitoringMode but are inherently full-stack, so they're counted as Full-Stack too. Pass = at least one host found.`,
   "2. Tracing Validated":
-    "Counts services (dt.entity.service) tagged with this applicationci. Pass = at least one traced service.",
+    `Counts services (dt.entity.service) tagged with this ${APP_CI_FIELD}. Pass = at least one traced service.`,
   "3. Logs Correlated":
-    "Checks for log records (sampled) carrying this applicationci in the selected timeframe. Pass = any matching logs found.",
+    `Checks for log records (sampled) carrying this ${APP_CI_FIELD} in the selected timeframe. Pass = any matching logs found.`,
   "4. Smartscape Discovery":
     "Derived from service discovery: if any tagged services exist, Smartscape topology is considered active. Pass = at least one service.",
   "5. Kubernetes":
     "Counts Kubernetes clusters (dt.entity.kubernetes_cluster) whose name's leading token (before the first '-') matches this AppCI, since clusters follow a '<appci>-<region>-<env>' naming convention. N/A (counted as a pass) when no clusters match — not every app runs on K8s. When clusters do exist, Pass requires all three: the Cloud Native Full Stack OneAgent Operator DaemonSet is present and fully ready (app.kubernetes.io/component == cloudnativefullstack, status.numberReady == status.desiredNumberScheduled), K8s-scoped tracing (dt.service.request.count grouped by k8s.cluster.name) is flowing, and K8s-scoped logs (fetch logs filtered to k8s.cluster.name) are flowing. Fail = clusters exist but the operator isn't healthy or a signal is missing.",
   "6. Cloud":
-    "Counts AWS, Azure, and GCP cloud resources tagged with this applicationci, sourced from smartscapeNodes (the same unified inventory the Clouds app uses) across all resource types. N/A (counted as a pass) when no cloud resources are tagged — this check has no fail state.",
+    `Counts AWS, Azure, and GCP cloud resources tagged with this ${APP_CI_FIELD}, sourced from smartscapeNodes (the same unified inventory the Clouds app uses) across all resource types. N/A (counted as a pass) when no cloud resources are tagged — this check has no fail state.`,
   "7. RUM / Synthetics":
-    "Counts RUM applications (dt.entity.application) active in the last 7 days plus synthetic tests (dt.entity.synthetic_test), both tagged with this applicationci. Pass = at least one active RUM app or synthetic test.",
+    `Counts RUM applications (dt.entity.application) active in the last 7 days plus synthetic tests (dt.entity.synthetic_test), both tagged with this ${APP_CI_FIELD}. Pass = at least one active RUM app or synthetic test.`,
 
   // L2 - Measured Reliability
   "1. Golden Signal SLIs":
-    "Counts services (dt.entity.service) tagged with this applicationci that emit golden-signal metrics. Pass = at least one service.",
+    `Counts services (dt.entity.service) tagged with this ${APP_CI_FIELD} that emit golden-signal metrics. Pass = at least one service.`,
   "2. SLOs Created":
     "Counts SLOs for this AppCI from the /lookups/slo table, where the AppCI is the first 3 characters of each SLO name. Pass = at least one SLO.",
   "3. Site Reliability Guardians Created":
@@ -30,13 +31,13 @@ export const CHECK_EXPLANATIONS: Record<string, string> = {
   "4. SLO Dashboards Published":
     "Counts dashboards for this AppCI from the /lookups/slo-dashboards table - dashboards whose name starts with a 3-letter AppCI token and contains 'SLO' (standalone uppercase). The table is refreshed daily at 06:00 UTC by a workflow reading the documents API, itemized per dashboard. Pass = at least one dashboard. The modal reads the Documents API live via the getDashboardDetail app function.",
   "5. SRE Assessment in ARD":
-    "Checks that this applicationci has a tier. The CMDB table (Lookups tab) must give the application a business criticality, or a ServiceNow import event with a tier must have arrived in the last 24h. Pass = a tier is present.",
+    `Checks that this ${APP_CI_FIELD} has a tier. The CMDB table (Lookups tab) must give the application a business criticality, or a ServiceNow import event with a tier must have arrived in the last 24h. Pass = a tier is present.`,
   "6. Critical Services Tagged":
     "Whether this app's critical services are tagged in Dynatrace, so ITSM can route them at priority. Reads /lookups/critical_services: Pass = at least one listed critical service resolves to a real entity ID. Fail = critical services are listed for this AppCI but none resolve. N/A (counted as a pass) = no critical services are listed for this AppCI at all.",
 
   // L3 - AI-Assisted Operations
   "1. Causal AI Detection + Event Correlation":
-    "Counts Davis problems for this applicationci in the last 7 days, split into Active vs Closed, plus how many Davis correlated across more than one entity. FILTER: only problems in the ERROR and SLOWDOWN categories with an event count > 1 are counted; Davis duplicates are excluded. Pass = at least one qualifying problem. CORRECTED: correlation now reads affected_entity_ids (populated on 100% of records) instead of affected_entities, which is null on every record and made this always report 0 correlated; the correlation count is also now measured over the same 7d window as the rest of the check.",
+    `Counts Davis problems for this ${APP_CI_FIELD} in the last 7 days, split into Active vs Closed, plus how many Davis correlated across more than one entity. FILTER: only problems in the ERROR and SLOWDOWN categories with an event count > 1 are counted; Davis duplicates are excluded. Pass = at least one qualifying problem. CORRECTED: correlation now reads affected_entity_ids (populated on 100% of records) instead of affected_entities, which is null on every record and made this always report 0 correlated; the correlation count is also now measured over the same 7d window as the rest of the check.`,
   "2. CI/CD Integration":
     "Counts deployments for this AppCI over the last 30 days from CUSTOM_DEPLOYMENT events, across any CI/CD platform that reports an application_ci field - every deployment in this tenant currently comes from GitHub Actions, but Harness is counted automatically once it reports. Shows successful/total deploys. Pass = at least one deployment detected.",
   "3. ITSM Integration":
@@ -64,9 +65,9 @@ export const CHECK_EXPLANATIONS: Record<string, string> = {
 
   // L5 - Autonomous Reliability
   "1. Repetitive Tasks Identified":
-    "Counts Automation Engine workflows that ran in the last 30 days and belong to this applicationci. A workflow belongs to it when the first word of its title is the 3-letter code, or an application name in the AppCI map (for example 'MemberHub Validation' or 'CrmSuite_PRD …'). Pass = at least one.",
+    `Counts Automation Engine workflows that ran in the last 30 days and belong to this ${APP_CI_FIELD}. A workflow belongs to it when the first word of its title is the 3-letter code, or an application name in the AppCI map (for example 'MemberHub Validation' or 'CrmSuite_PRD …'). Pass = at least one.`,
   "2. Workflow Automation":
-    "Same signal as Repetitive Tasks Identified: at least one Automation Engine workflow that belongs to this applicationci (by the code in its title, or an application name in the AppCI map) ran in the last 30 days.",
+    `Same signal as Repetitive Tasks Identified: at least one Automation Engine workflow that belongs to this ${APP_CI_FIELD} (by the code in its title, or an application name in the AppCI map) ran in the last 30 days.`,
   "3. E2E Remediation Automated":
     "Not yet detected - reported as fail by default.",
   "4. Incident Auto-Enrichment":
