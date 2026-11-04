@@ -86,6 +86,90 @@ function useDetectedColumns(path: string, enabled: boolean) {
   return { columns, error: enabled ? error : undefined, isLoading: enabled && isLoading };
 }
 
+/**
+ * Text input with a button that lists every detected column. (A native <datalist> only shows options matching
+ * what is already typed, so a pre-filled box showed nothing useful.)
+ */
+const ColumnInput = ({
+  value,
+  onChange,
+  columns,
+  placeholder,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  columns: string[];
+  placeholder?: string;
+  label: string;
+}) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: "relative", width: "100%" }} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }}>
+      <div style={{ display: "flex", gap: 4 }}>
+        <input aria-label={label} style={inputStyle} value={value} placeholder={placeholder} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+        <button
+          type="button"
+          aria-label={`${label}: choose from detected columns`}
+          title={columns.length ? "Choose from detected columns" : "Click Detect columns first"}
+          disabled={!columns.length}
+          style={{ ...buttonStyle(false, !columns.length), padding: "0 10px" }}
+          onClick={() => setOpen((o) => !o)}
+        >
+          ▾
+        </button>
+      </div>
+      {open && (
+        <div
+          role="listbox"
+          style={{
+            position: "absolute",
+            zIndex: 50,
+            left: 0,
+            right: 0,
+            top: "100%",
+            marginTop: 2,
+            maxHeight: 220,
+            overflowY: "auto",
+            background: "var(--sre-surface, #fff)",
+            color: "inherit",
+            border: "1px solid rgba(128,128,128,0.5)",
+            borderRadius: 6,
+            boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
+          }}
+        >
+          {columns.map((c) => (
+            <button
+              type="button"
+              key={c}
+              role="option"
+              aria-selected={c === value}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                padding: "6px 10px",
+                border: "none",
+                background: c === value ? "rgba(20,20,211,0.18)" : "transparent",
+                color: "inherit",
+                fontFamily: "monospace",
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                onChange(c);
+                setOpen(false);
+              }}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface TableEditorProps {
   tableKey: LookupKey;
   value: LookupSettings[LookupKey];
@@ -98,7 +182,7 @@ interface TableEditorProps {
 const smallButton: React.CSSProperties = { ...buttonStyle(false), padding: "4px 10px", fontSize: 12 };
 
 /** CMDB display options: extra fields and tier values. */
-const CatalogOptions = ({ catalog, onChange }: { catalog: CatalogSettings; onChange: (next: CatalogSettings) => void }) => {
+const CatalogOptions = ({ catalog, onChange, columns }: { catalog: CatalogSettings; onChange: (next: CatalogSettings) => void; columns: string[] }) => {
   const setTier = (i: number, patch: Partial<TierRule>) =>
     onChange({ ...catalog, tiers: catalog.tiers.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
   return (
@@ -117,14 +201,12 @@ const CatalogOptions = ({ catalog, onChange }: { catalog: CatalogSettings; onCha
             onChange={(ev) => onChange({ ...catalog, extras: catalog.extras.map((x, j) => (j === i ? { ...x, label: ev.target.value } : x)) })}
           />
           <div style={{ width: "100%" }}>
-            <input
-              aria-label={`Extra field ${i + 1} column`}
-              style={inputStyle}
+            <ColumnInput
+              label={`Extra field ${i + 1} column`}
               placeholder="Your column"
-              list="cols-cmdb"
+              columns={columns}
               value={e.column}
-              spellCheck={false}
-              onChange={(ev) => onChange({ ...catalog, extras: catalog.extras.map((x, j) => (j === i ? { ...x, column: ev.target.value } : x)) })}
+              onChange={(v) => onChange({ ...catalog, extras: catalog.extras.map((x, j) => (j === i ? { ...x, column: v } : x)) })}
             />
             <ErrorText msg={validateColumn(e.column, false)} />
           </div>
@@ -196,7 +278,6 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
   const [detect, setDetect] = useState(false);
   const pathError = validateLookupPath(value.path);
   const { columns, error, isLoading } = useDetectedColumns(value.path.trim(), detect && !pathError && !demo);
-  const listId = `cols-${tableKey}`;
 
   return (
     <div style={cardStyle}>
@@ -229,13 +310,8 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
       <ErrorText msg={pathError} />
       {detect && error && <ErrorText msg={`Couldn't read this table: ${error.message ?? "unknown error"}`} />}
       {detect && !error && !isLoading && columns.length > 0 && (
-        <div style={{ fontSize: 12, color: muted, marginTop: 3 }}>Found {columns.length} columns — pick from the suggestions below.</div>
+        <div style={{ fontSize: 12, color: muted, marginTop: 3 }}>Found {columns.length} columns — use the ▾ button next to a column box to pick one.</div>
       )}
-      <datalist id={listId}>
-        {columns.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
 
       <div style={{ display: "grid", gridTemplateColumns: showLabels ? "minmax(160px, 1fr) minmax(200px, 1.4fr) minmax(120px, 0.8fr)" : "minmax(160px, 1fr) minmax(200px, 1.4fr)", gap: "10px 16px", marginTop: 14, alignItems: "start" }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>App needs</div>
@@ -254,14 +330,12 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
                 <div style={{ fontSize: 11, color: muted }}>{f.hint}</div>
               </div>
               <div>
-                <input
-                  aria-label={`${def.label}: ${f.label} column`}
-                  style={inputStyle}
-                  list={listId}
+                <ColumnInput
+                  label={`${def.label}: ${f.label} column`}
+                  columns={columns}
                   value={colValue}
                   placeholder={f.optional ? "(none)" : f.default === APPCI_TOKEN ? "(same as identifier field)" : f.default}
-                  spellCheck={false}
-                  onChange={(e) => onChange({ ...value, columns: { ...value.columns, [fieldKey]: e.target.value } })}
+                  onChange={(v) => onChange({ ...value, columns: { ...value.columns, [fieldKey]: v } })}
                 />
                 <ErrorText msg={err} />
               </div>
@@ -282,7 +356,7 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
           );
         })}
       </div>
-      {showLabels && <CatalogOptions catalog={catalog} onChange={onCatalogChange} />}
+      {showLabels && <CatalogOptions catalog={catalog} onChange={onCatalogChange} columns={columns} />}
     </div>
   );
 };
