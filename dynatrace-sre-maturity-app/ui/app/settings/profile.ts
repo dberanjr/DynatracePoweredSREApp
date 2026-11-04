@@ -21,7 +21,7 @@ const FALLBACK_KEYS: Record<string, string[]> = {
 export function profileValue(rec: Record<string, unknown>, f: ProfileField): string {
   for (const k of [f.alias, ...(FALLBACK_KEYS[f.key] ?? [])]) {
     const v = rec[k];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+    if ((typeof v === "string" || typeof v === "number" || typeof v === "boolean") && String(v).trim() !== "") return String(v);
   }
   return "";
 }
