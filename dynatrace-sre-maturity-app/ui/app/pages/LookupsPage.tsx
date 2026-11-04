@@ -5,8 +5,7 @@ import { useDql } from "../hooks/useDql";
 import { functions } from "@dynatrace-sdk/app-utils";
 import { LOOKUP_TABLES, LookupTableConfig } from "./lookupTables";
 import { isDemoMode } from "../demo/demoMode";
-import { APP_CI_FIELD, LOOKUP_SETTINGS, APP_CI_LABEL } from "../settings/appSettings";
-import { defaultLookupSettings, type LookupKey } from "../settings/lookupDefs";
+import { APP_CI_FIELD, APP_CI_LABEL } from "../settings/appSettings";
 import { parseCsv, toCsv, unguardCell } from "./lookupCsv";
 import {
   INK,
@@ -272,23 +271,14 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
   const readDenied = missingTable && /permission|forbidden|not authorized|unauthori[sz]ed|\b40[13]\b|files:read/i.test(dql.error?.message ?? "");
   const banner = (ok: boolean): React.CSSProperties => ({ ...noticeStyle(ok ? "pass" : "fail"), marginBottom: 12 });
 
-  // Settings can point a table at the customer's own table / columns. This editor only manages the app's own
-  // table (fixed path and layout), so say so when the two differ rather than silently editing the wrong one.
-  const settingsKey: LookupKey | null = cfg.id === "cmdb" ? "cmdb" : cfg.id === "appci_map" ? "appciMap" : null;
-  const remapped = (() => {
-    if (!settingsKey) return false;
-    const def = defaultLookupSettings()[settingsKey];
-    const cur = LOOKUP_SETTINGS[settingsKey];
-    return cur.path !== def.path || Object.keys(def.columns).some((c) => cur.columns[c] !== def.columns[c]);
-  })();
+  const ro = !!cfg.readOnly;
 
   return (
     <div>
-      {remapped && (
-        <div style={banner(false)}>
-          Settings point this table at <code>{settingsKey ? LOOKUP_SETTINGS[settingsKey].path : ""}</code> with custom column names, but this
-          editor manages the app's own table at <code>{cfg.path}</code>. Changes saved here will not affect what the app reads. Edit your own
-          table where you maintain it, or reset the mapping in Settings.
+      {ro && (
+        <div style={{ ...noticeStyle("neutral"), marginBottom: 12 }}>
+          This is your own table from Settings, so it is shown read-only. Edit it where you maintain it; changes appear here and in the app on
+          the next load.
         </div>
       )}
       <Paragraph style={{ margin: "0 0 12px", fontSize: 13, color: INK.muted }}>
@@ -303,8 +293,8 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
       )}
       {missingTable && !readDenied && (
         <div style={{ ...noticeStyle("neutral"), marginBottom: 12 }}>
-          The lookup table could not be loaded ({dql.error?.message ?? "unknown error"}). If it doesn't exist yet, add rows or import a CSV
-          below and Save to create it.
+          The lookup table could not be loaded ({dql.error?.message ?? "unknown error"}).{" "}
+          {ro ? "Check the path in Settings." : "If it doesn't exist yet, add rows or import a CSV below and Save to create it."}
         </div>
       )}
 
@@ -316,9 +306,11 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
           onChange={(e) => setSearch(e.target.value)}
           style={{ ...inputStyle, width: 280 }}
         />
-        <button type="button" style={buttonStyle("primary")} onClick={() => openEditor(null)}>
-          + Add row
-        </button>
+        {!ro && (
+          <button type="button" style={buttonStyle("primary")} onClick={() => openEditor(null)}>
+            + Add row
+          </button>
+        )}
         <input
           ref={fileInput}
           type="file"
@@ -333,18 +325,22 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
         <button type="button" style={buttonStyle("plain", showLoading)} disabled={showLoading} onClick={exportCsv}>
           Export CSV
         </button>
-        <button type="button" style={buttonStyle("plain")} onClick={() => fileInput.current?.click()}>
-          Import CSV…
-        </button>
-        <select aria-label="Import mode" value={importMode} onChange={(e) => setImportMode(e.target.value as ImportMode)} style={{ ...inputStyle, width: "auto" }}>
-          <option value="merge">Add / update by {cfg.keyLabel}</option>
-          <option value="replace">Replace all rows</option>
-        </select>
+        {!ro && (
+          <>
+            <button type="button" style={buttonStyle("plain")} onClick={() => fileInput.current?.click()}>
+              Import CSV…
+            </button>
+            <select aria-label="Import mode" value={importMode} onChange={(e) => setImportMode(e.target.value as ImportMode)} style={{ ...inputStyle, width: "auto" }}>
+              <option value="merge">Add / update by {cfg.keyLabel}</option>
+              <option value="replace">Replace all rows</option>
+            </select>
+          </>
+        )}
         <span style={{ fontSize: 12, color: INK.muted }}>
           {visible.length === rows.length ? `${rows.length} rows` : `${visible.length} of ${rows.length}`}
         </span>
         <div style={{ flex: 1 }} />
-        {dirty && (
+        {dirty && !ro && (
           <>
             <span style={{ fontSize: 12, fontWeight: 600, color: INK.warn }}>Unsaved changes</span>
             <button type="button" style={buttonStyle("plain", saving)} disabled={saving} onClick={discard}>
@@ -383,7 +379,7 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
         </div>
       )}
 
-      {editor && (
+      {editor && !ro && (
         <div style={{ ...cardStyle, padding: 14, marginBottom: 14, background: "var(--panel, #F7F8FA)" }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>
             {editor.index === null ? "Add row" : `Edit ${cfg.keyColumns.map((k) => rows[editor.index as number][k]).join(" / ")}`}
@@ -421,7 +417,7 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, color: INK.text }}>
             <thead>
               <tr style={tableHeadRowStyle}>
-                <th style={tableHeadCellStyle} />
+                {!ro && <th style={tableHeadCellStyle} />}
                 {cfg.columns.map((c) => (
                   <th key={c.key} style={tableHeadCellStyle}>
                     {c.label}
@@ -432,21 +428,23 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
             <tbody>
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={cfg.columns.length + 1} style={{ padding: 16, textAlign: "center", color: INK.muted }}>
+                  <td colSpan={cfg.columns.length + (ro ? 0 : 1)} style={{ padding: 16, textAlign: "center", color: INK.muted }}>
                     {rows.length === 0 ? "No rows yet." : "No rows match the search."}
                   </td>
                 </tr>
               )}
               {visible.map(({ row, index }) => (
-                <tr key={rowKey(cfg, row)} style={{ borderTop: tableRowBorder }}>
-                  <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
-                    <button type="button" style={{ ...buttonStyle("plain"), padding: "2px 8px", marginRight: 6 }} onClick={() => openEditor(index)}>
-                      Edit
-                    </button>
-                    <button type="button" style={{ ...buttonStyle("plain"), padding: "2px 8px", color: INK.fail }} onClick={() => deleteRow(index)}>
-                      Delete
-                    </button>
-                  </td>
+                <tr key={`${rowKey(cfg, row)}|${index}`} style={{ borderTop: tableRowBorder }}>
+                  {!ro && (
+                    <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
+                      <button type="button" style={{ ...buttonStyle("plain"), padding: "2px 8px", marginRight: 6 }} onClick={() => openEditor(index)}>
+                        Edit
+                      </button>
+                      <button type="button" style={{ ...buttonStyle("plain"), padding: "2px 8px", color: INK.fail }} onClick={() => deleteRow(index)}>
+                        Delete
+                      </button>
+                    </td>
+                  )}
                   {cfg.columns.map((c) => (
                     <td key={c.key} style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
                       {row[c.key]}

@@ -1,4 +1,5 @@
-import { APP_CI_FIELD, APP_CI_LABEL } from "../settings/appSettings";
+import { APP_CI_FIELD, APP_CI_LABEL, LOOKUP_SETTINGS, CATALOG_SETTINGS } from "../settings/appSettings";
+import { APPCI_TOKEN, LOOKUP_DEFS, defaultLookupSettings, type LookupKey } from "../settings/lookupDefs";
 // Describes each lookup table the "Lookups" tab can maintain. Keep in sync with TABLES in
 // api/saveLookup.function.ts, which holds the authoritative validation and file layout.
 
@@ -23,9 +24,15 @@ export interface LookupTableConfig {
   /** Columns that together identify a row; must be unique. */
   keyColumns: string[];
   keyLabel: string;
+  /**
+   * Settings point this table at the customer's own table (other path or column names). It is shown, but not
+   * edited here: Save replaces the whole table with only the columns the app knows, which would drop the rest
+   * of a table the customer maintains elsewhere.
+   */
+  readOnly?: boolean;
 }
 
-export const LOOKUP_TABLES: LookupTableConfig[] = [
+const DEFAULT_TABLES: LookupTableConfig[] = [
   {
     id: "cmdb",
     tabLabel: "CMDB owner mapping",
@@ -89,3 +96,41 @@ export const LOOKUP_TABLES: LookupTableConfig[] = [
     keyLabel: "Application name",
   },
 ];
+
+const resolveCol = (c: string) => (c === APPCI_TOKEN ? APP_CI_FIELD : c);
+
+/** The app-managed table with Settings applied, or the table as the customer's own, read-only, when remapped. */
+function fromSettings(base: LookupTableConfig, key: LookupKey): LookupTableConfig {
+  const def = defaultLookupSettings()[key];
+  const cur = LOOKUP_SETTINGS[key];
+  const fields = LOOKUP_DEFS[key].fields as Record<string, { canonical: string; label: string }>;
+  const remapped =
+    cur.path !== def.path || Object.keys(def.columns).some((f) => cur.columns[f].trim() && cur.columns[f] !== def.columns[f]);
+  if (!remapped) return base;
+
+  const columns: LookupColumn[] = [];
+  for (const [f, d] of Object.entries(fields)) {
+    const col = resolveCol(cur.columns[f] ?? "").trim();
+    if (!col) continue; // not mapped
+    const label = f === "appId" ? APP_CI_LABEL : CATALOG_SETTINGS.labels[f] ?? d.label;
+    columns.push({ key: col, label, required: f === "appId" || f === "name" || f === "appName" });
+  }
+  if (key === "cmdb") for (const e of CATALOG_SETTINGS.extras) columns.push({ key: e.column, label: e.label });
+  const idCol = resolveCol(cur.columns.appId);
+  const keyCol = key === "appciMap" ? cur.columns.appName : idCol;
+  return {
+    ...base,
+    path: cur.path,
+    backupPath: `${cur.path}_backup`,
+    columns,
+    appciKey: idCol,
+    lowercase: [],
+    keyColumns: [keyCol],
+    readOnly: true,
+    description: `${base.description} This is the table named in Settings (${cur.path}); columns are shown under the names you mapped.`,
+  };
+}
+
+export const LOOKUP_TABLES: LookupTableConfig[] = DEFAULT_TABLES.map((t) =>
+  t.id === "cmdb" ? fromSettings(t, "cmdb") : t.id === "appci_map" ? fromSettings(t, "appciMap") : t
+);
