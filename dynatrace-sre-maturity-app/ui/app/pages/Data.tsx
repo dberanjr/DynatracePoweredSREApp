@@ -13,7 +13,7 @@ import {
 import { DQLEditor } from "@dynatrace/strato-components-preview/editors";
 import Colors from "@dynatrace/strato-design-tokens/colors";
 import { CriticalIcon } from "@dynatrace/strato-icons";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql } from "../hooks/useDql";
 
 export const Data = () => {
   const initialQuery =

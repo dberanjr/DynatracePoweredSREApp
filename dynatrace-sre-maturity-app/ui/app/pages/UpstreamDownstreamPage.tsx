@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql } from "../hooks/useDql";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";

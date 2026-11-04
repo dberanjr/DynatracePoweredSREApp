@@ -3,7 +3,7 @@ import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
-import { useAppFunction } from "@dynatrace-sdk/react-hooks";
+import { useAppFunction } from "../hooks/useDql";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { CHECK_DETAIL_CONFIGS, LEVEL_META, CheckDetailConfig } from "./checkDetailConfigs";
 import { HardcodedBadge } from "./HardcodedBadge";

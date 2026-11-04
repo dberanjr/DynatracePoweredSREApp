@@ -7,7 +7,7 @@
 import React, { useRef } from "react";
 import { Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql } from "../hooks/useDql";
 import { RefreshOverlay } from "./RefreshOverlay";
 
 import { APP_CI_FIELD, LOAD } from "../settings/appSettings";

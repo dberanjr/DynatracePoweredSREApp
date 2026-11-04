@@ -6,7 +6,7 @@ import { Heading } from "@dynatrace/strato-components/typography";
 import { MessageContainer } from "@dynatrace/strato-components/content";
 import { Select, SelectOption, SelectContent, SelectTrigger, SelectFilter } from "@dynatrace/strato-components/forms";
 import { TimeframeSelector } from "@dynatrace/strato-components/filters";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql } from "./hooks/useDql";
 import { Header } from "./components/Header";
 import { Home } from "./pages/Home";
 import { Data } from "./pages/Data";
@@ -27,6 +27,7 @@ import { CoveragePage } from "./pages/CoveragePage";
 import { ReadinessPage } from "./pages/ReadinessPage";
 import { appciFromEntityTags, APPCI_MAP_PATH } from "./queries/maturityQueries";
 import { ThemeToggleButton } from "./components/ThemeToggle";
+import { DemoModeToggleButton, DemoModeBanner } from "./components/DemoModeToggle";
 
 import { APP_CI_FIELD, LOAD } from "./settings/appSettings";
 export interface Timeframe {
@@ -124,6 +125,7 @@ export const App = () => {
             <Header />
           </div>
           <Flex alignItems="center" gap={8} style={{ flexShrink: 0, paddingRight: 8 }}>
+            <DemoModeToggleButton />
             <ThemeToggleButton />
             {SHOW_TIMEFRAME_SELECTOR && (
               <TimeframeSelector
@@ -161,6 +163,7 @@ export const App = () => {
         </Flex>
       </Page.Header>
       <Page.Main>
+        <DemoModeBanner />
         {mapMissing && location.pathname !== "/lookups" && (
           <MessageContainer variant="warning" style={{ margin: "8px 16px" }}>
             <MessageContainer.Title>AppCI map not found</MessageContainer.Title>

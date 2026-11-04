@@ -1,4 +1,4 @@
-import { useAppFunction } from "@dynatrace-sdk/react-hooks";
+import { useAppFunction } from "./useDql";
 
 export interface LiveCheckOverride {
   checkKey: string; // e.g. "4. Runbooks Linked" — must match a field the DQL query emits

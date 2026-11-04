@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql } from "../hooks/useDql";
 import { functions } from "@dynatrace-sdk/app-utils";
 import { LOOKUP_TABLES, LookupTableConfig } from "./lookupTables";
+import { isDemoMode } from "../demo/demoMode";
 import { APP_CI_FIELD, LOOKUP_SETTINGS } from "../settings/appSettings";
 import { defaultLookupSettings, type LookupKey } from "../settings/lookupDefs";
 import { parseCsv, toCsv, unguardCell } from "./lookupCsv";
@@ -241,6 +242,11 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
   };
 
   const save = async () => {
+    if (isDemoMode()) {
+      setConfirmSave(false);
+      setSaveResult({ ok: false, message: "Saving is disabled in demo mode. Turn Demo off to edit your tenant's lookup tables." });
+      return;
+    }
     setSaving(true);
     setSaveResult(null);
     try {

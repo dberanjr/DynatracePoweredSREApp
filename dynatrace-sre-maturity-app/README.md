@@ -47,3 +47,30 @@ Outputs help for the Dynatrace App Toolkit.
 You can find more information on how to use all the features of the new Dynatrace Platform in [Dynatrace Developer](https://dt-url.net/developers).
 
 To learn React, check out the [React documentation](https://reactjs.org/).
+
+## Settings (Settings tab)
+
+Customer-specific values are configured in the app, per browser, and applied after the page reloads:
+
+- **Organization** — company name (defaults to `COMPANY_NAME` from `.env`) and an optional landing-page logo.
+- **Application identifier** — the key your entity tags / records / app-managed lookups use for an application
+  (default `applicationci`) and its display label.
+- **Lookup tables** — the path of each lookup the app reads (CMDB, application-name map, critical services, SLOs,
+  SLO dashboards, guardians) and a mapping from your column names to the ones the app needs. **Detect columns**
+  reads a table and suggests names. The app renames your columns right after each `load`, so queries are otherwise
+  unchanged. Defaults match the original deployment, and the generated DQL is then identical to before.
+
+The Lookups tab edits the app's own tables (fixed paths/layout; the ID column is named after the identifier field).
+If Settings point a table elsewhere, the tab says so.
+
+**Workflows** are generated from the same query source. After changing settings, use **Export saved settings**, then
+`npm run generate:workflows -- --config sre-maturity-settings.json` and redeploy. Without `--config` the defaults are used.
+
+## Demo mode
+
+The header's **Demo** toggle (or `?demo=1` / `?demo=0`) replaces every Grail query and app function with built-in sample
+data (`ui/app/demo/`), so the app can be shown without a tenant. Saving lookups is blocked. The Readiness and Coverage
+tabs have no sample data yet.
+
+Not covered by settings: the "first 3 characters of the name" convention in the SLO/runbook/dashboard logic, and the
+`workflow.import.servicenow.appci` bizevent fallback.

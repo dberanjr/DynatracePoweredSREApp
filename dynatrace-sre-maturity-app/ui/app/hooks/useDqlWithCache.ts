@@ -1,5 +1,5 @@
 import { useRef, useMemo } from "react";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql } from "./useDql";
 
 /**
  * Wraps useDql to keep previous data visible while new data loads.

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql } from "./useDql";
 import { appciFromEntityTags } from "../queries/maturityQueries";
 
 import { APP_CI_FIELD, LOAD } from "../settings/appSettings";

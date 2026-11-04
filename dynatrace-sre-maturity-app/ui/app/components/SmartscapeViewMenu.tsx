@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Menu } from "@dynatrace/strato-components/navigation";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql } from "../hooks/useDql";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 
 // The 5 Smartscape topology views reachable from a service node's own "Mode"

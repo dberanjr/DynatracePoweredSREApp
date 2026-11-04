@@ -2,7 +2,7 @@ import React, { useMemo, useEffect } from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
-import { useDql, useAppFunction } from "@dynatrace-sdk/react-hooks";
+import { useDql, useAppFunction } from "../hooks/useDql";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { COMPANY_NAME } from "../settings/appSettings";
 import { BULK_L1_QUERY, BULK_L2_QUERY, BULK_L3_QUERY, BULK_L4_QUERY, BULK_L5_QUERY } from "../queries/maturityQueries";

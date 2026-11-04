@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql } from "../hooks/useDql";
+import { useDemoMode } from "../demo/demoMode";
 import {
   APP_CI_FIELD,
   APP_CI_LABEL,
@@ -87,7 +88,7 @@ interface TableEditorProps {
 
 const TableEditor = ({ tableKey, value, onChange }: TableEditorProps) => {
   const def: LookupTableDef = LOOKUP_DEFS[tableKey];
-  const demo = false;
+  const demo = useDemoMode();
   const [detect, setDetect] = useState(false);
   const pathError = validateLookupPath(value.path);
   const { columns, error, isLoading } = useDetectedColumns(value.path.trim(), detect && !pathError && !demo);
@@ -307,13 +308,28 @@ export const SettingsPage = () => {
         >
           Restore defaults in form
         </button>
+        <button
+          style={buttonStyle(false)}
+          title="Download these settings as JSON for: npm run generate:workflows -- --config settings.json"
+          onClick={() => {
+            const blob = new Blob([JSON.stringify({ appCiField: APP_CI_FIELD, lookups: LOOKUP_SETTINGS }, null, 2)], { type: "application/json" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "sre-maturity-settings.json";
+            a.click();
+            URL.revokeObjectURL(a.href);
+          }}
+        >
+          Export saved settings
+        </button>
         <button style={buttonStyle(false)} onClick={onReset}>
           Reset &amp; reload
         </button>
       </div>
       <p style={{ fontSize: 12, marginTop: 16, color: muted }}>
         Queries are built when the app loads, so saving reloads the page. Scheduled workflows deployed separately are not
-        affected by these settings — they must write the tables and columns you map here.
+        affected by these settings: export the saved settings and run <code>npm run generate:workflows -- --config sre-maturity-settings.json</code>
+        to regenerate them, then redeploy.
       </p>
     </div>
   );

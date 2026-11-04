@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
-import { useDql } from "@dynatrace-sdk/react-hooks";
+import { useDql } from "../hooks/useDql";
 import { appciFromEntityTags, unmappedApplicationsQuery, APPCI_MAP_ROWS_QUERY, appciFromWorkflowTitle } from "../queries/maturityQueries";
 import {
   INK,
