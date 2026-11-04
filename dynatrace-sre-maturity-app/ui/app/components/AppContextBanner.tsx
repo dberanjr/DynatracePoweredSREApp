@@ -6,6 +6,7 @@ import { useDql } from "../hooks/useDql";
 import { RefreshOverlay } from "./RefreshOverlay";
 
 import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
+import { PROFILE_FIELDS, PROFILE_SELECT, profileValue, tierChipColor, tierInfo } from "../settings/profile";
 interface Props {
   appCI: string;
 }
@@ -66,14 +67,7 @@ function Chip({ label, value, valueColor }: { label: string; value: string; valu
 const PROFILE_LOOKUP = (appCI: string) =>
   `${LOAD.cmdb}
 | filter lower(${APP_CI_FIELD}) == lower("${appCI}")
-| fields
-    name,
-    ${APP_CI_FIELD},
-    business_criticality,
-    operational_status,
-    \`managed_by.u_managing_director\`,
-    owned_by,
-    support_group`;
+| fields ${PROFILE_SELECT}`;
 
 const PROFILE_FALLBACK = (appCI: string) =>
   `fetch bizevents, from:now()-48h
@@ -121,11 +115,6 @@ export const AppContextBanner = ({ appCI }: Props) => {
   const r = (currentRecord || cacheRef.current) as Record<string, unknown>;
   const name = String(r.name || r.ciname || "");
   const appci = String(r[APP_CI_FIELD] || appCI);
-  const criticality = String(r.business_criticality || r.tier || "\u2014");
-  const status = String(r.operational_status || r.install_status || r.u_operational_status || "In Production");
-  const director = String(r["managed_by.u_managing_director"] || r.app_owner_name || "\u2014");
-  const owner = String(r.owned_by || r.app_owner_name || "\u2014");
-  const supportGroup = String(r.support_group || r.assignment_group || r.u_support_group || "\u2014");
 
   return (
     <RefreshOverlay isRefreshing={isRefreshing}>
@@ -162,12 +151,15 @@ export const AppContextBanner = ({ appCI }: Props) => {
         </div>
       </div>
       {/* Bottom row: Details */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
-        <Chip label="Criticality" value={criticality} valueColor={getCriticalityColor(criticality)} />
-        <Chip label="Status" value={status} valueColor={getStatusColor(status)} />
-        <Chip label="Managing Director" value={director} />
-        <Chip label="Owner" value={owner} />
-        <Chip label="Support Group" value={supportGroup} />
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(PROFILE_FIELDS.length, 1)}, 1fr)`, gap: 8 }}>
+        {PROFILE_FIELDS.map((f) => {
+          const raw = profileValue(r, f);
+          if (f.key === "tier") {
+            return <Chip key={f.key} label={f.bannerLabel} value={raw ? tierInfo(raw).label : "\u2014"} valueColor={tierChipColor(raw, "light") ?? getCriticalityColor(raw)} />;
+          }
+          if (f.key === "status") return <Chip key={f.key} label={f.bannerLabel} value={raw || "\u2014"} valueColor={getStatusColor(raw)} />;
+          return <Chip key={f.key} label={f.bannerLabel} value={raw || "\u2014"} />;
+        })}
       </div>
       {error && (
         <div style={{ fontSize: 10, color: "rgba(0,0,0,0.3)", marginTop: 6, paddingLeft: 14 }}>

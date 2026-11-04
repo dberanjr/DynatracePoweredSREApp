@@ -20,6 +20,8 @@ export interface LookupFieldDef {
   hint: string;
   /** Optional columns may be left unmapped ("(none)") — the app then shows a blank value. */
   optional?: boolean;
+  /** Shown as a chip in the application profile banners; the label can be renamed in Settings. */
+  display?: { label: string; bannerLabel: string };
 }
 
 export interface LookupTableDef {
@@ -38,11 +40,11 @@ export const LOOKUP_DEFS = {
     fields: {
       appId: { canonical: APPCI_TOKEN, default: APPCI_TOKEN, label: "Application ID", hint: "Unique application identifier" },
       name: { canonical: "name", default: "name", label: "Application name", hint: "Human-readable name" },
-      tier: { canonical: "business_criticality", default: "business_criticality", label: "Business criticality / tier", hint: "e.g. Tier 1", optional: true },
-      status: { canonical: "operational_status", default: "operational_status", label: "Operational status", hint: 'Rows with "Retired" are hidden from the selector', optional: true },
-      director: { canonical: "managed_by.u_managing_director", default: "managed_by.u_managing_director", label: "Managing director", hint: "Executive owner", optional: true },
-      owner: { canonical: "owned_by", default: "owned_by", label: "Owner", hint: "Application owner", optional: true },
-      supportGroup: { canonical: "support_group", default: "support_group", label: "Support group", hint: "Team that supports the app", optional: true },
+      tier: { canonical: "business_criticality", default: "business_criticality", label: "Business criticality / tier", hint: "Drives the leaderboard tier groups (see Tier values)", optional: true, display: { label: "Tier", bannerLabel: "Criticality" } },
+      status: { canonical: "operational_status", default: "operational_status", label: "Operational status", hint: 'Leave blank if you have none. Rows with "Retired" are hidden from the selector', optional: true, display: { label: "Status", bannerLabel: "Status" } },
+      director: { canonical: "managed_by.u_managing_director", default: "managed_by.u_managing_director", label: "Managing director", hint: "Executive owner", optional: true, display: { label: "MD", bannerLabel: "Managing Director" } },
+      owner: { canonical: "owned_by", default: "owned_by", label: "Owner", hint: "Application owner", optional: true, display: { label: "Owner", bannerLabel: "Owner" } },
+      supportGroup: { canonical: "support_group", default: "support_group", label: "Support group", hint: "Team that supports the app", optional: true, display: { label: "Support", bannerLabel: "Support Group" } },
     },
   },
   appciMap: {
@@ -94,6 +96,63 @@ export const LOOKUP_DEFS = {
 
 export type LookupKey = keyof typeof LOOKUP_DEFS;
 export type LookupFieldKey<K extends LookupKey> = keyof (typeof LOOKUP_DEFS)[K]["fields"] & string;
+
+/** Maps a raw value of the CMDB tier column to how the app shows and treats it. */
+export interface TierRule {
+  /** Raw value in the tier column (matched case-insensitively), e.g. "yes" or "1 - most critical". */
+  value: string;
+  /** Name shown for the tier in the leaderboard and banners. Blank = show the raw value. */
+  label: string;
+  /** Counts toward the leaderboard's critical-tier enterprise score. */
+  critical: boolean;
+}
+
+/** Original deployment's tier values; with these, the app behaves exactly as before. */
+export const DEFAULT_TIERS: TierRule[] = [
+  { value: "1 - most critical", label: "", critical: true },
+  { value: "2 - somewhat critical", label: "", critical: true },
+  { value: "3 - less critical", label: "", critical: false },
+  { value: "4 - not critical", label: "", critical: false },
+];
+
+/** Extra CMDB columns shown as chips after the built-in ones. */
+export interface ExtraField {
+  label: string;
+  column: string;
+}
+
+export interface CatalogSettings {
+  /** Renamed chip labels for built-in display fields, by field key (tier, status, director, owner, supportGroup). */
+  labels: Record<string, string>;
+  extras: ExtraField[];
+  tiers: TierRule[];
+}
+
+export const MAX_EXTRA_FIELDS = 6;
+
+export const defaultCatalogSettings = (): CatalogSettings => ({ labels: {}, extras: [], tiers: DEFAULT_TIERS.map((t) => ({ ...t })) });
+
+export function normalizeCatalogSettings(stored: unknown): CatalogSettings {
+  const out = defaultCatalogSettings();
+  if (!stored || typeof stored !== "object") return out;
+  const s = stored as { labels?: unknown; extras?: unknown; tiers?: unknown };
+  if (s.labels && typeof s.labels === "object") {
+    for (const [k, v] of Object.entries(s.labels as Record<string, unknown>)) if (typeof v === "string" && v.trim()) out.labels[k] = v.trim();
+  }
+  if (Array.isArray(s.extras)) {
+    out.extras = s.extras
+      .filter((e): e is ExtraField => !!e && typeof e.label === "string" && typeof e.column === "string" && !!e.label.trim() && !validateColumn(e.column, false))
+      .slice(0, MAX_EXTRA_FIELDS)
+      .map((e) => ({ label: e.label.trim(), column: e.column.trim() }));
+  }
+  if (Array.isArray(s.tiers)) {
+    const tiers = s.tiers
+      .filter((t): t is TierRule => !!t && typeof t.value === "string" && !!t.value.trim())
+      .map((t) => ({ value: t.value.trim(), label: typeof t.label === "string" ? t.label.trim() : "", critical: !!t.critical }));
+    if (tiers.length) out.tiers = tiers;
+  }
+  return out;
+}
 
 export interface LookupTableSettings {
   path: string;
@@ -165,14 +224,43 @@ export function dqlColumn(name: string): string {
  * DQL that loads a lookup table and renames the customer's columns to the names the
  * app's queries use. Columns that already match are not touched.
  */
-export function buildLoad(key: LookupKey, s: LookupTableSettings, appciField: string): string {
+export function buildLoad(key: LookupKey, s: LookupTableSettings, appciField: string, extras: ExtraField[] = []): string {
   const fields: Record<string, LookupFieldDef> = LOOKUP_DEFS[key].fields;
   const renames = Object.entries(fields)
     .map(([f, d]) => [resolveColumn(d.canonical, appciField), resolveColumn(s.columns[f] ?? d.default, appciField)] as const)
     .filter(([canonical, mapped]) => mapped !== canonical)
     .map(([canonical, mapped]) => `${dqlColumn(canonical)} = ${dqlColumn(mapped)}`);
+  // Extra display columns (CMDB only) are exposed as extra_0, extra_1, ...
+  if (key === "cmdb") extras.forEach((e, i) => renames.push(`${extraAlias(i)} = ${dqlColumn(e.column)}`));
   const head = `load "${s.path}"`;
   return renames.length ? `${head}\n| fieldsAdd ${renames.join(", ")}` : head;
+}
+
+export const extraAlias = (i: number): string => `extra_${i}`;
+
+/** A chip in the application profile banners. */
+export interface ProfileField {
+  key: string;
+  /** Short label (identity bar). */
+  label: string;
+  /** Long label (context banner). */
+  bannerLabel: string;
+  /** Column name in the loaded CMDB table (the app's canonical name, or extra_N). */
+  alias: string;
+}
+
+/** Banner chips for the columns that are mapped, in display order, with any renamed labels applied. */
+export function buildProfileFields(lookups: LookupSettings, catalog: CatalogSettings): ProfileField[] {
+  const out: ProfileField[] = [];
+  const fields: Record<string, LookupFieldDef> = LOOKUP_DEFS.cmdb.fields;
+  for (const [key, d] of Object.entries(fields)) {
+    if (!d.display) continue;
+    if (!(lookups.cmdb.columns[key] ?? d.default).trim()) continue; // not mapped: no chip
+    const renamed = catalog.labels[key];
+    out.push({ key, label: renamed || d.display.label, bannerLabel: renamed || d.display.bannerLabel, alias: d.canonical });
+  }
+  catalog.extras.forEach((e, i) => out.push({ key: extraAlias(i), label: e.label, bannerLabel: e.label, alias: extraAlias(i) }));
+  return out;
 }
 
 /** What the query layer needs, computed once from the settings. */
@@ -182,16 +270,29 @@ export interface SreConfig {
   /** `load "<path>"` plus renames of the customer's columns to the app's names, per lookup table. */
   loads: Record<LookupKey, string>;
   paths: Record<LookupKey, string>;
+  /** Chips for the application profile banners. */
+  profileFields: ProfileField[];
+  /** Tier value rules for the leaderboard. */
+  tiers: TierRule[];
+  /** True when the tier rules are the original deployment's, so original wording is kept. */
+  defaultTiers: boolean;
 }
 
-export function resolveConfig(appciField: string, lookups: LookupSettings): SreConfig {
+export function resolveConfig(appciField: string, lookups: LookupSettings, catalog: CatalogSettings = defaultCatalogSettings()): SreConfig {
   const loads = {} as Record<LookupKey, string>;
   const paths = {} as Record<LookupKey, string>;
   for (const k of LOOKUP_KEYS) {
-    loads[k] = buildLoad(k, lookups[k], appciField);
+    loads[k] = buildLoad(k, lookups[k], appciField, catalog.extras);
     paths[k] = lookups[k].path;
   }
-  return { appciField, loads, paths };
+  return {
+    appciField,
+    loads,
+    paths,
+    profileFields: buildProfileFields(lookups, catalog),
+    tiers: catalog.tiers,
+    defaultTiers: JSON.stringify(catalog.tiers) === JSON.stringify(DEFAULT_TIERS),
+  };
 }
 
 export const DEFAULT_APPCI_FIELD = "applicationci";

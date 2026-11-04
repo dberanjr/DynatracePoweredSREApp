@@ -10,6 +10,7 @@ import { BULK_L1_QUERY, BULK_L2_QUERY, BULK_L3_QUERY, BULK_L4_QUERY, BULK_L5_QUE
 
 
 import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
+import { CRITICAL_TIERS_NOTE, tierBarColor, tierInfo } from "../settings/profile";
 // ── CMDB info ──
 // Primary: CMDB lookup table
 const CMDB_LOOKUP_QUERY = `${LOAD.cmdb}
@@ -205,27 +206,22 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
     });
 
     // Enterprise maturity by tier
-    const tierAgg: Record<string, { sum: number; count: number }> = {};
+    // Tier values are interpreted through Settings -> Tier values (label, order, which count as critical).
+    const tierAgg: Record<string, { sum: number; count: number; rank: number; raw: string }> = {};
     allApps.forEach((a) => {
-      const t = a.tier || "Unknown";
-      if (!tierAgg[t]) tierAgg[t] = { sum: 0, count: 0 };
+      if (!a.tier) return;
+      const info = tierInfo(a.tier);
+      const t = info.label;
+      if (!tierAgg[t]) tierAgg[t] = { sum: 0, count: 0, rank: info.rank < 0 ? 99 : info.rank, raw: a.tier };
       tierAgg[t].sum += a.pct;
       tierAgg[t].count += 1;
     });
-    const tierColors: Record<string, string> = {
-      "1 - most critical": "#C93FDB", "2 - somewhat critical": "#8D1CDC",
-      "3 - less critical": "#5E28E5", "4 - not critical": "#49C2B3",
-    };
     const tierMaturity = Object.entries(tierAgg)
-      .filter(([t]) => t !== "Unknown" && t !== "")
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([tier, d]) => ({ tier, count: d.count, pct: Math.round(d.sum / d.count), color: tierColors[tier.toLowerCase()] || "#6F747F" }));
+      .sort(([a, x], [b, y]) => x.rank - y.rank || a.localeCompare(b))
+      .map(([tier, d]) => ({ tier, count: d.count, pct: Math.round(d.sum / d.count), color: tierBarColor(d.raw) }));
 
-    // Enterprise maturity level based on Tier 1 & 2 apps only
-    const tier12Apps = allApps.filter((a) => {
-      const t = a.tier.toLowerCase();
-      return t.includes("1") || t.includes("2") || t.includes("most critical") || t.includes("somewhat critical");
-    });
+    // Enterprise maturity level based on the critical tiers only
+    const tier12Apps = allApps.filter((a) => a.tier && tierInfo(a.tier).critical);
     const enterprisePct = tier12Apps.length > 0 ? Math.round(tier12Apps.reduce((s, a) => s + a.pct, 0) / tier12Apps.length) : 0;
 
     const top25 = allApps.sort((a, b) => b.pct - a.pct || b.total - a.total).slice(0, 25);
@@ -273,7 +269,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
               }}>
                 {enterprisePct >= 80 ? "Autonomous" : enterprisePct >= 65 ? "Proactive" : enterprisePct >= 50 ? "AI-Assisted" : enterprisePct >= 30 ? "Measured" : "Observability"}
               </span>
-              <span style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", marginTop: 2 }}>(Tier 1-2 apps only)</span>
+              <span style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", marginTop: 2 }}>{CRITICAL_TIERS_NOTE}</span>
             </Flex>
 
             {/* Divider */}
@@ -360,7 +356,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
                   </div>
                   <div style={{ fontSize: 10, color: "var(--sre-text-secondary)", lineHeight: 1.4, marginTop: 1 }}>
                     <span style={{ fontWeight: 700 }}>{app.appci.toUpperCase()}</span>
-                    {app.tier ? <span> &middot; {app.tier}</span> : ""}
+                    {app.tier ? <span> &middot; {tierInfo(app.tier).label}</span> : ""}
                     {app.owner ? <span> &middot; {app.owner}</span> : ""}
                   </div>
                 </div>

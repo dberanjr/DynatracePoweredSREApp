@@ -60,6 +60,11 @@ Customer-specific values are configured in the app, per browser, and applied aft
   reads a table and suggests names. The app renames your columns right after each `load`, so queries are otherwise
   unchanged. Defaults match the original deployment, and the generated DQL is then identical to before.
 
+**CMDB display.** On the Application catalog card you can rename how each field is labelled in the app, hide a field by
+leaving its column blank (for example Operational status if you don't track it), add up to six extra columns to the
+profile banner, and define **Tier values** (what each value in your tier column means and which count as critical for the
+leaderboard's enterprise score; e.g. `yes` = Top tier / critical, `no` = Standard).
+
 The Lookups tab edits the app's own tables (fixed paths/layout; the ID column is named after the identifier field).
 If Settings point a table elsewhere, the tab says so.
 

@@ -20,8 +20,11 @@ import {
   CONFIG_GLOBAL_KEY,
   DEFAULT_APPCI_FIELD,
   defaultLookupSettings,
+  normalizeCatalogSettings,
   normalizeLookupSettings,
   resolveConfig,
+  defaultCatalogSettings,
+  type CatalogSettings,
   type LookupSettings,
   type SreConfig,
 } from "./lookupDefs";
@@ -39,6 +42,8 @@ export interface AppSettings {
   companyLogoUrl: string;
   /** Lookup table paths and column mappings. */
   lookups: LookupSettings;
+  /** CMDB display: renamed labels, extra fields, tier values. */
+  catalog: CatalogSettings;
 }
 
 /** Letters, digits, underscore and dots; must not start with a digit. Safe to use unquoted in DQL. */
@@ -77,7 +82,7 @@ export function loadSettings(): AppSettings {
   const companyName = typeof s.companyName === "string" && s.companyName.trim() ? s.companyName.trim() : DEFAULT_COMPANY_NAME;
   const companyLogoUrl =
     typeof s.companyLogoUrl === "string" && !validateCompanyLogoUrl(s.companyLogoUrl) ? s.companyLogoUrl.trim() : DEFAULT_COMPANY_LOGO_URL;
-  return { appCiField: field, appCiLabel: label, companyName, companyLogoUrl, lookups: normalizeLookupSettings(s.lookups) };
+  return { appCiField: field, appCiLabel: label, companyName, companyLogoUrl, lookups: normalizeLookupSettings(s.lookups), catalog: normalizeCatalogSettings(s.catalog) };
 }
 
 export function saveSettings(next: AppSettings): void {
@@ -89,6 +94,7 @@ export function saveSettings(next: AppSettings): void {
       companyName: next.companyName.trim() || DEFAULT_COMPANY_NAME,
       companyLogoUrl: next.companyLogoUrl.trim(),
       lookups: next.lookups,
+      catalog: next.catalog,
     })
   );
 }
@@ -107,12 +113,14 @@ export const APP_CI_LABEL: string = loaded.appCiLabel;
 export const COMPANY_NAME: string = loaded.companyName;
 /** Landing-page background logo URL; empty string means none. */
 export const COMPANY_LOGO_URL: string = loaded.companyLogoUrl;
+/** Effective CMDB display options (labels, extra fields, tier values). */
+export const CATALOG_SETTINGS: CatalogSettings = loaded.catalog;
 /** Effective lookup table paths and column mappings. */
 export const LOOKUP_SETTINGS: LookupSettings = loaded.lookups;
 
-export { defaultLookupSettings };
+export { defaultLookupSettings, defaultCatalogSettings };
 /** Resolved config for the query layer. */
-export const SRE_CONFIG: SreConfig = resolveConfig(loaded.appCiField, loaded.lookups);
+export const SRE_CONFIG: SreConfig = resolveConfig(loaded.appCiField, loaded.lookups, loaded.catalog);
 
 // Publish for queries/maturityQueries.ts, which has no imports (the workflow generator loads it directly)
 // and reads this when it is first evaluated. ui/main.tsx imports this module before the app so it is set in time.

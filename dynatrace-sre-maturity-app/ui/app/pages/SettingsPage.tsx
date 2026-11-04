@@ -11,6 +11,7 @@ import {
   DEFAULT_COMPANY_NAME,
   DEFAULT_APP_CI_LABEL,
   LOOKUP_SETTINGS,
+  CATALOG_SETTINGS,
   defaultLookupSettings,
   resetSettings,
   saveSettings,
@@ -22,6 +23,11 @@ import {
   LOOKUP_DEFS,
   LOOKUP_KEYS,
   validateColumn,
+  DEFAULT_TIERS,
+  MAX_EXTRA_FIELDS,
+  defaultCatalogSettings,
+  type CatalogSettings,
+  type TierRule,
   validateLookupPath,
   type LookupKey,
   type LookupSettings,
@@ -84,9 +90,107 @@ interface TableEditorProps {
   tableKey: LookupKey;
   value: LookupSettings[LookupKey];
   onChange: (next: LookupSettings[LookupKey]) => void;
+  /** CMDB only: how its fields are labelled and shown. */
+  catalog?: CatalogSettings;
+  onCatalogChange?: (next: CatalogSettings) => void;
 }
 
-const TableEditor = ({ tableKey, value, onChange }: TableEditorProps) => {
+const smallButton: React.CSSProperties = { ...buttonStyle(false), padding: "4px 10px", fontSize: 12 };
+
+/** CMDB display options: extra fields and tier values. */
+const CatalogOptions = ({ catalog, onChange }: { catalog: CatalogSettings; onChange: (next: CatalogSettings) => void }) => {
+  const setTier = (i: number, patch: Partial<TierRule>) =>
+    onChange({ ...catalog, tiers: catalog.tiers.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
+  return (
+    <div style={{ marginTop: 18, borderTop: "1px solid var(--sre-border, rgba(128,128,128,0.25))", paddingTop: 14 }}>
+      <div style={{ fontWeight: 700, fontSize: 13 }}>Extra fields</div>
+      <div style={{ fontSize: 12, color: muted, marginBottom: 8 }}>
+        Additional columns to show in the application profile banner (up to {MAX_EXTRA_FIELDS}).
+      </div>
+      {catalog.extras.map((e, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "start" }}>
+          <input
+            aria-label={`Extra field ${i + 1} label`}
+            style={{ ...inputStyle, fontFamily: "inherit" }}
+            placeholder="Label shown in the app"
+            value={e.label}
+            onChange={(ev) => onChange({ ...catalog, extras: catalog.extras.map((x, j) => (j === i ? { ...x, label: ev.target.value } : x)) })}
+          />
+          <div style={{ width: "100%" }}>
+            <input
+              aria-label={`Extra field ${i + 1} column`}
+              style={inputStyle}
+              placeholder="Your column"
+              list="cols-cmdb"
+              value={e.column}
+              spellCheck={false}
+              onChange={(ev) => onChange({ ...catalog, extras: catalog.extras.map((x, j) => (j === i ? { ...x, column: ev.target.value } : x)) })}
+            />
+            <ErrorText msg={validateColumn(e.column, false)} />
+          </div>
+          <button style={smallButton} onClick={() => onChange({ ...catalog, extras: catalog.extras.filter((_, j) => j !== i) })}>
+            Remove
+          </button>
+        </div>
+      ))}
+      <button
+        style={{ ...smallButton, opacity: catalog.extras.length >= MAX_EXTRA_FIELDS ? 0.5 : 1 }}
+        disabled={catalog.extras.length >= MAX_EXTRA_FIELDS}
+        onClick={() => onChange({ ...catalog, extras: [...catalog.extras, { label: "", column: "" }] })}
+      >
+        + Add field
+      </button>
+
+      <div style={{ fontWeight: 700, fontSize: 13, marginTop: 18 }}>Tier values</div>
+      <div style={{ fontSize: 12, color: muted, marginBottom: 8 }}>
+        What the values in your tier column mean, most critical first. The leaderboard groups applications by tier and its enterprise score
+        uses the ones marked critical. Matching ignores case.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) minmax(120px,1fr) 70px 70px", gap: "6px 10px", alignItems: "center" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>Value in your data</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>Shown as</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>Critical</div>
+        <div />
+        {catalog.tiers.map((t, i) => (
+          <React.Fragment key={i}>
+            <input aria-label={`Tier ${i + 1} value`} style={inputStyle} value={t.value} spellCheck={false} onChange={(e) => setTier(i, { value: e.target.value })} />
+            <input
+              aria-label={`Tier ${i + 1} label`}
+              style={{ ...inputStyle, fontFamily: "inherit" }}
+              placeholder="(same as value)"
+              value={t.label}
+              onChange={(e) => setTier(i, { label: e.target.value })}
+            />
+            <input aria-label={`Tier ${i + 1} critical`} type="checkbox" checked={t.critical} onChange={(e) => setTier(i, { critical: e.target.checked })} />
+            <button style={smallButton} onClick={() => onChange({ ...catalog, tiers: catalog.tiers.filter((_, j) => j !== i) })}>
+              Remove
+            </button>
+          </React.Fragment>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button style={smallButton} onClick={() => onChange({ ...catalog, tiers: [...catalog.tiers, { value: "", label: "", critical: false }] })}>
+          + Add tier value
+        </button>
+        <button
+          style={smallButton}
+          title='For a yes/no "top tier" column'
+          onClick={() =>
+            onChange({ ...catalog, tiers: [{ value: "yes", label: "Top tier", critical: true }, { value: "no", label: "Standard", critical: false }] })
+          }
+        >
+          Use yes / no
+        </button>
+        <button style={smallButton} onClick={() => onChange({ ...catalog, tiers: DEFAULT_TIERS.map((t) => ({ ...t })) })}>
+          Restore defaults
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: TableEditorProps) => {
+  const showLabels = tableKey === "cmdb" && !!catalog && !!onCatalogChange;
   const def: LookupTableDef = LOOKUP_DEFS[tableKey];
   const demo = useDemoMode();
   const [detect, setDetect] = useState(false);
@@ -133,9 +237,10 @@ const TableEditor = ({ tableKey, value, onChange }: TableEditorProps) => {
         ))}
       </datalist>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(160px, 1fr) minmax(200px, 1.4fr)", gap: "10px 16px", marginTop: 14, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: showLabels ? "minmax(160px, 1fr) minmax(200px, 1.4fr) minmax(120px, 0.8fr)" : "minmax(160px, 1fr) minmax(200px, 1.4fr)", gap: "10px 16px", marginTop: 14, alignItems: "start" }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>App needs</div>
         <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>Your column</div>
+        {showLabels && <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>Shown in app as</div>}
         {Object.entries(def.fields).map(([fieldKey, f]) => {
           const colValue = value.columns[fieldKey] ?? "";
           const err = validateColumn(colValue, f.optional);
@@ -160,10 +265,24 @@ const TableEditor = ({ tableKey, value, onChange }: TableEditorProps) => {
                 />
                 <ErrorText msg={err} />
               </div>
+              {showLabels && (
+                f.display ? (
+                  <input
+                    aria-label={`${f.label} display label`}
+                    style={{ ...inputStyle, fontFamily: "inherit" }}
+                    placeholder={f.display.label}
+                    value={catalog.labels[fieldKey] ?? ""}
+                    onChange={(e) => onCatalogChange({ ...catalog, labels: { ...catalog.labels, [fieldKey]: e.target.value } })}
+                  />
+                ) : (
+                  <div />
+                )
+              )}
             </React.Fragment>
           );
         })}
       </div>
+      {showLabels && <CatalogOptions catalog={catalog} onChange={onCatalogChange} />}
     </div>
   );
 };
@@ -174,6 +293,7 @@ export const SettingsPage = () => {
   const [companyName, setCompanyName] = useState(COMPANY_NAME);
   const [logoUrl, setLogoUrl] = useState(COMPANY_LOGO_URL);
   const [lookups, setLookups] = useState<LookupSettings>(() => structuredClone(LOOKUP_SETTINGS));
+  const [catalog, setCatalog] = useState<CatalogSettings>(() => structuredClone(CATALOG_SETTINGS));
 
   const fieldError = validateAppCiField(field);
   const lookupsValid = LOOKUP_KEYS.every((k) => {
@@ -184,13 +304,16 @@ export const SettingsPage = () => {
     );
   });
   const logoError = validateCompanyLogoUrl(logoUrl);
-  const valid = !fieldError && !logoError && lookupsValid;
+  const catalogValid =
+    catalog.extras.every((e) => e.label.trim() && !validateColumn(e.column, false)) && catalog.tiers.every((t) => t.value.trim());
+  const valid = !fieldError && !logoError && lookupsValid && catalogValid;
   const dirty =
     field.trim() !== APP_CI_FIELD ||
     (companyName.trim() || DEFAULT_COMPANY_NAME) !== COMPANY_NAME ||
     logoUrl.trim() !== COMPANY_LOGO_URL ||
     (label.trim() || DEFAULT_APP_CI_LABEL) !== APP_CI_LABEL ||
-    JSON.stringify(lookups) !== JSON.stringify(LOOKUP_SETTINGS);
+    JSON.stringify(lookups) !== JSON.stringify(LOOKUP_SETTINGS) ||
+    JSON.stringify(catalog) !== JSON.stringify(CATALOG_SETTINGS);
 
   const onSave = () => {
     if (!valid) return;
@@ -199,7 +322,7 @@ export const SettingsPage = () => {
       clean[k].path = clean[k].path.trim();
       for (const f of Object.keys(clean[k].columns)) clean[k].columns[f] = clean[k].columns[f].trim();
     }
-    saveSettings({ appCiField: field, appCiLabel: label, companyName, companyLogoUrl: logoUrl, lookups: clean });
+    saveSettings({ appCiField: field, appCiLabel: label, companyName, companyLogoUrl: logoUrl, lookups: clean, catalog });
     window.location.reload();
   };
 
@@ -289,7 +412,14 @@ export const SettingsPage = () => {
         required; optional ones can be left blank. Use <b>Detect columns</b> to read the table and get suggestions.
       </p>
       {LOOKUP_KEYS.map((k) => (
-        <TableEditor key={k} tableKey={k} value={lookups[k]} onChange={(next) => setLookups((prev) => ({ ...prev, [k]: next }))} />
+        <TableEditor
+          key={k}
+          tableKey={k}
+          value={lookups[k]}
+          onChange={(next) => setLookups((prev) => ({ ...prev, [k]: next }))}
+          catalog={catalog}
+          onCatalogChange={setCatalog}
+        />
       ))}
 
       <div style={{ display: "flex", gap: 8 }}>
@@ -304,6 +434,7 @@ export const SettingsPage = () => {
             setCompanyName(DEFAULT_COMPANY_NAME);
             setLogoUrl(DEFAULT_COMPANY_LOGO_URL);
             setLookups(defaultLookupSettings());
+            setCatalog(defaultCatalogSettings());
           }}
         >
           Restore defaults in form
@@ -312,7 +443,7 @@ export const SettingsPage = () => {
           style={buttonStyle(false)}
           title="Download these settings as JSON for: npm run generate:workflows -- --config settings.json"
           onClick={() => {
-            const blob = new Blob([JSON.stringify({ appCiField: APP_CI_FIELD, lookups: LOOKUP_SETTINGS }, null, 2)], { type: "application/json" });
+            const blob = new Blob([JSON.stringify({ appCiField: APP_CI_FIELD, lookups: LOOKUP_SETTINGS, catalog: CATALOG_SETTINGS }, null, 2)], { type: "application/json" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
             a.download = "sre-maturity-settings.json";

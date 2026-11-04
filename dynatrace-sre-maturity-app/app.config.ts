@@ -13,7 +13,7 @@ if (existsSync(envFile)) {
   }
 }
 
-const environmentUrl = (process.env.DT_ENVIRONMENT_URL ?? "https://YOUR_TENANT.apps.dynatrace.com").replace(/\/+$/, "");
+const environmentUrl = (process.env.DT_ENVIRONMENT_URL ?? "https://ckx93277.apps.dynatrace.com").replace(/\/+$/, "");
 
 const config = {
   environmentUrl,
