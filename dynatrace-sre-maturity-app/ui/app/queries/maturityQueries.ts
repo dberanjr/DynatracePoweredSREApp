@@ -510,7 +510,7 @@ ${resolvedFlag}
 
   // IN-02: CMDB rows (active applications) that carry a tier.
   cmdb: `${LOAD.cmdb}
-| filter isNull(operational_status) or operational_status != "Retired"
+| filter operational_status != "Retired"
 | summarize total = count(), ok = countIf(isNotNull(business_criticality) and trim(business_criticality) != "")`,
 
   // IN-03: rows in the AppCI map.

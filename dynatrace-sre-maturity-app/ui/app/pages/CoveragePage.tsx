@@ -28,7 +28,7 @@ import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "../settings/appSettings";
 
 // eslint-disable-next-line noSecrets/no-secrets
 const CMDB_QUERY = `${LOAD.cmdb}
-| filter isNull(operational_status) or operational_status != "Retired"
+| filter operational_status != "Retired"
 | fields ${APP_CI_FIELD}, name, business_criticality, operational_status
 | limit 10000`;
 
