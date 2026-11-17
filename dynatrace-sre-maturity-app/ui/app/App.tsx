@@ -39,7 +39,7 @@ export interface Timeframe {
 // All non-retired applications (In Production + Implementing), one row per
 // applicationci, carrying the human-readable application name, sorted A→Z.
 const APPCI_LOOKUP_QUERY = `${LOAD.cmdb}
-| filter operational_status != "Retired"
+| filter isNull(operational_status) or operational_status != "Retired"
 | filter isNotNull(${APP_CI_FIELD})
 | summarize appName = takeFirst(name), by:{${APP_CI_FIELD}}
 | sort ${APP_CI_FIELD} asc
