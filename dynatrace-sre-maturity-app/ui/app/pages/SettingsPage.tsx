@@ -121,6 +121,11 @@ const ColumnInput = ({
           ▾
         </button>
       </div>
+      {columns.length > 0 && value.trim() && !columns.includes(value.trim()) && (
+        <div role="alert" style={{ fontSize: 11, color: "#d9534f", marginTop: 2 }}>
+          Not a column of this table. Queries fail if a mapped column doesn't exist. Pick one from the list, or clear it if the table has no such column.
+        </div>
+      )}
       {open && (
         <div
           role="listbox"
