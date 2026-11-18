@@ -1,0 +1,161 @@
+metadata:
+  version: '1'
+  dependencies:
+    apps:
+    - id: dynatrace.automations
+      version: ^1.3590.2
+  inputs: []
+workflow:
+  title: Refresh /lookups/utan_active (UTANs with live entities)
+  description: Daily refresh of /lookups/utan_active from /lookups/updated_utan_data.
+    Keeps only the UTANs that have at least one live Smartscape node tagged with them,
+    so the app lists only applications that can be scored. The source table is not
+    modified. Point Settings, Application catalog (CMDB), at /lookups/utan_active.
+  schemaVersion: 4
+  trigger:
+    schedule:
+      isActive: true
+      trigger:
+        cron: 0 5 * * *
+        type: cron
+      filterParameters: {}
+      timezone: UTC
+      inputs: {}
+  result: null
+  type: STANDARD
+  input: {}
+  hourlyExecutionLimit: 1000
+  guide: null
+  tasks:
+    refresh_utan_active_lookup:
+      name: refresh_utan_active_lookup
+      input:
+        script: |
+          import { queryExecutionClient } from '@dynatrace-sdk/client-query';
+
+          // Builds /lookups/utan_active: the rows of /lookups/updated_utan_data whose UTAN has at least one live
+          // Smartscape node tagged with it. UTANs with no entities reporting are left out, so the app's application
+          // picker, scorecards and leaderboard only list applications that can actually be scored.
+          //
+          // The source table is never modified. Point the app at the output in Settings: Application catalog (CMDB)
+          // path = /lookups/utan_active (same column names as the source).
+          //
+          // "Live" = a Smartscape node of any type seen in the last WINDOW carrying a utan tag (`utan:<code>`) or the
+          // Kubernetes label `nm.kubernetes/utan`. Widen WINDOW to keep applications that report less often.
+
+          const SRC    = '/lookups/updated_utan_data';
+          const DST    = '/lookups/utan_active';
+          const WINDOW = 'now()-24h';
+          const D      = '^';   // field delimiter; stripped from values below so it can never occur inside one
+          // Columns copied from the source, in output order. `utan` must be first (it is the lookup field).
+          // `nodes` (added below) is the number of live Smartscape nodes found for the UTAN.
+          const COLUMNS = [
+            'utan', 'SNOW_app_name', 'top_tier', 'managed_by', 'ownership_by', 'maintained_by',
+            'Engineering_lead', 'severity', 'impact_of_downtime', 'portfolio',
+          ];
+
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          // An empty LD token fails to parse, so an empty value is written as one space.
+          const clean = (v) => {
+            const s = (v === null || v === undefined) ? '' : String(v).replace(/[\r\n\t^]/g, ' ').trim();
+            return s === '' ? ' ' : s;
+          };
+
+          async function runDql(query, maxResultRecords) {
+            const started = await queryExecutionClient.queryExecute({
+              body: { query, maxResultRecords, requestTimeoutMilliseconds: 55000 },
+            });
+            if (started.result) return started.result.records || [];
+            const requestToken = started.requestToken;
+            for (let i = 0; i < 200; i++) {
+              const p = await queryExecutionClient.queryPoll({ requestToken });
+              if (p.state === 'SUCCEEDED') return (p.result && p.result.records) || [];
+              if (p.state !== 'NOT_STARTED' && p.state !== 'RUNNING') throw new Error('DQL ended in state ' + p.state);
+              await sleep(400);
+            }
+            throw new Error('DQL poll timed out');
+          }
+
+          export default async function () {
+            // 1. Every UTAN with live nodes, and how many.
+            const activeQuery = [
+              'smartscapeNodes "*", from:' + WINDOW + ', to:now()',
+              '| fieldsAdd u = coalesce(tags[utan], tags[`[Kubernetes]nm.kubernetes/utan`], tags[`nm.kubernetes/utan`])',
+              '| filter isNotNull(u)',
+              '| fieldsAdd utan = lower(trim(arrayFirst(splitString(replaceString(replaceString(replaceString(toString(u), "[", ""), "]", ""), "\\"", ""), ","))))',
+              '| filter utan != ""',
+              '| summarize nodes = count(), by:{utan}',
+            ].join('\n');
+            const active = await runDql(activeQuery, 20000);
+            const nodesByUtan = new Map(active.map((r) => [String(r.utan).toLowerCase(), Number(r.nodes) || 0]));
+
+            // 2. The source table, kept where its UTAN is active.
+            const source = await runDql('load "' + SRC + '"\n| limit 50000', 50000);
+            const seen = new Set();
+            const lines = [];
+            let duplicates = 0;
+            for (const r of source) {
+              const utan = String(r.utan === undefined || r.utan === null ? '' : r.utan).trim().toLowerCase();
+              if (!utan || !nodesByUtan.has(utan)) continue;
+              if (seen.has(utan)) { duplicates++; continue; }   // one row per UTAN
+              seen.add(utan);
+              lines.push([...COLUMNS.map((c) => clean(c === 'utan' ? utan : r[c])), String(nodesByUtan.get(utan))].join(D));
+            }
+            lines.sort();
+
+            // A 0-row lookup exposes no columns, which breaks every query that loads it. If nothing is active (for
+            // example the Smartscape query returned nothing), stop and keep the previous table rather than empty it.
+            if (lines.length === 0) throw new Error('No source UTAN has live nodes (' + active.length + ' active UTANs, ' + source.length + ' source rows); keeping the existing ' + DST + '.');
+
+            // 3. Publish. Header line is dropped on parse (it cannot match the pattern), so skippedRecords is 0.
+            const header = [...COLUMNS, 'nodes'].join(D);
+            const content = header + '\n' + lines.join('\n') + '\n';
+            const meta = {
+              filePath: DST,
+              displayName: 'UTAN catalog (active only)',
+              description: 'Rows of ' + SRC + ' whose UTAN has live Smartscape nodes (last ' + WINDOW.replace('now()-', '') + '). Refreshed by the "Refresh /lookups/utan_active" workflow. nodes = live node count.',
+              lookupField: 'utan',
+              parsePattern: [...COLUMNS, 'nodes'].map((c) => (c === 'nodes' ? 'INT:nodes' : 'LD:' + c)).join(" '^' "),
+              skippedRecords: 0,
+              autoFlatten: true,
+              timezone: 'UTC',
+              locale: 'en_US',
+              overwrite: true,
+            };
+            const boundary = '----utanactive' + Date.now();
+            const body =
+              '--' + boundary + '\r\n' +
+              'Content-Disposition: form-data; name="request"\r\n' +
+              'Content-Type: application/json\r\n\r\n' +
+              JSON.stringify(meta) + '\r\n' +
+              '--' + boundary + '\r\n' +
+              'Content-Disposition: form-data; name="content"; filename="utan_active"\r\n' +
+              'Content-Type: application/octet-stream\r\n\r\n' +
+              content + '\r\n' +
+              '--' + boundary + '--\r\n';
+            const resp = await fetch('/platform/storage/resource-store/v1/files/tabular/lookup:upload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+              body,
+            });
+            const text = await resp.text();
+            if (!resp.ok) throw new Error('Lookup upload failed: ' + resp.status + ' ' + text);
+
+            return {
+              sourceRows: source.length,
+              activeUtansInTenant: active.length,
+              kept: lines.length,
+              removedNoEntities: source.length - lines.length - duplicates,
+              duplicatesSkipped: duplicates,
+              bytes: content.length,
+            };
+          }
+      action: dynatrace.automations:run-javascript
+      position:
+        x: 0
+        y: 1
+      conditions:
+        states: {}
+      description: Find UTANs with live Smartscape nodes, keep their rows from the source
+        table, upload the lookup
+      predecessors: []

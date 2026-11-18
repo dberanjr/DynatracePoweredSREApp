@@ -1,0 +1,30 @@
+{
+  "appCiField": "utan",
+  "cloudTagKey": "",
+  "lookups": {
+    "cmdb": {
+      "path": "/lookups/utan_active",
+      "columns": {
+        "appId": "$APPCI",
+        "name": "SNOW_app_name",
+        "tier": "top_tier",
+        "status": "",
+        "director": "managed_by",
+        "owner": "ownership_by",
+        "supportGroup": "maintained_by"
+      }
+    },
+    "appciMap": {
+      "path": "/lookups/utan_map",
+      "columns": { "appName": "app_name", "appId": "$APPCI" }
+    }
+  },
+  "catalog": {
+    "labels": {},
+    "extras": [],
+    "tiers": [
+      { "value": "yes", "label": "Top tier", "critical": true },
+      { "value": "no", "label": "Not top tier", "critical": false }
+    ]
+  }
+}
