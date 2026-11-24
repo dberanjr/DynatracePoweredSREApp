@@ -168,11 +168,20 @@ npm run check:workflows -- --config <exported-settings>.json    # confirm nothin
 
 Without `--config`, the generator produces the United defaults.
 
-**The generated files are templates**, wrapped in `metadata:` / `workflow:`. `dtctl apply` treats that wrapper as a
-dashboard, so deploy by flattening the `workflow:` block into its own YAML (add `id:` to update an existing
-workflow in place), then `dtctl apply -f <flattened>.yaml`.
+**Deploy with the script.** The generated files are templates wrapped in `metadata:` / `workflow:`, which
+`dtctl apply` would treat as a dashboard. [scripts/deploy-workflows.mjs](../scripts/deploy-workflows.mjs) flattens
+each one and updates the workflow with the same title in place (or creates it):
 
-**TODO:** add a script that flattens and applies all workflows so this is one command.
+```
+npm run deploy:workflows -- --context <dtctl-context> --dry-run     # preview
+npm run deploy:workflows -- --context <dtctl-context>               # deploy all
+npm run deploy:workflows -- --context <dtctl-context> --run         # deploy, then run each and wait
+npm run deploy:workflows -- --context <dtctl-context> --only slo    # one workflow (file name or title match)
+```
+
+`--context` is required so a deploy never lands on the default tenant by accident. Lookup refreshes deploy and run
+before the snapshot. If two workflows share a title the script stops for that one; delete the extra first.
+Set each workflow's actor to the service user afterwards (step 3); the script does not change actors.
 
 Workflows to deploy:
 

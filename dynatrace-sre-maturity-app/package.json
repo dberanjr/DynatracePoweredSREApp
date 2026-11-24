@@ -5,6 +5,7 @@
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
     "generate:workflows": "node scripts/generate-snapshot-workflow.mjs",
+    "deploy:workflows": "node scripts/deploy-workflows.mjs",
     "check:workflows": "node scripts/generate-snapshot-workflow.mjs --check",
     "check:readiness": "node scripts/check-readiness-registry.mjs",
     "check:lookup-csv": "node scripts/check-lookup-csv.mjs",
