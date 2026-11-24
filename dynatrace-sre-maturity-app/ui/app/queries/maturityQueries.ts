@@ -19,12 +19,13 @@
 // APPCI is the customer's application identifier field (entity tag key, DQL alias, ID column of app-managed
 // lookups). LOAD.<table> is `load "<their path>"` plus a rename of their columns to the names used below.
 // Defaults reproduce the original queries exactly: applicationci and the /lookups/* paths.
-type SreConfigShape = { appciField: string; cloudTagKey: string; loads: Record<string, string>; paths: Record<string, string> };
+type SreConfigShape = { appciField: string; cloudTagKey: string; idMaxLength: number; loads: Record<string, string>; paths: Record<string, string> };
 const SRE_CONFIG = (globalThis as unknown as Record<string, SreConfigShape | undefined>)["__SRE_CONFIG__"];
 if (!SRE_CONFIG) throw new Error("maturityQueries: settings were not published before this module loaded (import settings/appSettings first).");
 export const APPCI = SRE_CONFIG.appciField;
 export const LOAD = SRE_CONFIG.loads;
 export const CLOUD_TAG = SRE_CONFIG.cloudTagKey;
+export const ID_MAX = SRE_CONFIG.idMaxLength;
 export const LOOKUP_PATHS = SRE_CONFIG.paths;
 
 export const APPCI_MAP_PATH = LOOKUP_PATHS["appciMap"];
@@ -159,7 +160,7 @@ ${appciMapLookup("wfName", "wfMapped")}
 export const BULK_L1_QUERY = `fetch dt.entity.service
 ${appciFromEntityTags()}
 | expand ${APPCI}
-| filter stringLength(${APPCI}) <= 3
+| filter stringLength(${APPCI}) <= ${ID_MAX}
 | summarize serviceCount = count(), by:{${APPCI}}
 | lookup [
     fetch dt.entity.host
@@ -270,7 +271,7 @@ ${appciFromEntityTags()}
 export const BULK_L2_QUERY = `fetch dt.entity.service
 ${appciFromEntityTags()}
 | expand ${APPCI}
-| filter stringLength(${APPCI}) <= 3
+| filter stringLength(${APPCI}) <= ${ID_MAX}
 | summarize serviceCount = count(), by:{${APPCI}}
 | lookup [
     ${LOAD.sloDashboards}
@@ -325,7 +326,7 @@ ${hasTierLookup()}
 export const BULK_L3_QUERY = `fetch dt.entity.service
 ${appciFromEntityTags()}
 | expand ${APPCI}
-| filter stringLength(${APPCI}) <= 3
+| filter stringLength(${APPCI}) <= ${ID_MAX}
 | summarize svcCount = count(), by:{${APPCI}}
 | lookup [
     fetch dt.davis.problems, from:now()-7d
@@ -385,7 +386,7 @@ ${appciFromEntityTags()}
 export const BULK_L4_QUERY = `fetch dt.entity.service
 ${appciFromEntityTags()}
 | expand ${APPCI}
-| filter stringLength(${APPCI}) <= 3
+| filter stringLength(${APPCI}) <= ${ID_MAX}
 | summarize svcCount = count(), by:{${APPCI}}
 | lookup [
     fetch dt.davis.problems, from:now()-30d
@@ -467,7 +468,7 @@ ${appciFromProblemTags()}
     enrichedProblems = sum(enrichedProblems),
     workflowCount = sum(workflowCount),
     by:{${APPCI}}
-| filter stringLength(${APPCI}) <= 3
+| filter stringLength(${APPCI}) <= ${ID_MAX}
 | fieldsAdd
     totalProblems = if(isNull(totalProblems), 0, else: totalProblems),
     enrichedProblems = if(isNull(enrichedProblems), 0, else: enrichedProblems),

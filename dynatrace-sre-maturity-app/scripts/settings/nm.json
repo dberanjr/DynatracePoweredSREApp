@@ -1,6 +1,7 @@
 {
   "appCiField": "utan",
   "cloudTagKey": "",
+  "appCiMaxLength": 10,
   "lookups": {
     "cmdb": {
       "path": "/lookups/utan_active",

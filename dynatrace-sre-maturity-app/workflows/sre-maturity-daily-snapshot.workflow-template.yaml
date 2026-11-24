@@ -64,7 +64,7 @@ workflow:
             )
           | fieldsRemove appciTagged, appciName, appciMapped
           | expand utan
-          | filter stringLength(utan) <= 3
+          | filter stringLength(utan) <= 10
           | summarize serviceCount = count(), by:{utan}
           | lookup [
               fetch dt.entity.host
@@ -283,7 +283,7 @@ workflow:
             )
           | fieldsRemove appciTagged, appciName, appciMapped
           | expand utan
-          | filter stringLength(utan) <= 3
+          | filter stringLength(utan) <= 10
           | summarize serviceCount = count(), by:{utan}
           | lookup [
               load "/lookups/slo-dashboards"
@@ -362,7 +362,7 @@ workflow:
             )
           | fieldsRemove appciTagged, appciName, appciMapped
           | expand utan
-          | filter stringLength(utan) <= 3
+          | filter stringLength(utan) <= 10
           | summarize svcCount = count(), by:{utan}
           | lookup [
               fetch dt.davis.problems, from:now()-7d
@@ -444,7 +444,7 @@ workflow:
             )
           | fieldsRemove appciTagged, appciName, appciMapped
           | expand utan
-          | filter stringLength(utan) <= 3
+          | filter stringLength(utan) <= 10
           | summarize svcCount = count(), by:{utan}
           | lookup [
               fetch dt.davis.problems, from:now()-30d
@@ -522,7 +522,7 @@ workflow:
               enrichedProblems = sum(enrichedProblems),
               workflowCount = sum(workflowCount),
               by:{utan}
-          | filter stringLength(utan) <= 3
+          | filter stringLength(utan) <= 10
           | fieldsAdd
               totalProblems = if(isNull(totalProblems), 0, else: totalProblems),
               enrichedProblems = if(isNull(enrichedProblems), 0, else: enrichedProblems),

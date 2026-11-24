@@ -21,6 +21,7 @@ import {
   DEFAULT_APPCI_FIELD,
   defaultLookupSettings,
   normalizeCatalogSettings,
+  normalizeIdMaxLength,
   normalizeLookupSettings,
   resolveConfig,
   defaultCatalogSettings,
@@ -38,6 +39,8 @@ export interface AppSettings {
   appCiLabel: string;
   /** Cloud resource tag key override; blank = derive from the identifier field. */
   cloudTagKey: string;
+  /** Longest application ID the bulk queries accept (default 3). */
+  idMaxLength: number;
   /** Organization name shown in headings on the landing page and leaderboard. */
   companyName: string;
   /** Optional background logo on the landing page (relative path, https URL or data:image). Blank = none. */
@@ -85,7 +88,8 @@ export function loadSettings(): AppSettings {
   const companyLogoUrl =
     typeof s.companyLogoUrl === "string" && !validateCompanyLogoUrl(s.companyLogoUrl) ? s.companyLogoUrl.trim() : DEFAULT_COMPANY_LOGO_URL;
   const cloudTagKey = typeof s.cloudTagKey === "string" && !validateAppCiField(s.cloudTagKey) ? s.cloudTagKey.trim() : "";
-  return { appCiField: field, appCiLabel: label, cloudTagKey, companyName, companyLogoUrl, lookups: normalizeLookupSettings(s.lookups), catalog: normalizeCatalogSettings(s.catalog) };
+  const idMaxLength = normalizeIdMaxLength((s as Record<string, unknown>)["appCiMaxLength"]);
+  return { appCiField: field, appCiLabel: label, cloudTagKey, idMaxLength, companyName, companyLogoUrl, lookups: normalizeLookupSettings(s.lookups), catalog: normalizeCatalogSettings(s.catalog) };
 }
 
 export function saveSettings(next: AppSettings): void {
@@ -95,6 +99,7 @@ export function saveSettings(next: AppSettings): void {
       appCiField: next.appCiField.trim(),
       appCiLabel: next.appCiLabel.trim() || DEFAULT_APP_CI_LABEL,
       cloudTagKey: next.cloudTagKey.trim(),
+      appCiMaxLength: normalizeIdMaxLength(next.idMaxLength),
       companyName: next.companyName.trim() || DEFAULT_COMPANY_NAME,
       companyLogoUrl: next.companyLogoUrl.trim(),
       lookups: next.lookups,
@@ -124,9 +129,11 @@ export const LOOKUP_SETTINGS: LookupSettings = loaded.lookups;
 
 export { defaultLookupSettings, defaultCatalogSettings };
 /** Resolved config for the query layer. */
-export const SRE_CONFIG: SreConfig = resolveConfig(loaded.appCiField, loaded.lookups, loaded.catalog, loaded.cloudTagKey);
+export const SRE_CONFIG: SreConfig = resolveConfig(loaded.appCiField, loaded.lookups, loaded.catalog, loaded.cloudTagKey, loaded.idMaxLength);
 /** Cloud resource / guardian tag key (e.g. ApplicationCI), case-sensitive. */
 export const APP_CI_CLOUD_TAG: string = SRE_CONFIG.cloudTagKey;
+/** Longest application ID the bulk queries accept. */
+export const APP_CI_MAX_LENGTH: number = loaded.idMaxLength;
 /** The override as saved (blank = derived). */
 export const CLOUD_TAG_OVERRIDE: string = loaded.cloudTagKey;
 

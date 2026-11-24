@@ -9,7 +9,7 @@ import { BULK_L1_QUERY, BULK_L2_QUERY, BULK_L3_QUERY, BULK_L4_QUERY, BULK_L5_QUE
 
 
 
-import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
+import { APP_CI_FIELD, LOAD, APP_CI_MAX_LENGTH } from "../settings/appSettings";
 import { CRITICAL_TIERS_NOTE, tierBarColor, tierInfo } from "../settings/profile";
 // ── CMDB info ──
 // Primary: CMDB lookup table
@@ -22,7 +22,7 @@ const CMDB_FALLBACK_QUERY = `fetch bizevents, from:now()-48h
 | filter event.type == "workflow.import.servicenow.appci"
 | fieldsAdd appci = lower(${APP_CI_FIELD})
 | filter isNotNull(appci)
-| filter stringLength(appci) <= 3
+| filter stringLength(appci) <= ${APP_CI_MAX_LENGTH}
 | sort timestamp desc
 | dedup appci
 | fields appci, ciname, tier, app_owner_name`;

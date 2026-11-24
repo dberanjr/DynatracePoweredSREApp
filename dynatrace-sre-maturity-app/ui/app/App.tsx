@@ -29,7 +29,7 @@ import { appciFromEntityTags, APPCI_MAP_PATH } from "./queries/maturityQueries";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 import { DemoModeToggleButton, DemoModeBanner } from "./components/DemoModeToggle";
 
-import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "./settings/appSettings";
+import { APP_CI_FIELD, LOAD, APP_CI_LABEL, APP_CI_MAX_LENGTH } from "./settings/appSettings";
 export interface Timeframe {
   from: string;
   to: string;
@@ -52,7 +52,7 @@ ${appciFromEntityTags()}
 | expand ${APP_CI_FIELD}
 | filter isNotNull(${APP_CI_FIELD})
 | fieldsAdd appci = upper(${APP_CI_FIELD})
-| filter stringLength(appci) <= 3
+| filter stringLength(appci) <= ${APP_CI_MAX_LENGTH}
 | dedup appci
 | sort appci asc
 | fieldsAdd appName = ""

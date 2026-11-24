@@ -13,6 +13,7 @@ import {
   LOOKUP_SETTINGS,
   CATALOG_SETTINGS,
   CLOUD_TAG_OVERRIDE,
+  APP_CI_MAX_LENGTH,
   APP_CI_CLOUD_TAG,
   defaultLookupSettings,
   resetSettings,
@@ -25,6 +26,7 @@ import {
   LOOKUP_DEFS,
   LOOKUP_KEYS,
   validateColumn,
+  normalizeIdMaxLength,
   DEFAULT_TIERS,
   MAX_EXTRA_FIELDS,
   defaultCatalogSettings,
@@ -372,6 +374,7 @@ export const SettingsPage = () => {
   const [field, setField] = useState(APP_CI_FIELD);
   const [label, setLabel] = useState(APP_CI_LABEL);
   const [cloudTag, setCloudTag] = useState(CLOUD_TAG_OVERRIDE);
+  const [idMax, setIdMax] = useState(String(APP_CI_MAX_LENGTH));
   const [companyName, setCompanyName] = useState(COMPANY_NAME);
   const [logoUrl, setLogoUrl] = useState(COMPANY_LOGO_URL);
   const [lookups, setLookups] = useState<LookupSettings>(() => structuredClone(LOOKUP_SETTINGS));
@@ -389,10 +392,12 @@ export const SettingsPage = () => {
   const catalogValid =
     catalog.extras.every((e) => e.label.trim() && !validateColumn(e.column, false)) && catalog.tiers.every((t) => t.value.trim());
   const cloudTagError = cloudTag.trim() ? validateAppCiField(cloudTag) : null;
-  const valid = !fieldError && !cloudTagError && !logoError && lookupsValid && catalogValid;
+  const idMaxError = normalizeIdMaxLength(idMax) === Number(idMax.trim()) && idMax.trim() !== "" ? null : "Enter a whole number from 1 to 64.";
+  const valid = !fieldError && !cloudTagError && !idMaxError && !logoError && lookupsValid && catalogValid;
   const dirty =
     field.trim() !== APP_CI_FIELD ||
     cloudTag.trim() !== CLOUD_TAG_OVERRIDE ||
+    normalizeIdMaxLength(idMax) !== APP_CI_MAX_LENGTH ||
     (companyName.trim() || DEFAULT_COMPANY_NAME) !== COMPANY_NAME ||
     logoUrl.trim() !== COMPANY_LOGO_URL ||
     (label.trim() || DEFAULT_APP_CI_LABEL) !== APP_CI_LABEL ||
@@ -406,7 +411,7 @@ export const SettingsPage = () => {
       clean[k].path = clean[k].path.trim();
       for (const f of Object.keys(clean[k].columns)) clean[k].columns[f] = clean[k].columns[f].trim();
     }
-    saveSettings({ appCiField: field, appCiLabel: label, cloudTagKey: cloudTag, companyName, companyLogoUrl: logoUrl, lookups: clean, catalog });
+    saveSettings({ appCiField: field, appCiLabel: label, cloudTagKey: cloudTag, idMaxLength: normalizeIdMaxLength(idMax), companyName, companyLogoUrl: logoUrl, lookups: clean, catalog });
     window.location.reload();
   };
 
@@ -497,6 +502,25 @@ export const SettingsPage = () => {
           </div>
         )}
 
+        <label htmlFor="appci-max-length" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
+          Longest {label.trim() || APP_CI_LABEL} (characters)
+        </label>
+        <input
+          id="appci-max-length"
+          style={{ ...inputStyle, maxWidth: 120 }}
+          value={idMax}
+          onChange={(e) => setIdMax(e.target.value)}
+          inputMode="numeric"
+          autoComplete="off"
+        />
+        <ErrorText msg={idMaxError} />
+        {!idMaxError && (
+          <div style={{ fontSize: 12, marginTop: 4, color: muted }}>
+            Values longer than this are ignored as noise when listing applications and scoring them. The original deployment uses 3-letter codes, so the
+            default is 3; set it to your longest ID (e.g. 5 for five-digit numbers).
+          </div>
+        )}
+
         <label htmlFor="appci-label" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
           Display label
         </label>
@@ -548,7 +572,7 @@ export const SettingsPage = () => {
           style={buttonStyle(false)}
           title="Download these settings as JSON for: npm run generate:workflows -- --config settings.json"
           onClick={() => {
-            const blob = new Blob([JSON.stringify({ appCiField: APP_CI_FIELD, cloudTagKey: CLOUD_TAG_OVERRIDE, lookups: LOOKUP_SETTINGS, catalog: CATALOG_SETTINGS }, null, 2)], { type: "application/json" });
+            const blob = new Blob([JSON.stringify({ appCiField: APP_CI_FIELD, cloudTagKey: CLOUD_TAG_OVERRIDE, appCiMaxLength: APP_CI_MAX_LENGTH, lookups: LOOKUP_SETTINGS, catalog: CATALOG_SETTINGS }, null, 2)], { type: "application/json" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
             a.download = "sre-maturity-settings.json";

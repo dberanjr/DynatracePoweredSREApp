@@ -5,7 +5,7 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { MaturityLeaderboard, TierMaturityData } from "../components/MaturityLeaderboard";
 
-import { APP_CI_FIELD, APP_CI_LABEL } from "../settings/appSettings";
+import { APP_CI_FIELD, APP_CI_LABEL, APP_CI_MAX_LENGTH } from "../settings/appSettings";
 // --- Styled components ---
 
 function TierBadge({ tier }: { tier: string }) {
@@ -167,7 +167,7 @@ export const PortfolioPage = () => {
 | parse tags, "'${APP_CI_FIELD}:' LD:appci"
 | filter isNotNull(appci)
 | fieldsAdd appci = upper(appci)
-| filter stringLength(appci) <= 3
+| filter stringLength(appci) <= ${APP_CI_MAX_LENGTH}
 | dedup appci, id
 | summarize serviceCount = count(),
     by:{appci}

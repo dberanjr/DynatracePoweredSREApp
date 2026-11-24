@@ -34,7 +34,7 @@ let sreConfig = core.defaultConfig();
 if (configArg > 0) {
   const stored = JSON.parse(readFileSync(process.argv[configArg + 1], "utf8"));
   const field = typeof stored.appCiField === "string" && stored.appCiField.trim() ? stored.appCiField.trim() : core.DEFAULT_APPCI_FIELD;
-  sreConfig = core.resolveConfig(field, core.normalizeLookupSettings(stored.lookups), core.normalizeCatalogSettings(stored.catalog), typeof stored.cloudTagKey === "string" ? stored.cloudTagKey : "");
+  sreConfig = core.resolveConfig(field, core.normalizeLookupSettings(stored.lookups), core.normalizeCatalogSettings(stored.catalog), typeof stored.cloudTagKey === "string" ? stored.cloudTagKey : "", core.normalizeIdMaxLength(stored.appCiMaxLength));
 }
 globalThis[core.CONFIG_GLOBAL_KEY] = sreConfig;
 const q = await import(pathToFileURL(join(root, "ui/app/queries/maturityQueries.ts")).href);

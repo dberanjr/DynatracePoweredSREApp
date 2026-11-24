@@ -269,6 +269,8 @@ export interface SreConfig {
   appciField: string;
   /** Tag key on cloud resources (smartscapeNodes: AWS tags, Azure tags, GCP labels) and guardians. */
   cloudTagKey: string;
+  /** Longest application ID the bulk queries accept (a sanity cap on tag values). The original deployment's IDs are 3 characters. */
+  idMaxLength: number;
   /** `load "<path>"` plus renames of the customer's columns to the app's names, per lookup table. */
   loads: Record<LookupKey, string>;
   paths: Record<LookupKey, string>;
@@ -280,7 +282,14 @@ export interface SreConfig {
   defaultTiers: boolean;
 }
 
-export function resolveConfig(appciField: string, lookups: LookupSettings, catalog: CatalogSettings = defaultCatalogSettings(), cloudTagKeyOverride = ""): SreConfig {
+export const DEFAULT_ID_MAX_LENGTH = 3;
+/** A whole number from 1 to 64; anything else falls back to the default. */
+export const normalizeIdMaxLength = (v: unknown): number => {
+  const n = typeof v === "string" ? Number(v.trim()) : typeof v === "number" ? v : NaN;
+  return Number.isInteger(n) && n >= 1 && n <= 64 ? n : DEFAULT_ID_MAX_LENGTH;
+};
+
+export function resolveConfig(appciField: string, lookups: LookupSettings, catalog: CatalogSettings = defaultCatalogSettings(), cloudTagKeyOverride = "", idMaxLength = DEFAULT_ID_MAX_LENGTH): SreConfig {
   const loads = {} as Record<LookupKey, string>;
   const paths = {} as Record<LookupKey, string>;
   for (const k of LOOKUP_KEYS) {
@@ -290,6 +299,7 @@ export function resolveConfig(appciField: string, lookups: LookupSettings, catal
   return {
     appciField,
     cloudTagKey: resolveCloudTagKey(appciField, cloudTagKeyOverride),
+    idMaxLength,
     loads,
     paths,
     profileFields: buildProfileFields(lookups, catalog),
