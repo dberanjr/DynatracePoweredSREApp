@@ -2,20 +2,6 @@
   "appCiField": "utan",
   "cloudTagKey": "",
   "appCiMaxLength": 10,
-  "lookups": {
-    "slo": {
-      "columns": {
-        "slo": "slo",
-        "appId": "$APPCI"
-      }
-    },
-    "appciMap": {
-      "columns": {
-        "appName": "app_name",
-        "appId": "$APPCI"
-      }
-    }
-  },
   "catalog": {
     "labels": {},
     "extras": [],

@@ -28,7 +28,7 @@ export interface LookupTableDef {
   label: string;
   description: string;
   defaultPath: string;
-  /** The table always has the app's own column names (a workflow builds it from the customer's source), so there is nothing to map. */
+  /** Every table has the app's own column names (the workflows and the Lookups tab write them), so there is nothing to map. */
   fixedColumns?: boolean;
   fields: Record<string, LookupFieldDef>;
 }
@@ -44,7 +44,7 @@ export const LOOKUP_DEFS = {
     defaultPath: `${LOOKUP_FOLDER}/cmdb`,
     fixedColumns: true,
     fields: {
-      appId: { canonical: APP_ID_TOKEN, default: APP_ID_TOKEN, label: "Application ID", hint: "Unique application identifier" },
+      appId: { canonical: APP_ID_TOKEN, default: "appId", label: "Application ID", hint: "Unique application identifier" },
       name: { canonical: "name", default: "name", label: "Application name", hint: "Human-readable name" },
       tier: { canonical: "business_criticality", default: "business_criticality", label: "Business criticality / tier", hint: "Drives the leaderboard tier groups (see Tier values)", optional: true, display: { label: "Tier", bannerLabel: "Criticality" } },
       status: { canonical: "operational_status", default: "operational_status", label: "Operational status", hint: 'Leave blank if you have none. Rows with "Retired" are hidden from the selector', optional: true, display: { label: "Status", bannerLabel: "Status" } },
@@ -57,17 +57,19 @@ export const LOOKUP_DEFS = {
     label: "Application name → ID map",
     description: "Translates the application name in an entity's Application tag to its application ID, for tenants that don't tag the ID directly.",
     defaultPath: `${LOOKUP_FOLDER}/app_map`,
+    fixedColumns: true,
     fields: {
       appName: { canonical: "app_name", default: "app_name", label: "Application name", hint: "Lower-case name from the Application tag" },
-      appId: { canonical: APP_ID_TOKEN, default: APP_ID_TOKEN, label: "Application ID", hint: "Application identifier it maps to" },
+      appId: { canonical: APP_ID_TOKEN, default: "appId", label: "Application ID", hint: "Application identifier it maps to" },
     },
   },
   criticalServices: {
     label: "Critical services",
     description: "One row per critical service, with the Dynatrace entity IDs it resolved to (space separated, or \"-\" when unresolved).",
     defaultPath: `${LOOKUP_FOLDER}/critical_services`,
+    fixedColumns: true,
     fields: {
-      appId: { canonical: "appId", default: APP_ID_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
+      appId: { canonical: "appId", default: "appId", label: "Application ID", hint: "Joins to the application identifier" },
       entityIds: { canonical: "entity_ids", default: "entity_ids", label: "Entity IDs", hint: 'Space-separated entity IDs; "-" if none' },
       entityName: { canonical: "entity_name", default: "entity_name", label: "Service name", hint: "Display name of the critical service" },
       severity: { canonical: "severity", default: "severity", label: "Severity", hint: "high / medium / low" },
@@ -78,25 +80,28 @@ export const LOOKUP_DEFS = {
     label: "SLOs",
     description: "One row per SLO. The application is the Application ID column when you map one, otherwise the first 3 characters of the SLO name.",
     defaultPath: `${LOOKUP_FOLDER}/slo`,
+    fixedColumns: true,
     fields: {
       slo: { canonical: "slo", default: "slo", label: "SLO name", hint: "Name starting with the application code" },
-      appId: { canonical: "appId", default: "", label: "Application ID", hint: "Leave blank to use the first 3 characters of the SLO name", optional: true },
+      appId: { canonical: "appId", default: "appId", label: "Application ID", hint: "The workflow writes the application ID of each SLO (its tag, else the name prefix)" },
     },
   },
   sloDashboards: {
     label: "SLO dashboards",
     description: "One row per SLO dashboard.",
     defaultPath: `${LOOKUP_FOLDER}/slo_dashboards`,
+    fixedColumns: true,
     fields: {
-      appId: { canonical: "appId", default: APP_ID_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
+      appId: { canonical: "appId", default: "appId", label: "Application ID", hint: "Joins to the application identifier" },
     },
   },
   guardians: {
     label: "Site Reliability Guardians",
     description: "One row per guardian.",
     defaultPath: `${LOOKUP_FOLDER}/guardians`,
+    fixedColumns: true,
     fields: {
-      appId: { canonical: "appId", default: APP_ID_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
+      appId: { canonical: "appId", default: "appId", label: "Application ID", hint: "Joins to the application identifier" },
     },
   },
 } as const satisfies Record<string, LookupTableDef>;
@@ -313,6 +318,8 @@ export function resolveConfig(appIdField: string, lookups: LookupSettings, catal
 
 export const DEFAULT_APP_ID_FIELD = "appId";
 /** Seed table the critical-services workflow reads (edited on the Lookups tab). */
+/** Grail bucket (table bizevents) that holds the daily maturity snapshots. Created once per tenant by scripts/setup-snapshot-bucket.mjs. */
+export const SNAPSHOT_BUCKET = "dtsrepoweredapp_snapshots";
 export const DEFAULT_ENTITY_SEVERITY_PATH = `${LOOKUP_FOLDER}/entity_severity`;
 /**
  * Cloud resource / guardian tag key. Unset: the identifier field as typed (tag keys are case-sensitive:

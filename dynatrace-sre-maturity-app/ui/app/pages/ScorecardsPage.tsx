@@ -11,7 +11,7 @@ import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOv
 import { LevelId, LevelRecord } from "../components/checkStatus";
 import { SLO_APP_ID_EXPR, appIdFromEntityTags, appIdFromProblemTags, hasTierLookup, appIdFromWorkflowTitle } from "../queries/maturityQueries";
 
-import { APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG } from "../settings/appSettings";
+import { SNAPSHOT_BUCKET, APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG } from "../settings/appSettings";
 interface Props {
   appId: string;
   timeframe: { from: string; to: string };
@@ -683,8 +683,9 @@ data record(${APP_ID_FIELD} = lower("${appId}"))
   // applicationci) since this is a large shared tenant. dedup collapses a
   // same-day manual re-run down to its latest snapshot.
   const trendQuery = `fetch bizevents, from:now()-90d
+| filter dt.system.bucket == "${SNAPSHOT_BUCKET}"
 | filter event.type == "workflow.summary.sre_maturity"
-| filter lower(${APP_ID_FIELD}) == lower("${appId}")
+| filter lower(appId) == lower("${appId}")
 | sort timestamp desc
 | dedup snapshotDate
 | sort timestamp asc

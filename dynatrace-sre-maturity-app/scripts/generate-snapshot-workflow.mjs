@@ -15,9 +15,11 @@
 //          (so Node 24+ is required), plus one script template per workflow in scripts/workflow-scripts/.
 // TARGETS: workflows/*.workflow-template.yaml. Each target rewrites only the `script` of the workflow's one
 //          task and leaves the rest of the YAML byte for byte as it was.
-// SETTINGS: default = the original deployment; --config <exported settings JSON> = a customer's identifier,
-//          lookup paths and column mapping. Placeholders in the templates: __APP_ID__ (identifier field),
-//          __CLOUD_TAG__ (cloud tag key), __PATH__ / __ID_COL__ / __SLO_COL__ (this workflow's lookup).
+// GENERIC: every workflow except "Build /lookups/dtsrepoweredapp/cmdb" is identical for all customers. Their queries
+//          carry the placeholders __APPIDKEY__, __CLOUDTAGKEY__ and __IDMAX__, which each workflow fills in at run time from
+//          /lookups/dtsrepoweredapp/config (written by the catalog workflow). Only the catalog workflow takes customer
+//          values: --config <settings.json> supplies its application ID tag key, cloud tag key, longest ID and
+//          "catalogSource" (source table, column mapping, extra columns, tag keys).
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname, basename, resolve } from "node:path";
@@ -29,31 +31,26 @@ const check = process.argv.includes("--check");
 const outIdx = process.argv.indexOf("--out");
 const outDir = outIdx > 0 ? resolve(process.argv[outIdx + 1] ?? "") : null;
 if (outIdx > 0 && (!process.argv[outIdx + 1] || check)) { console.error("--out needs a directory and cannot be combined with --check"); process.exit(2); }
-// Settings. maturityQueries.ts reads the app's settings (identifier field, lookup paths and column mapping)
-// from a global the app publishes at startup; do the same here so generated workflows match the app.
-//   default                         the standard set (identifier appId, /lookups/dtsrepoweredapp/* paths)
-//   --config settings.json          the settings JSON the app stores (Settings page -> "Export settings"),
-//                                   or just { "appCiField": "...", "lookups": { ... } }
+// maturityQueries.ts reads the app's settings from a global the app publishes at startup. For workflows the
+// customer's identifier is not known when the script is generated, so generate with placeholders; the workflow fills
+// them in at run time (see scripts/workflow-scripts/_runtime-config.snippet.js).
 const core = await import(pathToFileURL(join(root, "ui/app/settings/lookupDefs.ts")).href);
 const configArg = process.argv.indexOf("--config");
-let sreConfig = core.defaultConfig();
-if (configArg > 0) {
-  const stored = JSON.parse(readFileSync(process.argv[configArg + 1], "utf8"));
-  const field = typeof stored.appCiField === "string" && stored.appCiField.trim() ? stored.appCiField.trim() : core.DEFAULT_APP_ID_FIELD;
-  sreConfig = core.resolveConfig(field, core.normalizeLookupSettings(stored.lookups), core.normalizeCatalogSettings(stored.catalog), typeof stored.cloudTagKey === "string" ? stored.cloudTagKey : "", core.normalizeIdMaxLength(stored.appCiMaxLength));
-}
+const customer = configArg > 0 ? JSON.parse(readFileSync(process.argv[configArg + 1], "utf8")) : {};
+const sreConfig = core.resolveConfig("__APPIDKEY__", core.defaultLookupSettings(), core.defaultCatalogSettings(), "__CLOUDTAGKEY__", 3);
+sreConfig.idMaxLength = "__IDMAX__";
 globalThis[core.CONFIG_GLOBAL_KEY] = sreConfig;
 const q = await import(pathToFileURL(join(root, "ui/app/queries/maturityQueries.ts")).href);
+
+// The customer's values for the catalog workflow (Settings export keys are kept: appCiField, cloudTagKey, appCiMaxLength).
+const appIdKey = typeof customer.appCiField === "string" && customer.appCiField.trim() ? customer.appCiField.trim() : core.DEFAULT_APP_ID_FIELD;
+const cloudTagKey = typeof customer.cloudTagKey === "string" ? customer.cloudTagKey.trim() : "";
+const idMax = core.normalizeIdMaxLength(customer.appCiMaxLength);
 
 // A DQL string as a JS template literal: escape what a template literal would otherwise interpret.
 const toTemplateLiteral = (s) => "`" + s.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${") + "`";
 
-const settingsOf = (key) => {
-  const stored = configArg > 0 ? JSON.parse(readFileSync(process.argv[configArg + 1], "utf8")).lookups?.[key] : undefined;
-  const merged = core.normalizeLookupSettings(stored ? { [key]: stored } : {})[key];
-  const resolve = (c) => (c === core.APP_ID_TOKEN ? sreConfig.appIdField : c);
-  return { path: merged.path, col: (f) => resolve(merged.columns[f]) };
-};
+const pathOf = (key) => core.LOOKUP_DEFS[key].defaultPath;
 
 // The one table a customer supplies: where it is, and which of its columns hold what. Optional "catalogSource" block
 // of the settings JSON:
@@ -61,7 +58,7 @@ const settingsOf = (key) => {
 //     "passThrough": ["extra column", ...], "activeTagKeys": ["extra.smartscape/tag"], "activeWindow": "24h" }
 // A column left out is assumed to have the app's own name; "" = the customer's table has no such column.
 const catalogSource = () => {
-  const given = (configArg > 0 ? JSON.parse(readFileSync(process.argv[configArg + 1], "utf8")).catalogSource : undefined) ?? {};
+  const given = customer.catalogSource ?? {};
   const okName = (v, what) => {
     if (typeof v !== "string" || /[`"'\\\r\n^]/.test(v)) throw new Error(`catalogSource: invalid ${what} "${v}"`);
     return v.trim();
@@ -69,24 +66,29 @@ const catalogSource = () => {
   const fields = core.LOOKUP_DEFS.cmdb.fields;
   const columns = {};
   for (const [f, d] of Object.entries(fields)) {
-    const out = d.canonical === core.APP_ID_TOKEN ? sreConfig.appIdField : d.canonical;
+    const out = d.canonical === core.APP_ID_TOKEN ? "appId" : d.canonical;
     columns[out] = okName(given.columns?.[f] ?? out, `column for ${f}`);
   }
   const path = typeof given.path === "string" && given.path.trim() ? given.path.trim() : `${core.LOOKUP_FOLDER}/app_source`;
   if (!/^\/lookups\/[A-Za-z0-9_\-./]+$/.test(path)) throw new Error(`catalogSource: invalid path "${path}"`);
-  const tagKeys = [...new Set([sreConfig.appIdField, sreConfig.cloudTagKey, ...(given.activeTagKeys ?? [])].map((k) => okName(k, "tag key")).filter(Boolean))];
+  const tagKeys = [...new Set([appIdKey, cloudTagKey, ...(given.activeTagKeys ?? [])].map((k) => okName(k, "tag key")).filter(Boolean))];
   const window = /^\d+[hd]$/.test(given.activeWindow ?? "24h") ? given.activeWindow ?? "24h" : (() => { throw new Error('catalogSource.activeWindow must look like "24h" or "7d"'); })();
   return { path, columns, passThrough: (given.passThrough ?? []).map((c) => okName(c, "pass-through column")), tagKeys, window };
 };
 
+// Left in the generated script on purpose; the workflow fills them in at run time.
+const RUNTIME_PLACEHOLDERS = new Set(["__APPIDKEY__", "__CLOUDTAGKEY__", "__IDMAX__"]);
+const RUNTIME_SNIPPET = readFileSync(join(root, "scripts/workflow-scripts/_runtime-config.snippet.js"), "utf8").replace(/\s+$/, "");
+
 const fill = (script, vars) => {
   let out = script;
   for (const [k, v] of Object.entries(vars)) out = out.split(k).join(v);
-  const left = out.match(/__[A-Z_]+__/g);
-  if (left) throw new Error(`unfilled placeholder(s): ${[...new Set(left)].join(", ")}`);
+  const left = (out.match(/__[A-Z_]+__/g) ?? []).filter((t) => !RUNTIME_PLACEHOLDERS.has(t));
+  if (left.length) throw new Error(`unfilled placeholder(s): ${[...new Set(left)].join(", ")}`);
   return out;
 };
 
+// perCustomer: the only target whose generated script differs between customers (its constants hold their values).
 const TARGETS = [
   {
     name: "daily snapshot",
@@ -104,25 +106,24 @@ const TARGETS = [
         })
         .join("\n") +
       "\n};",
-    vars: () => {
-      // Used as a bare JS property name (`r.utan`, `utan: appId`) in the snapshot script.
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(sreConfig.appIdField)) throw new Error(`daily snapshot: identifier field "${sreConfig.appIdField}" must be a plain identifier`);
-      return { __APP_ID__: sreConfig.appIdField };
-    },
+    vars: () => ({ __SNAPSHOT_BUCKET__: core.SNAPSHOT_BUCKET }),
   },
   {
     name: "application catalog",
+    perCustomer: true,
     yaml: "workflows/refresh-application-catalog.workflow-template.yaml",
     template: "scripts/workflow-scripts/refresh-application-catalog.script.template.js",
     vars: () => {
       const src = catalogSource();
       return {
         __SOURCE_PATH__: src.path,
-        __DEST_PATH__: settingsOf("cmdb").path,
+        __DEST_PATH__: pathOf("cmdb"),
         __WINDOW__: `now()-${src.window}`,
-        __ID_MAX__: String(sreConfig.idMaxLength),
+        __APP_ID_KEY__: appIdKey,
+        __CLOUD_TAG_KEY__: cloudTagKey,
+        __ID_MAX__: String(idMax),
         __TAG_KEYS__: JSON.stringify(src.tagKeys),
-        __SOURCE_COLUMNS__: JSON.stringify(src.columns, null, 2).replace(/\n/g, "\n"),
+        __SOURCE_COLUMNS__: JSON.stringify(src.columns, null, 2),
         __PASS_THROUGH__: JSON.stringify(src.passThrough),
       };
     },
@@ -141,48 +142,25 @@ const TARGETS = [
       ]
         .map(([name, dql]) => `const ${name} = ${toTemplateLiteral(dql)};`)
         .join("\n\n"),
-    vars: () => {
-      const s = settingsOf("criticalServices");
-      // Lookup locations are fixed (core.LOOKUP_FOLDER); the seed table's ID column is named after the identifier.
-      return {
-        __APP_ID__: sreConfig.appIdField,
-        __CLOUD_TAG__: sreConfig.cloudTagKey,
-        __PATH__: s.path,
-        __ID_COL__: s.col("appId"),
-        __SEED_PATH__: core.DEFAULT_ENTITY_SEVERITY_PATH,
-        __SEED_ID_COL__: sreConfig.appIdField,
-      };
-    },
+    vars: () => ({ __PATH__: pathOf("criticalServices"), __SEED_PATH__: core.DEFAULT_ENTITY_SEVERITY_PATH }),
   },
   {
     name: "guardians refresh",
     yaml: "workflows/refresh-lookups-guardians-srg-by-app-id.workflow-template.yaml",
     template: "scripts/workflow-scripts/refresh-lookups-guardians.script.template.js",
-    vars: () => {
-      const s = settingsOf("guardians");
-      // Tag keys that identify the application on a guardian: the customer's own (identifier and cloud tag key)
-      // plus the original "appci" shorthand. Compared lower-cased.
-      const keys = [...new Set([sreConfig.appIdField, sreConfig.cloudTagKey, "appci"].map((k) => k.toLowerCase()))];
-      return { __TAG_KEY_TEST__: keys.map((k) => `k === '${k}'`).join(" || "), __PATH__: s.path, __ID_COL__: s.col("appId") };
-    },
+    vars: () => ({ __PATH__: pathOf("guardians") }),
   },
   {
     name: "SLO dashboards refresh",
     yaml: "workflows/refresh-lookups-slo-dashboards-slo-dashboards-by-app-id.workflow-template.yaml",
     template: "scripts/workflow-scripts/refresh-lookups-slo-dashboards.script.template.js",
-    vars: () => {
-      const s = settingsOf("sloDashboards");
-      return { __PATH__: s.path, __ID_COL__: s.col("appId") };
-    },
+    vars: () => ({ __PATH__: pathOf("sloDashboards") }),
   },
   {
     name: "SLO refresh",
     yaml: "workflows/refresh-lookups-slo-slos-by-app-id.workflow-template.yaml",
     template: "scripts/workflow-scripts/refresh-lookups-slo.script.template.js",
-    vars: () => {
-      const s = settingsOf("slo");
-      return { __PATH__: s.path, __SLO_COL__: s.col("slo"), __SLO_ID_COL__: s.col("appId") ?? "", __APP_ID__: sreConfig.appIdField, __ID_MAX__: String(sreConfig.idMaxLength) };
-    },
+    vars: () => ({ __PATH__: pathOf("slo") }),
   },
 ];
 
@@ -190,12 +168,13 @@ const stale = [];
 const writes = [];
 
 for (const t of TARGETS) {
+  if (outDir && !t.perCustomer) continue;   // --out writes only the customer-specific workflow
   let script = readFileSync(join(root, t.template), "utf8");
   if (t.placeholder) {
     if (script.split(t.placeholder).length !== 2) throw new Error(`${t.template} must contain ${t.placeholder} exactly once`);
     script = script.replace(t.placeholder, () => t.fill());
   }
-  script = fill(script, t.vars());
+  script = fill(script.replace("__RUNTIME_CONFIG__", () => RUNTIME_SNIPPET), t.vars());
   if (!script.endsWith("\n")) script += "\n";
 
   // Locate the task's `script` value in the YAML source and replace just that text as a block literal.

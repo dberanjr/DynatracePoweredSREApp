@@ -526,10 +526,11 @@ export const SettingsPage = () => {
 
       <h3 style={{ margin: "24px 0 4px" }}>Lookup tables</h3>
       <p style={{ marginTop: 0, fontSize: 13, color: muted }}>
-        Point each table at the one your tenant has and map its columns to what the app needs. Columns marked * are
-        required; optional ones can be left blank. Use <b>Detect columns</b> to read the table and get suggestions.
+        All lookup tables are stored in <code>/lookups/dtsrepoweredapp/</code> with fixed column names; there is nothing to
+        point or map. The application catalog is built by the "Build /lookups/dtsrepoweredapp/cmdb" workflow from your own
+        table, which is where your column names are mapped. Here you choose how the catalog is shown.
       </p>
-      {LOOKUP_KEYS.map((k) => (
+      {LOOKUP_KEYS.filter((k) => k === "cmdb").map((k) => (
         <TableEditor
           key={k}
           tableKey={k}

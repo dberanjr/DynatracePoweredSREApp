@@ -1,12 +1,14 @@
 // Refreshes the SLOs lookup (/lookups/dtsrepoweredapp/slo; one row per SLO name) from the Gen3 SLO platform API.
-// The scorecard derives application ID from the first 3 characters of the name, unless the settings map an Application ID
-// column for this table (ID_COL below is then non-empty): the ID is the SLO's `<APP_ID>:<id>` tag, falling back to the
-// name up to its first separator when the SLO has no such tag.
+// Each SLO's application ID is its `<appIdKey>:<id>` tag, falling back to the name up to its first separator when the SLO
+// has no such tag (and the prefix is no longer than the configured longest ID). The key and length come from the run-time config.
 // NOTE: the platform SLO API rejects page-size when page-key is set — first
 // page uses page-size, subsequent pages use page-key only (confirmed in getSloDetail.function.ts).
-const ID_COL = '__SLO_ID_COL__';
-const TAG_KEY = '__APP_ID__'.toLowerCase();
-const ID_MAX = __ID_MAX__;
+import { queryExecutionClient } from '@dynatrace-sdk/client-query';
+
+__RUNTIME_CONFIG__
+
+let TAG_KEY = '';
+let ID_MAX = 0;
 
 function sloAppId(s) {
   const tag = (s.tags || []).find((t) => t.toLowerCase().startsWith(TAG_KEY + ':'));
@@ -16,6 +18,9 @@ function sloAppId(s) {
 }
 
 export default async function () {
+  const cfg = await loadAppConfig();
+  TAG_KEY = cfg.appIdKey.toLowerCase();
+  ID_MAX = cfg.idMaxLength;
   // 1. Page through all SLOs
   const slos = [];
   let pageKey = null;
@@ -36,18 +41,16 @@ export default async function () {
 
   // 2. Build CSV — one row per SLO name, sorted for deterministic diffs
   slos.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  // With an ID column the table has two '^'-separated columns (names contain commas); otherwise it is just the names.
-  const csv = ID_COL
-    ? '__SLO_COL__^' + ID_COL + '\n' + slos.map((s) => s.name + '^' + s.id).join('\n') + '\n'
-    : '__SLO_COL__\n' + slos.map((s) => s.name).join('\n') + '\n';
+  // Two '^'-separated columns (SLO names contain commas).
+  const csv = 'slo^appId\n' + slos.map((s) => s.name + '^' + s.id).join('\n') + '\n';
 
   // 3. Upload as a lookup table (overwrite existing)
   const meta = {
     filePath: '__PATH__',
     displayName: 'SLOs by application ID',
-    description: 'One row per SLO name; the application is derived from the first 3 characters of the name, or from the ID column when there is one',
-    lookupField: '__SLO_COL__',
-    parsePattern: ID_COL ? "LD:__SLO_COL__ '^' LD:" + ID_COL : 'LD:__SLO_COL__',
+    description: 'One row per SLO name with its application ID (the SLO tag, else the name prefix)',
+    lookupField: 'slo',
+    parsePattern: "LD:slo '^' LD:appId",
     skippedRecords: 1,
     autoFlatten: true,
     timezone: 'UTC',

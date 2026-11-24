@@ -249,7 +249,7 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
     setSaving(true);
     setSaveResult(null);
     try {
-      const res = await functions.call("saveLookup", { data: { table: cfg.id, rows, appIdField: APP_ID_FIELD } });
+      const res = await functions.call("saveLookup", { data: { table: cfg.id, rows } });
       const body = (await res.json()) as { saved: number; backedUp: number };
       setBaseline(serialize(rows));
       setConfirmSave(false);

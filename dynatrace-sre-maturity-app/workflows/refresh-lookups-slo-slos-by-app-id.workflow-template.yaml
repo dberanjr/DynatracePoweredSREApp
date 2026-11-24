@@ -31,14 +31,53 @@ workflow:
       input:
         script: |
           // Refreshes the SLOs lookup (/lookups/dtsrepoweredapp/slo; one row per SLO name) from the Gen3 SLO platform API.
-          // The scorecard derives application ID from the first 3 characters of the name, unless the settings map an Application ID
-          // column for this table (ID_COL below is then non-empty): the ID is the SLO's `<APP_ID>:<id>` tag, falling back to the
-          // name up to its first separator when the SLO has no such tag.
+          // Each SLO's application ID is its `<appIdKey>:<id>` tag, falling back to the name up to its first separator when the SLO
+          // has no such tag (and the prefix is no longer than the configured longest ID). The key and length come from the run-time config.
           // NOTE: the platform SLO API rejects page-size when page-key is set — first
           // page uses page-size, subsequent pages use page-key only (confirmed in getSloDetail.function.ts).
-          const ID_COL = '';
-          const TAG_KEY = 'appId'.toLowerCase();
-          const ID_MAX = 3;
+          import { queryExecutionClient } from '@dynatrace-sdk/client-query';
+
+          // ── Customer values, read at run time ─────────────────────────────────────────────────────────────────────────────
+          // Every DT-SRE APP workflow except "Build /lookups/dtsrepoweredapp/cmdb" is identical for all customers. The few values
+          // that differ (the application ID tag key, the cloud tag key, the longest ID) are written to
+          // /lookups/dtsrepoweredapp/config by that workflow from its constants, and read here. Run it first.
+          // The generated queries contain the placeholders __APPIDKEY__, __CLOUDTAGKEY__ and __IDMAX__; applyAppConfig fills them in.
+          const APP_CONFIG_PATH = '/lookups/dtsrepoweredapp/config';
+
+          async function loadAppConfig() {
+            let records;
+            try {
+              const started = await queryExecutionClient.queryExecute({
+                body: { query: 'load "' + APP_CONFIG_PATH + '"', maxResultRecords: 100, requestTimeoutMilliseconds: 30000 },
+              });
+              records = started.result ? started.result.records || [] : null;
+              for (let i = 0; records === null && i < 60; i++) {
+                await new Promise((r) => setTimeout(r, 500));
+                const p = await queryExecutionClient.queryPoll({ requestToken: started.requestToken });
+                if (p.state === 'SUCCEEDED') records = (p.result && p.result.records) || [];
+                else if (p.state !== 'NOT_STARTED' && p.state !== 'RUNNING') throw new Error('query ended in state ' + p.state);
+              }
+              if (records === null) throw new Error('query timed out');
+            } catch (e) {
+              throw new Error('Cannot read ' + APP_CONFIG_PATH + '. Run the "DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb" workflow first, which writes it. (' + (e && e.message ? e.message : e) + ')');
+            }
+            const raw = {};
+            for (const r of records) raw[String(r.key)] = String(r.value === undefined || r.value === null ? '' : r.value).trim();
+            const ident = /^[A-Za-z_][A-Za-z0-9_]*$/;
+            if (!ident.test(raw.appIdKey || '')) throw new Error(APP_CONFIG_PATH + ' has no valid appIdKey (found "' + raw.appIdKey + '").');
+            const cloudTagKey = raw.cloudTagKey || raw.appIdKey;
+            if (!ident.test(cloudTagKey)) throw new Error(APP_CONFIG_PATH + ' has an invalid cloudTagKey "' + cloudTagKey + '".');
+            const idMaxLength = Number(raw.idMaxLength);
+            if (!Number.isInteger(idMaxLength) || idMaxLength < 1 || idMaxLength > 64) throw new Error(APP_CONFIG_PATH + ' has an invalid idMaxLength "' + raw.idMaxLength + '".');
+            return { appIdKey: raw.appIdKey, cloudTagKey, idMaxLength };
+          }
+
+          function applyAppConfig(text, c) {
+            return text.split('__APPIDKEY__').join(c.appIdKey).split('__CLOUDTAGKEY__').join(c.cloudTagKey).split('__IDMAX__').join(String(c.idMaxLength));
+          }
+
+          let TAG_KEY = '';
+          let ID_MAX = 0;
 
           function sloAppId(s) {
             const tag = (s.tags || []).find((t) => t.toLowerCase().startsWith(TAG_KEY + ':'));
@@ -48,6 +87,9 @@ workflow:
           }
 
           export default async function () {
+            const cfg = await loadAppConfig();
+            TAG_KEY = cfg.appIdKey.toLowerCase();
+            ID_MAX = cfg.idMaxLength;
             // 1. Page through all SLOs
             const slos = [];
             let pageKey = null;
@@ -68,18 +110,16 @@ workflow:
 
             // 2. Build CSV — one row per SLO name, sorted for deterministic diffs
             slos.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-            // With an ID column the table has two '^'-separated columns (names contain commas); otherwise it is just the names.
-            const csv = ID_COL
-              ? 'slo^' + ID_COL + '\n' + slos.map((s) => s.name + '^' + s.id).join('\n') + '\n'
-              : 'slo\n' + slos.map((s) => s.name).join('\n') + '\n';
+            // Two '^'-separated columns (SLO names contain commas).
+            const csv = 'slo^appId\n' + slos.map((s) => s.name + '^' + s.id).join('\n') + '\n';
 
             // 3. Upload as a lookup table (overwrite existing)
             const meta = {
               filePath: '/lookups/dtsrepoweredapp/slo',
               displayName: 'SLOs by application ID',
-              description: 'One row per SLO name; the application is derived from the first 3 characters of the name, or from the ID column when there is one',
+              description: 'One row per SLO name with its application ID (the SLO tag, else the name prefix)',
               lookupField: 'slo',
-              parsePattern: ID_COL ? "LD:slo '^' LD:" + ID_COL : 'LD:slo',
+              parsePattern: "LD:slo '^' LD:appId",
               skippedRecords: 1,
               autoFlatten: true,
               timezone: 'UTC',

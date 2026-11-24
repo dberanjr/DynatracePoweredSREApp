@@ -1,11 +1,13 @@
 // Deploys workflows/*.workflow-template.yaml to a Dynatrace tenant with dtctl.
 //
-//   node scripts/deploy-workflows.mjs --context <dtctl-context> --dir workflows/customers/<customer> [options]
+//   node scripts/deploy-workflows.mjs --context <dtctl-context> --dir workflows --dir workflows/customers/<customer> [options]
 //
 //   --context <name>   dtctl context (tenant) to deploy to. Required, so a deploy never lands on whatever
 //                      context happens to be the default.
-//   --dir <path>       folder of *.workflow-template.yaml to deploy (repeatable; default: workflows/). Use the folder
-//                      that `generate-snapshot-workflow.mjs --out` wrote for this customer.
+//   --dir <path>       folder of *.workflow-template.yaml to deploy (repeatable; default: workflows/). A later --dir wins when
+//                      two files have the same title, so a customer's catalog workflow
+//                      (`generate-snapshot-workflow.mjs --config <customer>.json --out <dir>`) replaces the standard one:
+//                      --dir workflows --dir workflows/customers/<customer>
 //   --only <text>      only templates whose file name or workflow title contains <text> (repeatable)
 //   --run              run each deployed workflow once and wait for it (in dependency order: lookups first,
 //                      the daily snapshot last)
@@ -46,7 +48,7 @@ function dtctl(cmdArgs, { json = false } = {}) {
 }
 
 const order = (file) => (file.includes("daily-snapshot") ? 2 : 1);
-const templates = dirs
+const allTemplates = dirs
   .flatMap((dir) =>
     readdirSync(dir)
       .filter((f) => f.endsWith(".workflow-template.yaml"))
@@ -59,6 +61,9 @@ const templates = dirs
   // Lookups first, the snapshot (which reads them) last.
   .sort((a, b) => order(a.file) - order(b.file) || a.file.localeCompare(b.file))
   .filter((t) => !only.length || only.some((o) => t.file.includes(o) || t.workflow.title.includes(o)));
+
+// A workflow with the same title in a later --dir replaces the earlier one (a customer's catalog replaces the standard one).
+const templates = [...new Map(allTemplates.map((t) => [t.workflow.title, t])).values()].sort((a, b) => order(a.file) - order(b.file) || a.file.localeCompare(b.file));
 
 if (!templates.length) {
   console.error("No workflow templates matched.");

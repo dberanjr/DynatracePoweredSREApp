@@ -1,8 +1,10 @@
 import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
+__RUNTIME_CONFIG__
+
 // GENERATED PARTS: the three APP_ID_FROM_* constants below are produced by scripts/generate-snapshot-workflow.mjs
 // from ui/app/queries/maturityQueries.ts, so an application ID is resolved here exactly as in the app (an
-// `__APP_ID__:<code>` tag, or an `Application:<Name>` tag mapped through the application ID map table). Edit that
+// `<appIdKey>:<code>` tag, or an `Application:<Name>` tag mapped through the application ID map table). Edit that
 // module and run `npm run generate:workflows`; the template for this script is
 // workflows/refresh-lookups-critical-services.script.template.js.
 //
@@ -15,7 +17,7 @@ import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 // Smartscape subquery bounded and finish in ~6s each.
 
 const SRC    = '__SEED_PATH__';
-const SEED_ID = '__SEED_ID_COL__'; // the seed table's application ID column; renamed to `appId` below
+const SEED_ID = 'appId';           // the seed table's application ID column (fixed name)
 const DST    = '__PATH__';
 const CHUNK  = 100;        // appIds per query
 const D      = '^';        // field delimiter - verified to appear 0 times in the source data
@@ -25,7 +27,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const qt    = (s) => '"' + String(s).replace(/"/g, '\\"') + '"';
 const clean = (s) => (s === null || s === undefined) ? '' : String(s).replace(/[\r\n\t^]/g, ' ').trim();
 
-async function runDql(query, maxResultRecords) {
+let CFG = null;   // run-time config, loaded in main()
+
+async function runDql(rawQuery, maxResultRecords) {
+  const query = CFG ? applyAppConfig(rawQuery, CFG) : rawQuery;
   const started = await queryExecutionClient.queryExecute({
     body: { query, maxResultRecords, requestTimeoutMilliseconds: 55000 },
   });
@@ -64,8 +69,8 @@ function buildQuery(appIds) {
     '| join [',
     '      fetch dt.entity.service, from:' + WINDOW + ', to:now()',
     APP_ID_FROM_SERVICE_TAGS,
-    '      | expand __APP_ID__',
-    '      | fieldsAdd appId = __APP_ID__',
+    '      | expand __APPIDKEY__',
+    '      | fieldsAdd appId = __APPIDKEY__',
     '      | filter ' + inFilter,
     '      | fieldsAdd e_join = concat(appId, "_", entity.name)',
     '    ],',
@@ -73,9 +78,9 @@ function buildQuery(appIds) {
     '    on: { left[e_join] == right[e_join]}, fields:{id_1 = id}',
     '| join [',
     '      smartscapeNodes "*", from:' + WINDOW + ', to:now()',
-    '      | fields name, id, tags, `tags:aws`, aws.tags.__APP_ID__, custom_metadata, host.custom.metadata',
+    '      | fields name, id, tags, `tags:aws`, aws.tags.__APPIDKEY__, custom_metadata, host.custom.metadata',
     APP_ID_FROM_TAG_MAP,
-    '      | fieldsAdd appId = coalesce(tags[__APP_ID__], `tags:aws`[__APP_ID__], `tags:aws`[__CLOUD_TAG__], aws.tags.__APP_ID__, custom_metadata[__APP_ID__], custom_metadata[__CLOUD_TAG__], host.custom.metadata[__CLOUD_TAG__], host.custom.metadata[__APP_ID__], lower(smapMapped))',
+    '      | fieldsAdd appId = coalesce(tags[__APPIDKEY__], `tags:aws`[__APPIDKEY__], `tags:aws`[__CLOUDTAGKEY__], aws.tags.__APPIDKEY__, custom_metadata[__APPIDKEY__], custom_metadata[__CLOUDTAGKEY__], host.custom.metadata[__CLOUDTAGKEY__], host.custom.metadata[__APPIDKEY__], lower(smapMapped))',
     '      | filter ' + inFilter,
     '      | fieldsAdd e_join = concat(appId, "_", name)',
     '    ],',
@@ -88,6 +93,7 @@ function buildQuery(appIds) {
 }
 
 export default async function () {
+  CFG = await loadAppConfig();
   // 1. every appId present in the source list
   const appIdRows = await runDql(
     'load "' + SRC + '" | fieldsAdd appId = ' + SEED_ID + ' | summarize n = count(), by:{appId} | fields appId | sort appId asc', 5000);
@@ -129,7 +135,7 @@ export default async function () {
     ].join(D));
   }
 
-  const header = ['row_id', '__ID_COL__', 'entity_name', 'severity', 'entity_ids', 'id_count', 'business_impact'].join(D);
+  const header = ['row_id', 'appId', 'entity_name', 'severity', 'entity_ids', 'id_count', 'business_impact'].join(D);
   const content = header + '\n' + lines.join('\n') + '\n';
 
   // 4. publish the lookup table
@@ -138,7 +144,7 @@ export default async function () {
     displayName: 'Critical Services (resolved)',
     description: 'Critical services and endpoints from ' + SRC + ', resolved to Dynatrace entity IDs over a rolling 24h window. One row per source entry (row_id). entity_ids is space-separated; id_count = 0 means the row did not resolve; \'-\' means empty.',
     lookupField: 'row_id',
-    parsePattern: "INT:row_id '^' LD:__ID_COL__ '^' LD:entity_name '^' LD:severity '^' LD:entity_ids '^' INT:id_count '^' LD:business_impact",
+    parsePattern: "INT:row_id '^' LD:appId '^' LD:entity_name '^' LD:severity '^' LD:entity_ids '^' INT:id_count '^' LD:business_impact",
     // 0, not 1: the header line starts with 'row_id', which can't match INT:row_id, so it is already
     // dropped as an unparseable record. skippedRecords: 1 then also discarded the first real row.
     skippedRecords: 0,

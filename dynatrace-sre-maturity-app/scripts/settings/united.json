@@ -1,6 +1,5 @@
 {
   "appCiField": "applicationci",
   "cloudTagKey": "ApplicationCI",
-  "appCiMaxLength": 3,
-  "lookups": {}
+  "appCiMaxLength": 3
 }

@@ -7,8 +7,10 @@ import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 // tenant. Applications that nothing reports for are left out, so the app's picker, scorecards and leaderboard list
 // only applications that can actually be scored. The source table is never modified.
 //
-// This is the only table you provide. To point the workflow at yours, edit the constants below (source path,
-// column names, tag keys); the rest of the app and its other workflows need no changes.
+// This is the only workflow with customer-specific values. To point it at your data, edit the constants below
+// (source path, column names, tag keys). It also writes /lookups/dtsrepoweredapp/config from them (the application ID
+// tag key, the cloud tag key and the longest ID), which every other DT-SRE APP workflow reads at run time, so run
+// this one first and re-run it after changing a constant.
 //
 // "Live" = a Smartscape node of any type seen in the last WINDOW that carries the application ID as a tag
 // (`<key>:<id>` for any key in TAG_KEYS, also as a Kubernetes label). Widen WINDOW to keep applications that
@@ -17,9 +19,11 @@ import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 const SRC          = '__SOURCE_PATH__';
 const DST          = '__DEST_PATH__';
 const WINDOW       = '__WINDOW__';
+const APP_ID_KEY   = '__APP_ID_KEY__';     // the tag key on your entities that carries the application ID
+const CLOUD_TAG_KEY = '__CLOUD_TAG_KEY__'; // tag key on cloud resources and guardians; '' = same as APP_ID_KEY
 const ID_MAX       = __ID_MAX__;          // longest application ID kept (a sanity cap on tag values)
 const TAG_KEYS     = __TAG_KEYS__;        // Smartscape tag keys that carry the application ID
-// Output column -> column in YOUR source table. The first entry is the application ID. '' = your table has no such
+// Output column -> column in YOUR source table. The first entry is the application ID (always written as `appId`). '' = your table has no such
 // column; the output column is still written (blank) so the app always finds it.
 const SOURCE_COLUMNS = __SOURCE_COLUMNS__;
 // Extra source columns copied unchanged (the app can show them in the profile banner, see Settings > Extra columns).
@@ -35,6 +39,30 @@ const clean = (v) => {
   const s = (v === null || v === undefined) ? '' : String(v).replace(/[\r\n\t^]/g, ' ').trim();
   return s === '' ? ' ' : s;
 };
+
+const CONFIG_PATH = '/lookups/dtsrepoweredapp/config';
+
+async function uploadLookup(meta, content, filename) {
+  const full = { skippedRecords: 0, autoFlatten: true, timezone: 'UTC', locale: 'en_US', overwrite: true, ...meta };
+  const boundary = '----appcatalog' + Date.now() + Math.random().toString(36).slice(2);
+  const body =
+    '--' + boundary + '\r\n' +
+    'Content-Disposition: form-data; name="request"\r\n' +
+    'Content-Type: application/json\r\n\r\n' +
+    JSON.stringify(full) + '\r\n' +
+    '--' + boundary + '\r\n' +
+    'Content-Disposition: form-data; name="content"; filename="' + filename + '"\r\n' +
+    'Content-Type: application/octet-stream\r\n\r\n' +
+    content + '\r\n' +
+    '--' + boundary + '--\r\n';
+  const resp = await fetch('/platform/storage/resource-store/v1/files/tabular/lookup:upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+    body,
+  });
+  const text = await resp.text();
+  if (!resp.ok) throw new Error('Lookup upload of ' + meta.filePath + ' failed: ' + resp.status + ' ' + text);
+}
 
 async function runDql(query, maxResultRecords) {
   const started = await queryExecutionClient.queryExecute({
@@ -52,6 +80,20 @@ async function runDql(query, maxResultRecords) {
 }
 
 export default async function () {
+  // 0. The values every other DT-SRE APP workflow reads. Written first so they exist even if the catalog step stops below.
+  await uploadLookup({
+    filePath: CONFIG_PATH,
+    displayName: 'DT-SRE APP configuration',
+    description: 'Customer values read by the DT-SRE APP workflows. Written by the "DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb" workflow; do not edit.',
+    lookupField: 'key',
+    parsePattern: "LD:key '^' LD:value",
+    skippedRecords: 1,   // the header line matches this pattern, so it must be skipped
+  }, 'key^value\n' + [
+    ['appIdKey', APP_ID_KEY],
+    ['cloudTagKey', CLOUD_TAG_KEY || APP_ID_KEY],
+    ['idMaxLength', String(ID_MAX)],
+  ].map((kv) => kv.join(D)).join('\n') + '\n', 'config');
+
   // 1. Every application ID with live nodes, and how many nodes.
   const tagExprs = TAG_KEYS.flatMap((k) => ['tags[`' + k + '`]', 'tags[`[Kubernetes]' + k + '`]']);
   const activeQuery = [
@@ -91,39 +133,16 @@ export default async function () {
     throw new Error('No source application ID has live nodes (' + active.length + ' active IDs in the tenant, ' + source.length + ' source rows); keeping the existing ' + DST + '.');
   }
 
-  // 3. Publish. The header line is dropped on parse (it cannot match the pattern), so skippedRecords is 0.
+  // 3. Publish the catalog. The header line is dropped on parse (it cannot match the pattern), so skippedRecords is 0.
   const header = [...OUT_COLUMNS, 'nodes'].join(D);
   const content = header + '\n' + lines.join('\n') + '\n';
-  const meta = {
+  await uploadLookup({
     filePath: DST,
     displayName: 'Application catalog (active applications only)',
-    description: 'Rows of ' + SRC + ' whose application ID has live Smartscape nodes (last ' + WINDOW.replace('now()-', '') + '), with columns normalised to what the SRE app needs. Refreshed by the "DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table)" workflow. nodes = live node count.',
+    description: 'Rows of ' + SRC + ' whose application ID has live Smartscape nodes (last ' + WINDOW.replace('now()-', '') + '), with columns normalised to what the SRE app needs. Refreshed by the "DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb" workflow. nodes = live node count.',
     lookupField: ID_OUT,
     parsePattern: [...OUT_COLUMNS, 'nodes'].map((c) => (c === 'nodes' ? 'INT:nodes' : 'LD:' + c)).join(" '^' "),
-    skippedRecords: 0,
-    autoFlatten: true,
-    timezone: 'UTC',
-    locale: 'en_US',
-    overwrite: true,
-  };
-  const boundary = '----appcatalog' + Date.now();
-  const body =
-    '--' + boundary + '\r\n' +
-    'Content-Disposition: form-data; name="request"\r\n' +
-    'Content-Type: application/json\r\n\r\n' +
-    JSON.stringify(meta) + '\r\n' +
-    '--' + boundary + '\r\n' +
-    'Content-Disposition: form-data; name="content"; filename="cmdb"\r\n' +
-    'Content-Type: application/octet-stream\r\n\r\n' +
-    content + '\r\n' +
-    '--' + boundary + '--\r\n';
-  const resp = await fetch('/platform/storage/resource-store/v1/files/tabular/lookup:upload', {
-    method: 'POST',
-    headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
-    body,
-  });
-  const text = await resp.text();
-  if (!resp.ok) throw new Error('Lookup upload failed: ' + resp.status + ' ' + text);
+  }, content, 'cmdb');
 
   return {
     sourceRows: source.length,

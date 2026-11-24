@@ -1,8 +1,13 @@
 import { settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
+import { queryExecutionClient } from '@dynatrace-sdk/client-query';
+
+__RUNTIME_CONFIG__
 
 // Refreshes the guardians lookup table (appId -> guardianCount) from the
-// Site Reliability Guardian settings objects, matching on the applicationCI/appId tag.
+// Site Reliability Guardian settings objects, matching on the application ID tag (the key comes from the run-time config; "appci" is accepted as a shorthand).
 export default async function () {
+  const cfg = await loadAppConfig();
+  const TAG_KEYS = [cfg.appIdKey, cfg.cloudTagKey, 'appci'].map((k) => k.toLowerCase());
   // 1. Read all guardian settings objects
   const res = await settingsObjectsClient.getSettingsObjects({
     schemaIds: 'app:dynatrace.site.reliability.guardian:guardians',
@@ -21,7 +26,7 @@ export default async function () {
       if (i > 0) {
         const k = String(t).slice(0, i).trim().toLowerCase();
         const v = String(t).slice(i + 1).trim().toLowerCase();
-        if ((__TAG_KEY_TEST__) && v) appIds.add(v);
+        if (TAG_KEYS.includes(k) && v) appIds.add(v);
       }
     }
     for (const a of appIds) counts[a] = (counts[a] || 0) + 1;
@@ -34,15 +39,15 @@ export default async function () {
   // appId can never equal a real application ID (it never joins to a scorecard row).
   const rows = appIds.map((a) => `${a},${counts[a]}`);
   if (rows.length === 0) rows.push('__none__,0');
-  const csv = '__ID_COL__,guardianCount\n' + rows.join('\n') + '\n';
+  const csv = 'appId,guardianCount\n' + rows.join('\n') + '\n';
 
   // 4. Upload as a lookup table (overwrite existing)
   const meta = {
     filePath: '__PATH__',
     displayName: 'Guardians by application ID',
-    description: 'Count of Site Reliability Guardians per applicationCI, refreshed from the guardian Settings API',
-    lookupField: '__ID_COL__',
-    parsePattern: "LD:__ID_COL__ ',' LD:guardianCount",
+    description: 'Count of Site Reliability Guardians per application ID, refreshed from the guardian Settings API',
+    lookupField: 'appId',
+    parsePattern: "LD:appId ',' LD:guardianCount",
     skippedRecords: 1,
     autoFlatten: true,
     timezone: 'UTC',

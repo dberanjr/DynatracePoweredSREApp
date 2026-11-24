@@ -36,15 +36,15 @@ export default async function () {
   // appId can never equal a real application ID (it never joins to a scorecard row).
   const rows = appIds.map((a) => `${a},${counts[a]}`);
   if (rows.length === 0) rows.push('__none__,0');
-  const csv = '__ID_COL__,dashboardCount\n' + rows.join('\n') + '\n';
+  const csv = 'appId,dashboardCount\n' + rows.join('\n') + '\n';
 
   // 4. Upload as a lookup table (overwrite existing)
   const meta = {
     filePath: '__PATH__',
     displayName: 'SLO dashboards by application ID',
     description: 'Count of dashboards per application whose name starts with a 3-letter application token and contains "SLO"',
-    lookupField: '__ID_COL__',
-    parsePattern: "LD:__ID_COL__ ',' LD:dashboardCount",
+    lookupField: 'appId',
+    parsePattern: "LD:appId ',' LD:dashboardCount",
     skippedRecords: 1,
     autoFlatten: true,
     timezone: 'UTC',

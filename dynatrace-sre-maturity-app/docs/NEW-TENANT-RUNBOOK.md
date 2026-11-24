@@ -6,6 +6,9 @@ This runbook is the ordered checklist for standing the app up for a new customer
 in [HOW-TO-USE.md](HOW-TO-USE.md) (what each level checks, the Lookups tab, day-to-day use) or the
 [README](../README.md) (architecture, Settings reference). Follow those links when a step says "see".
 
+**To brief a customer before you start,** copy [customer-deployment-overview.md](customer-deployment-overview.md): it
+lists what will be added to their tenant, the service-user policy and what you need from them.
+
 Time estimate for a tenant whose CMDB data is already in a clean table: about half a day. Most of the time goes to
 step 2 (understanding the customer's data), not to the mechanics.
 
@@ -171,71 +174,89 @@ is [scripts/settings/nm.json](../scripts/settings/nm.json).
 
 Tables whose columns you remapped are shown read-only in the Lookups tab, so an edit never overwrites your extra columns.
 
-## 6. Generate and deploy the workflows
+## 6. Create the snapshot bucket, then deploy the workflows
 
-The workflows embed the same queries as the app, so they are generated from the app's code. The files in
-[workflows/](../workflows/) are the **standard set**: `/lookups/dtsrepoweredapp/…` paths and the default identifier
-`appId`. A tenant whose identifier differs (NM: `utan`) generates its own copy. **Only the identifier, its maximum
-length, the cloud tag key and the source-table settings (`catalogSource`) change, never the lookup paths.**
+### 6.1 Snapshot bucket (once per tenant, needs an administrator)
+
+The daily snapshot events are stored in their **own Grail bucket**, `dtsrepoweredapp_snapshots` (table `bizevents`),
+which gives them their own retention and lets their records be deleted. The workflow stops with a clear error until the
+bucket exists and an OpenPipeline route sends the events there.
 
 ```
-# 1. Write the customer's settings file (start from scripts/settings/nm.json or Settings > Export saved settings)
-# 2. Generate their workflows into their own folder
+node scripts/setup-snapshot-bucket.mjs --context <dtctl-context> --dry-run      # preview
+node scripts/setup-snapshot-bucket.mjs --context <dtctl-context> --retention 365
+```
+
+It creates the bucket, a custom bizevents pipeline that assigns it, and **one entry** in the tenant-wide bizevents
+routing settings (existing entries are kept). The person running it needs `storage:bucket-definitions:write` and
+settings write access for the OpenPipeline bizevents pipelines and routing schemas. This is separate from the
+workflows' service user.
+
+### 6.2 The workflows
+
+Every workflow is **identical for every customer** except one. The scripts read the few customer values (the application
+ID tag key, the cloud tag key, the longest ID) at run time from `/lookups/dtsrepoweredapp/config`, which the catalog
+workflow writes from its constants. So the standard files in [workflows/](../workflows/) deploy as they are, and a
+customer only needs its **own catalog workflow**, generated from a settings file:
+
+```
+# Write the customer's settings file (start from scripts/settings/nm.json): appCiField, cloudTagKey, appCiMaxLength, catalogSource
 node scripts/generate-snapshot-workflow.mjs --config scripts/settings/<customer>.json --out workflows/customers/<customer>
 ```
 
-A tenant that uses the default identifier deploys `workflows/` as is. Existing sets:
-[workflows/customers/nm/](../workflows/customers/nm/) and [workflows/customers/united/](../workflows/customers/united/)
-(`npm run generate:customers` regenerates both). `npm run check:workflows` checks the standard set.
+That writes only `refresh-application-catalog.workflow-template.yaml` into the customer's folder (existing:
+[nm](../workflows/customers/nm/), [united](../workflows/customers/united/); `npm run generate:customers` regenerates
+both). A customer who prefers can instead edit the constants at the top of the deployed catalog workflow. A customer with
+the defaults (`appId`, three-character IDs) can deploy `workflows/` alone. `npm run check:workflows` checks the standard set.
 
-**Deploy with the script.** The generated files are templates wrapped in `metadata:` / `workflow:`, which
-`dtctl apply` would treat as a dashboard. [scripts/deploy-workflows.mjs](../scripts/deploy-workflows.mjs) flattens
-each one and updates the workflow with the same title in place (or creates it):
+**Deploy with the script.** The files are templates wrapped in `metadata:` / `workflow:`, which `dtctl apply` would treat as
+a dashboard. [scripts/deploy-workflows.mjs](../scripts/deploy-workflows.mjs) flattens each one and updates the workflow with the
+same title in place (or creates it). A later `--dir` wins when two files share a title, so the customer's catalog replaces the
+standard one:
 
 ```
-npm run deploy:workflows -- --context <dtctl-context> --dry-run                                          # standard set
-npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer> --dry-run   # a customer's set
-npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer>             # deploy all
-npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer> --run       # deploy, then run each and wait
-npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer> --only slo  # one workflow
+npm run deploy:workflows -- --context <dtctl-context> --dir workflows --dir workflows/customers/<customer> --dry-run
+npm run deploy:workflows -- --context <dtctl-context> --dir workflows --dir workflows/customers/<customer> --run
+npm run deploy:workflows -- --context <dtctl-context> --dir workflows --dir workflows/customers/<customer> --only slo
 ```
 
-`--context` is required so a deploy never lands on the default tenant by accident. Lookup refreshes deploy and run
-before the snapshot. If two workflows share a title the script stops for that one; delete the extra first.
-Set each workflow's actor to the service user afterwards (step 3); the script does not change actors.
+`--context` is required so a deploy never lands on the default tenant by accident. The catalog deploys and runs first (it
+writes the config the others read), and the snapshot last. If two workflows share a title the script stops for that one;
+delete the extra first. Set each workflow's actor to the service user afterwards (step 3); the script does not change actors.
 
 Workflows to deploy:
 
 | Workflow | Writes | Schedule |
 |---|---|---|
-| DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table) (step 2.2) | `/lookups/dtsrepoweredapp/cmdb` | daily |
+| DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table) (step 2.2) | `/lookups/dtsrepoweredapp/cmdb` and `/lookups/dtsrepoweredapp/config` | daily |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/critical_services (entity_severity resolved to entity IDs) | `/lookups/dtsrepoweredapp/critical_services` | none; run manually |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/guardians (SRG by AppId) | `/lookups/dtsrepoweredapp/guardians` | daily |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo_dashboards (SLO dashboards by AppId) | `/lookups/dtsrepoweredapp/slo_dashboards` | daily |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo (SLOs by AppId) | `/lookups/dtsrepoweredapp/slo` | hourly |
-| DT-SRE APP: Daily Maturity Snapshot (one bizevent per AppId) | bizevents `workflow.summary.sre_maturity` | daily |
+| DT-SRE APP: Daily Maturity Snapshot (one bizevent per AppId) | bizevents `workflow.summary.sre_maturity` in bucket `dtsrepoweredapp_snapshots` | daily |
 
-Deploy and run the lookup refreshes **before** the snapshot, since it reads them.
+Deploy and run the catalog **first** (it writes `/lookups/dtsrepoweredapp/config` and the catalog), then the lookup refreshes,
+then the snapshot. Without the config table the other workflows stop with "Cannot read /lookups/dtsrepoweredapp/config".
 
 ## 7. Verify
 
 Run the snapshot workflow once from the Automations app, then check:
 
-**Business events were written**
+**Business events were written to the snapshot bucket**
 
 ```dql
 fetch bizevents, from: now()-2h
-| filter event.type == "workflow.summary.sre_maturity"
-| summarize events = count(), apps = countDistinct(utan), latest = max(timestamp)
+| filter dt.system.bucket == "dtsrepoweredapp_snapshots" and event.type == "workflow.summary.sre_maturity"
+| summarize events = count(), apps = countDistinct(appId), latest = max(timestamp)
 ```
 
-Replace `utan` with the customer's identifier field. Expect one event per application. NM produced 522.
+Expect one event per application. The field is always `appId`, whatever your identifier is called.
 
 **Scores are not all zero**
 
 ```dql
 fetch bizevents, from: now()-2h
-| filter event.type == "workflow.summary.sre_maturity"
+| filter dt.system.bucket == "dtsrepoweredapp_snapshots" and event.type == "workflow.summary.sre_maturity"
 | summarize apps = count(), avgPct = avg(pct), nonZero = countIf(pct > 0) by grade
 ```
 
@@ -283,4 +304,6 @@ These are conventions in the app that settings do not cover yet:
 | Lookups tab: 403 on save | Missing `storage:files:write` | Add it to the user's policy. |
 | Snapshot "succeeds" but no bizevents | Older versions swallowed ingest errors | Regenerate and redeploy; the current script throws on failure. |
 | Snapshot fails with 403 on ingest | Actor lacks `openpipeline:bizevents:ingest` | Step 3. |
+| Snapshot stops: bucket does not exist, or no events reached it | The snapshot bucket or its OpenPipeline route is missing | Step 6.1. |
+| A workflow stops: cannot read `/lookups/dtsrepoweredapp/config` | The catalog workflow has not run yet | Run it first (step 6.2). |
 | SLO-dashboards workflow reports 0 matches | The 3-character name convention does not fit | See known gaps (not yet configurable). |

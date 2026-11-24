@@ -9,7 +9,7 @@
  * after saving.
  */
 
-export { DEFAULT_APP_ID_FIELD };
+export { DEFAULT_APP_ID_FIELD, SNAPSHOT_BUCKET };
 export const DEFAULT_APP_ID_LABEL = "Application ID";
 /** Company name from the build (.env COMPANY_NAME → generated constants.ts); Settings can override it at runtime. */
 export const DEFAULT_COMPANY_NAME = BUILD_COMPANY_NAME;
@@ -19,6 +19,7 @@ import { COMPANY_NAME as BUILD_COMPANY_NAME } from "../constants";
 import {
   CONFIG_GLOBAL_KEY,
   DEFAULT_APP_ID_FIELD,
+  SNAPSHOT_BUCKET,
   defaultLookupSettings,
   normalizeCatalogSettings,
   normalizeIdMaxLength,
