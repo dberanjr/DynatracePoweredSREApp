@@ -5,6 +5,16 @@ feed it data, and keep it healthy, and the SREs who read its scorecards. The
 [README](../../README.md) is the developer reference (architecture, every check, code layout);
 this document is the operating manual.
 
+
+> **Defaults changed (generic app).** The identifier field now defaults to `appId`, the label to "Application ID",
+> and the app-managed lookup tables live under `/lookups/sre/` (`cmdb`, `app_map`, `entity_severity`, `critical_services`,
+> `slo`, `slo_dashboards`, `guardians`). The rest of this guide still shows the original United names
+> (`applicationci`, `AppCI`, `/lookups/appci_map`, …). **United must set these once in Settings** (identifier
+> `applicationci`, label `AppCI`, cloud tag key `ApplicationCI`, and either move its tables or keep its old paths) and
+> generate its workflows from [scripts/settings/united.json](../scripts/settings/united.json), which pins the
+> original paths and columns:
+> `npm run generate:workflows -- --config scripts/settings/united.json`.
+
 ---
 
 ## 1. What the app does
@@ -54,7 +64,7 @@ An application that has a CMDB row but no resolvable entities appears in the pic
 1. **It carries an `applicationci:<code>` tag.** Nothing else is needed.
 2. **It carries an `Application:<Name>` tag, and that name is in the AppCI map.** Many tenants tag the
    application name, not a 3-letter code, for example `Application:BillingPortal::PRD`. The **AppCI map**
-   (Lookups tab, `/lookups/appci_map`) translates the name to the code. Enter the name **without** the
+   (Lookups tab, `/lookups/sre/app_map`) translates the name to the code. Enter the name **without** the
    environment suffix: `billingportal` covers `::CRT`, `::SPT` and `::PRD`. Names match case-insensitively.
    Several names may share one code; a name has only one.
 
@@ -71,7 +81,7 @@ lower-case code everywhere (the app lower-cases before comparing).
 | AWS, Azure and GCP resources | Tag or label with the key `ApplicationCI` | L1, L4 |
 | Kubernetes clusters | Cluster name starts with the code, followed by `-` | L1 |
 | SLOs | Name starts with the code | L2 |
-| SLO dashboards | Name starts with the code and contains `SLO`; read from `/lookups/slo-dashboards` by the scorecard, leaderboard and snapshot alike | L2 |
+| SLO dashboards | Name starts with the code and contains `SLO`; read from `/lookups/sre/slo_dashboards` by the scorecard, leaderboard and snapshot alike | L2 |
 | Site Reliability Guardians | Tag `applicationci:<code>` or `appci:<code>` | L2, L4 |
 | Runbook notebooks | Name starts with the code and contains `Runbook` | L3 |
 | Davis problems | Affected entities carry the `applicationci:<code>` tag or a mapped `Application:<Name>` tag | L3, L5 |
@@ -160,16 +170,16 @@ Open the app and go to **Lookups**. There are three tabs:
 
 | Tab | Lookup path | What it is | Needed for |
 |---|---|---|---|
-| **CMDB owner mapping** | `/lookups/dynatrace/cmdb_appci_owner_mapping` | One row per application: AppCI, name, owner, criticality, status, support group | The AppCI picker, application names, owners and tiers everywhere in the app, and the L2 "CMDB tier" check |
-| **Critical services seed** | `/lookups/entity_severity` | The services or endpoints that count as critical for each AppCI | The critical-services workflow, and the L2 "Critical Services Tagged" check |
-| **AppCI map** | `/lookups/appci_map` | One row per application **name** (no environment suffix), giving its AppCI | Resolving `Application:<Name>` tags to an AppCI. **Every scoring query loads this table, so it must exist even if you tag `applicationci` directly** |
+| **CMDB owner mapping** | `/lookups/sre/cmdb` | One row per application: AppCI, name, owner, criticality, status, support group | The AppCI picker, application names, owners and tiers everywhere in the app, and the L2 "CMDB tier" check |
+| **Critical services seed** | `/lookups/sre/entity_severity` | The services or endpoints that count as critical for each AppCI | The critical-services workflow, and the L2 "Critical Services Tagged" check |
+| **AppCI map** | `/lookups/sre/app_map` | One row per application **name** (no environment suffix), giving its AppCI | Resolving `Application:<Name>` tags to an AppCI. **Every scoring query loads this table, so it must exist even if you tag `applicationci` directly** |
 
 For each tab, either add rows with **+ Add row**, or import a spreadsheet with
 **Import CSV…**. Sample files are in `lookups/`:
 
-- `lookups/cmdb_appci_owner_mapping.sample.csv`
+- `lookups/cmdb.sample.csv`
 - `lookups/entity_severity.sample.csv`
-- `lookups/appci_map.sample.csv`
+- `lookups/app_map.sample.csv`
 
 **The AppCI map must exist.** Every scoring query reads it, and a query against a missing lookup fails.
 If your entities already carry `applicationci:<code>` tags you do not need real rows, but you still need
@@ -203,14 +213,14 @@ live.
 
 | Workflow | Produces | Schedule |
 |---|---|---|
-| Refresh /lookups/slo | `/lookups/slo` | Hourly |
-| Refresh /lookups/guardians | `/lookups/guardians` | Daily 06:00 UTC |
-| Refresh /lookups/slo-dashboards | `/lookups/slo-dashboards` | Daily 06:15 UTC |
+| Refresh /lookups/sre/slo | `/lookups/sre/slo` | Hourly |
+| Refresh /lookups/sre/guardians | `/lookups/sre/guardians` | Daily 06:00 UTC |
+| Refresh /lookups/sre/slo_dashboards | `/lookups/sre/slo_dashboards` | Daily 06:15 UTC |
 | SRE Maturity Daily Snapshot | One `sre_maturity` bizevent per app, feeding the 90-day trend chart | Daily 06:15 UTC |
-| Refresh /lookups/critical_services | `/lookups/critical_services` (from `entity_severity`) | **No schedule set. Run it manually once, then add one** |
+| Refresh /lookups/sre/critical_services | `/lookups/sre/critical_services` (from `entity_severity`) | **No schedule set. Run it manually once, then add one** |
 
-The critical-services workflow reads `/lookups/entity_severity`. If you run it before loading
-that table in section 4.3 it fails with `The tabular file "/lookups/entity_severity" doesn't
+The critical-services workflow reads `/lookups/sre/entity_severity`. If you run it before loading
+that table in section 4.3 it fails with `The tabular file "/lookups/sre/entity_severity" doesn't
 exist`.
 
 ### 4.5 Verify
@@ -321,7 +331,7 @@ application display name like `DocStore_PRD`, never resolve. The app cannot chec
 save: the row is accepted but shows `id_count = 0` after the workflow runs.
 
 **A row can disappear instead of showing `id_count = 0`.** If an endpoint name is found on a service that
-belongs to a *different* AppCI, the row is dropped from `/lookups/critical_services` entirely (for example,
+belongs to a *different* AppCI, the row is dropped from `/lookups/sre/critical_services` entirely (for example,
 listing `/Logging/api/v1/Log` under `mem` when it belongs to a `doc` service). An AppCI whose rows all drop
 has no rows left, and the L2 "Critical Services Tagged" check then reads as n/a, which counts as a pass.
 If a critical service seems to be missing from the table, check which AppCI owns the endpoint.
@@ -329,7 +339,7 @@ If a critical service seems to be missing from the table, check which AppCI owns
 To pick a name, find the endpoint in the Dynatrace Services or Distributed Tracing app, or run
 `fetch spans | summarize count(), by:{endpoint.name}` and copy the exact value. After changing
 this table, re-run the critical-services workflow and look for rows with `id_count = 0` in
-`/lookups/critical_services`.
+`/lookups/sre/critical_services`.
 
 **Choosing critical services until the business gives you a list.** The right list is a business
 decision: the endpoints whose failure hurts customers. To test with something real in the meantime, rank
@@ -357,7 +367,7 @@ importance. Replace these picks with the list the application owners give you.
 Agree on who edits, or have one person import a CSV.
 
 **Backups and restore.** Before every Save the previous table is copied to
-`<path>_backup` (for example `/lookups/entity_severity_backup`). Only **one** previous
+`<path>_backup` (for example `/lookups/sre/entity_severity_backup`). Only **one** previous
 version is kept. There is no restore button yet. To roll back, run
 `load "<backup path>"` in a Dynatrace notebook, export the result as CSV, and use
 **Import CSV… → Replace all rows**, then Save.
@@ -388,16 +398,16 @@ did not take.
 
 | Symptom | Likely cause and fix |
 |---|---|
-| Critical-services workflow fails: `The tabular file "/lookups/entity_severity" doesn't exist` | The seed table has not been loaded. Load it in **Lookups → Critical services seed** (section 4.3), then re-run |
-| AppCI picker is empty or falls back to tag-derived codes with no names | `/lookups/dynatrace/cmdb_appci_owner_mapping` is missing or empty. Load it on the CMDB tab |
+| Critical-services workflow fails: `The tabular file "/lookups/sre/entity_severity" doesn't exist` | The seed table has not been loaded. Load it in **Lookups → Critical services seed** (section 4.3), then re-run |
+| AppCI picker is empty or falls back to tag-derived codes with no names | `/lookups/sre/cmdb` is missing or empty. Load it on the CMDB tab |
 | Lookups tab: "You don't have permission to read lookup tables" | The user lacks `storage:files:read`. Add them to the lookup viewers group |
 | Save fails: "You don't have permission to write lookup tables" | The user lacks `storage:files:write`. Add them to the lookup editors group. Nothing was changed |
 | Save succeeds but other tabs show old data | Lookup caching. Wait a few minutes and reload |
-| A critical service never turns the check green | Its `entity_name` is not a real span endpoint name, or a service name with the matching `applicationci` tag. CMDB application names don't work. Look for `id_count = 0` in `/lookups/critical_services` and see the critical services note in section 6.1 |
+| A critical service never turns the check green | Its `entity_name` is not a real span endpoint name, or a service name with the matching `applicationci` tag. CMDB application names don't work. Look for `id_count = 0` in `/lookups/sre/critical_services` and see the critical services note in section 6.1 |
 | An application scores zero, or the leaderboard is empty | Open **Coverage**. A dash under *Services* means no service carries an `applicationci:<code>` tag matching the CMDB code. Tag the services (the code must match exactly, in any letter case) |
 | Coverage shows a code under "Tagged codes that aren't in the CMDB table" | A tag value with no CMDB row: usually a typo or an unregistered application. Fix the tag or add the row on the Lookups tab |
 | Coverage warns "> 3 chars" | The code is longer than three characters and is ignored by the scorecards. Use a 3-character code |
-| Banner: "AppCI map not found" | `/lookups/appci_map` does not exist, so every scoring query fails. Open **Lookups → AppCI map** and save at least one row (section 4.3) |
+| Banner: "AppCI map not found" | `/lookups/sre/app_map` does not exist, so every scoring query fails. Open **Lookups → AppCI map** and save at least one row (section 4.3) |
 | An application scores zero although its entities are tagged `Application:<Name>` | Its name is not in the AppCI map. Open **Coverage → Application names with no AppCI**, then add the name (no environment suffix) on the AppCI map tab |
 | Coverage shows "AppCI map rows that point outside the CMDB table" | The map row's AppCI has no active CMDB row: usually a typo in the code. Correct it on the AppCI map tab |
 | `npm run check:workflows` reports a file out of date | The queries changed but the snapshot workflow files were not regenerated. Run `npm run generate:workflows`, then re-apply the workflow with `dtctl` |

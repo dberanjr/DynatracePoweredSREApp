@@ -1,0 +1,17 @@
+{
+  "appCiField": "applicationci",
+  "cloudTagKey": "ApplicationCI",
+  "appCiMaxLength": 3,
+  "lookups": {
+    "cmdb": { "path": "/lookups/dynatrace/cmdb_appci_owner_mapping" },
+    "appciMap": { "path": "/lookups/appci_map" },
+    "criticalServices": {
+      "path": "/lookups/critical_services",
+      "columns": { "appId": "appci", "entityIds": "entity_ids", "entityName": "entity_name", "severity": "severity", "businessImpact": "business_impact" }
+    },
+    "slo": { "path": "/lookups/slo", "columns": { "slo": "slo", "appId": "" } },
+    "sloDashboards": { "path": "/lookups/slo-dashboards", "columns": { "appId": "appci" } },
+    "guardians": { "path": "/lookups/guardians", "columns": { "appId": "appci" } }
+  },
+  "entitySeverity": { "path": "/lookups/entity_severity", "idColumn": "appci" }
+}

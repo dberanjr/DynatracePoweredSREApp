@@ -79,7 +79,7 @@ export default async function (input: unknown = undefined) {
       others.push({ notebookName: name, reason: 'Missing the word "Runbook" in the name' });
     } else if (hasRunbook && name.toLowerCase().includes(appCI)) {
       // Mentions the AppCI and is a runbook, but not as the leading 3-letter token.
-      others.push({ notebookName: name, reason: 'AppCI is not the leading 3-letter token' });
+      others.push({ notebookName: name, reason: 'The application ID is not the leading 3-letter token' });
     }
   }
 

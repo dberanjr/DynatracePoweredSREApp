@@ -10,7 +10,7 @@
  */
 
 export const DEFAULT_APP_CI_FIELD = DEFAULT_APPCI_FIELD;
-export const DEFAULT_APP_CI_LABEL = "AppCI";
+export const DEFAULT_APP_CI_LABEL = "Application ID";
 /** Company name from the build (.env COMPANY_NAME → generated constants.ts); Settings can override it at runtime. */
 export const DEFAULT_COMPANY_NAME = BUILD_COMPANY_NAME;
 export const DEFAULT_COMPANY_LOGO_URL = "";

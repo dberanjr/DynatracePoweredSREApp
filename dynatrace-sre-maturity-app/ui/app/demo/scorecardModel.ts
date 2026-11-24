@@ -358,7 +358,7 @@ function build(app: DemoApp): Facts {
   }));
   const otherNotebooks: Facts["otherNotebooks"] = [];
   if (rbN === 0 && app.level[2] > 0) otherNotebooks.push({ notebookName: `${code} Incident Response Notes`, reason: 'Missing the word "Runbook" in the name' });
-  if (rbN === 0 && app.tier <= 3) otherNotebooks.push({ notebookName: `Payments-retry Runbook (${lc} dependency)`, reason: "AppCI is not the leading 3-letter token" });
+  if (rbN === 0 && app.tier <= 3) otherNotebooks.push({ notebookName: `Payments-retry Runbook (${lc} dependency)`, reason: "The application ID is not the leading 3-letter token" });
   if (rbN > 0 && r() < 0.4) otherNotebooks.push({ notebookName: `${code} Postmortem Draft`, reason: 'Missing the word "Runbook" in the name' });
 
   // ── L4 ──

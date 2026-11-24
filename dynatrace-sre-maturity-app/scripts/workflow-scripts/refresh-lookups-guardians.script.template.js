@@ -39,7 +39,7 @@ export default async function () {
   // 4. Upload as a lookup table (overwrite existing)
   const meta = {
     filePath: '__PATH__',
-    displayName: 'Guardians by AppCI',
+    displayName: 'Guardians by application ID',
     description: 'Count of Site Reliability Guardians per applicationCI, refreshed from the guardian Settings API',
     lookupField: '__ID_COL__',
     parsePattern: "LD:__ID_COL__ ',' LD:guardianCount",

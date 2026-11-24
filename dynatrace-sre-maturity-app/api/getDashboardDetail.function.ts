@@ -19,7 +19,7 @@ export interface DashboardDetail {
   ownerName: string;
 }
 
-// Live equivalent of the "Refresh /lookups/slo-dashboards" workflow's aggregation
+// Live equivalent of the "Refresh /lookups/sre/slo_dashboards" workflow's aggregation
 // logic, called on-demand from the modal instead of relying on a scheduled workflow —
 // same reliability issue as getGuardianDetail.function.ts.
 export default async function (input: unknown = undefined) {

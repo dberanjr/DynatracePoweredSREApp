@@ -234,14 +234,14 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
   ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{serviceCount}
 | fieldsRename goldenSignalServices = serviceCount
 
-// Signal 2: SLOs created (from the /lookups/slo table; ${APP_CI_LABEL} = first 3 chars of the SLO name)
+// Signal 2: SLOs created (from the /lookups/sre/slo table; ${APP_CI_LABEL} = first 3 chars of the SLO name)
 | lookup [
     ${LOAD.slo}
     | fieldsAdd appci = ${SLO_APPCI_EXPR}
     | summarize sloCount = count(), by:{appci}
   ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{sloCount}
 
-// Signal 3: Site Reliability Guardians (from /lookups/guardians; itemized one row per
+// Signal 3: Site Reliability Guardians (from /lookups/sre/guardians; itemized one row per
 //   guardian, refreshed daily at 06:00 UTC by workflow — summarize to a count here)
 | lookup [
     ${LOAD.guardians}
@@ -249,7 +249,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
     | summarize guardianCount = count(), by:{appci}
   ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{guardianCount}
 
-// Signal 4: SLO dashboards published (from /lookups/slo-dashboards; itemized one row
+// Signal 4: SLO dashboards published (from /lookups/sre/slo_dashboards; itemized one row
 //   per dashboard, refreshed daily at 06:00 UTC by workflow — counts dashboards whose
 //   name starts with a 3-letter ${APP_CI_LABEL} token and contains "SLO")
 | lookup [
@@ -263,7 +263,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 ${hasTierLookup()}
 | fieldsRename sreAssessment = hasTier
 
-// Signal 6: Critical services tagged (from /lookups/critical_services; itemized one
+// Signal 6: Critical services tagged (from /lookups/sre/critical_services; itemized one
 //   row per service, refreshed daily at 06:00 UTC by workflow — a pass requires at
 //   least one listed service whose entity_ids actually resolved to a real Dynatrace
 //   entity, not merely being listed. ~38% of rows resolve tenant-wide.)
@@ -304,7 +304,7 @@ ${hasTierLookup()}
         concat("pass ", toString(resolved), " of ", toString(criticalCount), " tagged services resolved"),
         else: if(criticalCount > 0,
             concat("fail Listed but unresolved (0/", toString(criticalCount), ")"),
-            else: "n/a No critical services listed for this ${APP_CI_LABEL}"))
+            else: "n/a No critical services listed for this application"))
 
 | fieldsAdd passCount =
     if(goldenSignalServices > 0, 1, else: 0)

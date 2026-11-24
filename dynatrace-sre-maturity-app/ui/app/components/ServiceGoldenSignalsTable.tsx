@@ -296,10 +296,10 @@ export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, 
     return (
       <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6 }}>
         {restrictToServiceIds && restrictToServiceIds.size > 0
-          ? `None of the flagged services matched this ${APP_CI_LABEL}'s service list.`
+          ? `None of the flagged services matched this application's service list.`
           : severityFilter.size > 0
             ? "No services match the selected severity filter."
-            : `No services found for this ${APP_CI_LABEL}.`}
+            : `No services found for this application.`}
       </Paragraph>
     );
   }

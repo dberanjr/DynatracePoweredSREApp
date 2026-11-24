@@ -1,4 +1,4 @@
-appci,entity_name,severity,business_impact
+appId,entity_name,severity,business_impact
 abc,/api/payments/authorize,critical,revenue
 abc,/api/auth/token,high,security
 xyz,/api/claims/submit,critical,regulatory

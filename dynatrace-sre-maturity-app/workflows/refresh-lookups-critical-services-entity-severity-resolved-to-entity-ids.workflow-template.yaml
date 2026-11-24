@@ -27,11 +27,11 @@ workflow:
 
           // GENERATED PARTS: the three APPCI_FROM_* constants below are produced by scripts/generate-snapshot-workflow.mjs
           // from ui/app/queries/maturityQueries.ts, so an AppCI is resolved here exactly as in the app (an
-          // `applicationci:<code>` tag, or an `Application:<Name>` tag mapped through /lookups/appci_map). Edit that
+          // `utan:<code>` tag, or an `Application:<Name>` tag mapped through the application ID map table). Edit that
           // module and run `npm run generate:workflows`; the template for this script is
           // workflows/refresh-lookups-critical-services.script.template.js.
           //
-          // Builds /lookups/critical_services: every row of /lookups/entity_severity resolved to the
+          // Builds /lookups/critical_services: every row of the entity_severity seed table resolved to the
           // Dynatrace entity ID(s) it refers to, over a rolling 24h window.
           //
           // Covers every appci in the source list. Runs them in chunks rather than one appci at a time:
@@ -40,6 +40,7 @@ workflow:
           // Smartscape subquery bounded and finish in ~6s each.
 
           const SRC    = '/lookups/entity_severity';
+          const SEED_ID = 'appci'; // the seed table's application ID column; renamed to `appci` below
           const DST    = '/lookups/critical_services';
           const CHUNK  = 100;        // appcis per query
           const D      = '^';        // field delimiter - verified to appear 0 times in the source data
@@ -126,6 +127,7 @@ workflow:
             const inFilter = 'in(appci, array(' + appcis.map(qt).join(',') + '))';
             return [
               'load "' + SRC + '"',
+              '| fieldsAdd appci = ' + SEED_ID,
               '| fieldsAdd e_join = concat(appci, "_", entity_name)',
               '| filter ' + inFilter,
               '| join [',
@@ -167,7 +169,7 @@ workflow:
           export default async function () {
             // 1. every appci present in the source list
             const appciRows = await runDql(
-              'load "' + SRC + '" | summarize n = count(), by:{appci} | fields appci | sort appci asc', 5000);
+              'load "' + SRC + '" | fieldsAdd appci = ' + SEED_ID + ' | summarize n = count(), by:{appci} | fields appci | sort appci asc', 5000);
             const appcis = appciRows
               .map((r) => r.appci)
               .filter((a) => a !== null && a !== undefined && String(a).trim() !== '');

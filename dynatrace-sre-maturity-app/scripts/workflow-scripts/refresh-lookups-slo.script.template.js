@@ -44,8 +44,8 @@ export default async function () {
   // 3. Upload as a lookup table (overwrite existing)
   const meta = {
     filePath: '__PATH__',
-    displayName: 'SLOs by AppCI',
-    description: 'One row per SLO name; AppCI is derived from the first 3 characters of the name',
+    displayName: 'SLOs by application ID',
+    description: 'One row per SLO name; the application is derived from the first 3 characters of the name, or from the ID column when there is one',
     lookupField: '__SLO_COL__',
     parsePattern: ID_COL ? "LD:__SLO_COL__ '^' LD:" + ID_COL : 'LD:__SLO_COL__',
     skippedRecords: 1,

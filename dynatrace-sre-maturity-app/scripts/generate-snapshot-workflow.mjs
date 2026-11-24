@@ -96,7 +96,17 @@ const TARGETS = [
         .join("\n\n"),
     vars: () => {
       const s = settingsOf("criticalServices");
-      return { __APPCI__: sreConfig.appciField, __CLOUD_TAG__: sreConfig.cloudTagKey, __PATH__: s.path, __ID_COL__: s.col("appId") };
+      // The seed table (entity_severity) is not a Settings lookup: its path and ID column come from the optional
+      // "entitySeverity" block of the settings JSON, defaulting to the app's own table.
+      const seed = (configArg > 0 ? JSON.parse(readFileSync(process.argv[configArg + 1], "utf8")).entitySeverity : undefined) ?? {};
+      return {
+        __APPCI__: sreConfig.appciField,
+        __CLOUD_TAG__: sreConfig.cloudTagKey,
+        __PATH__: s.path,
+        __ID_COL__: s.col("appId"),
+        __SEED_PATH__: typeof seed.path === "string" && seed.path ? seed.path : core.DEFAULT_ENTITY_SEVERITY_PATH,
+        __SEED_ID_COL__: typeof seed.idColumn === "string" && seed.idColumn ? seed.idColumn : sreConfig.appciField,
+      };
     },
   },
   {

@@ -10,7 +10,7 @@
 // combined (a union, so a tenant that already tags `${APPCI}:<code>` keeps working):
 //   1. An `${APPCI}:<code>` entity tag, as the app has always read it.
 //   2. An `Application:<Name>` entity tag, translated to a code through the app-managed lookup
-//      /lookups/appci_map (columns app_name, applicationci; edited on the Lookups tab).
+//      /lookups/sre/app_map (columns app_name, applicationci; edited on the Lookups tab).
 // The environment suffix is dropped before matching, so `Application:BillingPortal\:\:CRT`,
 // `...\:\:SPT` and `...\:\:PRD` all resolve through one map row, `billingportal`.
 
@@ -26,7 +26,7 @@ export const APPCI = SRE_CONFIG.appciField;
 export const LOAD = SRE_CONFIG.loads;
 export const CLOUD_TAG = SRE_CONFIG.cloudTagKey;
 export const ID_MAX = SRE_CONFIG.idMaxLength;
-/** DQL expression giving each /lookups/slo row's application ID: its ID column when mapped, else the first 3 characters of the name. */
+/** DQL expression giving each /lookups/sre/slo row's application ID: its ID column when mapped, else the first 3 characters of the name. */
 export const SLO_APPCI_EXPR = SRE_CONFIG.sloIdFromColumn ? "lower(appci)" : "lower(substring(slo, from:0, to:3))";
 export const SLO_ID_FROM_COLUMN = SRE_CONFIG.sloIdFromColumn;
 export const LOOKUP_PATHS = SRE_CONFIG.paths;
@@ -269,7 +269,7 @@ ${appciFromEntityTags()}
 // Checks: golden signals, SLOs, guardians, dashboards, SRE assessment, critical services → 6 max
 // FIXED (2026-08-29): SLOs and Guardians were both hardcoded +0 despite being plain
 // DQL lookups (no REST call needed) — trivial to add, previously just never wired.
-// Critical Services Tagged is new: see /lookups/critical_services in ScorecardsPage.tsx.
+// Critical Services Tagged is new: see /lookups/sre/critical_services in ScorecardsPage.tsx.
 // Mirrors l2Query in ScorecardsPage.tsx; keep the two in sync.
 export const BULK_L2_QUERY = `fetch dt.entity.service
 ${appciFromEntityTags()}

@@ -71,7 +71,7 @@ workflow:
             // 4. Upload as a lookup table (overwrite existing)
             const meta = {
               filePath: '/lookups/guardians',
-              displayName: 'Guardians by AppCI',
+              displayName: 'Guardians by application ID',
               description: 'Count of Site Reliability Guardians per applicationCI, refreshed from the guardian Settings API',
               lookupField: 'appci',
               parsePattern: "LD:appci ',' LD:guardianCount",

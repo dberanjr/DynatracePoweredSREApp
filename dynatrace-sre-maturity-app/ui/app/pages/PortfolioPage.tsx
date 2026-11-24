@@ -285,7 +285,7 @@ export const PortfolioPage = () => {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr>
-                  {["AppCI", "Name", "Tier", "Owner", "Services"].map((col) => (
+                  {[APP_CI_LABEL, "Name", "Tier", "Owner", "Services"].map((col) => (
                     <th key={col} style={{
                       textAlign: "left",
                       padding: "10px 14px",
@@ -300,7 +300,7 @@ export const PortfolioPage = () => {
                       background: "var(--sre-surface, #fff)",
                       zIndex: 1,
                     }}>
-                      {col === "AppCI" ? APP_CI_LABEL : col}
+                      {col}
                     </th>
                   ))}
                 </tr>

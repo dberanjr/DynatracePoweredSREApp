@@ -1,6 +1,6 @@
 import { READINESS_QUERIES, readinessAppQueries } from "../queries/maturityQueries";
 
-import { APP_CI_FIELD, APP_CI_LABEL, APP_CI_CLOUD_TAG } from "../settings/appSettings";
+import { APP_CI_FIELD, APP_CI_LABEL, APP_CI_CLOUD_TAG, LOOKUP_SETTINGS } from "../settings/appSettings";
 // The data-readiness registry: what each check needs (an "input"), how to measure it (a "probe"), and how to
 // read the result. See docs/superpowers/specs/2026-10-22-data-readiness-design.md.
 //
@@ -102,7 +102,7 @@ export const PROBES: ProbeDef[] = [
     interpret: (rec) => {
       const k = byKind(rec);
       const t = sumKinds(k);
-      const o = ratio(t.ok, t.total, `services and hosts resolve to an ${APP_CI_LABEL}`);
+      const o = ratio(t.ok, t.total, `services and hosts resolve to an application`);
       return { "IN-01": { ...o, evidence: `${o.evidence}: ${breakdown(k)}` } };
     },
   },
@@ -111,7 +111,7 @@ export const PROBES: ProbeDef[] = [
     query: Q.cmdb,
     window: "the CMDB lookup, active applications",
     produces: ["IN-02"],
-    ownLookup: "/lookups/dynatrace/cmdb_appci_owner_mapping",
+    ownLookup: LOOKUP_SETTINGS.cmdb.path,
     interpret: (rec) => ({ "IN-02": ratioOrMissing(num(rec[0]?.ok), num(rec[0]?.total), "active applications have a tier") }),
   },
   {
@@ -119,7 +119,7 @@ export const PROBES: ProbeDef[] = [
     query: Q.map,
     window: `the ${APP_CI_LABEL} map lookup`,
     produces: ["IN-03"],
-    ownLookup: "/lookups/appci_map",
+    ownLookup: LOOKUP_SETTINGS.appciMap.path,
     interpret: (rec) => ({ "IN-03": present(num(rec[0]?.total), `rows in the ${APP_CI_LABEL} map`) }),
   },
   {
@@ -141,7 +141,7 @@ export const PROBES: ProbeDef[] = [
     query: Q.cloud,
     window: "AWS, Azure and GCP resources in Smartscape",
     produces: ["IN-06"],
-    interpret: (rec) => ({ "IN-06": ratio(num(rec[0]?.ok), num(rec[0]?.total), `cloud resources carry an ${APP_CI_LABEL} tag`) }),
+    interpret: (rec) => ({ "IN-06": ratio(num(rec[0]?.ok), num(rec[0]?.total), `cloud resources carry an application tag`) }),
   },
   {
     key: "rumSynthetic",
@@ -151,7 +151,7 @@ export const PROBES: ProbeDef[] = [
     interpret: (rec) => {
       const k = byKind(rec);
       const t = sumKinds(k);
-      const o = ratio(t.ok, t.total, `RUM apps and synthetic tests resolve to an ${APP_CI_LABEL}`);
+      const o = ratio(t.ok, t.total, `RUM apps and synthetic tests resolve to an application`);
       return { "IN-07": { ...o, evidence: `${o.evidence}: ${breakdown(k)}` } };
     },
   },
@@ -160,7 +160,7 @@ export const PROBES: ProbeDef[] = [
     query: Q.seed,
     window: "the resolved critical-services lookup",
     produces: ["IN-12"],
-    ownLookup: "/lookups/critical_services",
+    ownLookup: LOOKUP_SETTINGS.criticalServices.path,
     interpret: (rec) => ({ "IN-12": ratioOrMissing(num(rec[0]?.ok), num(rec[0]?.total), "critical-service rows resolved to an entity") }),
   },
   {
@@ -188,7 +188,7 @@ export const PROBES: ProbeDef[] = [
     query: Q.workflows,
     window: "Automation workflows that ran in the last 30 days",
     produces: ["IN-16"],
-    interpret: (rec) => ({ "IN-16": ratio(num(rec[0]?.ok), num(rec[0]?.total), `workflows resolve to an ${APP_CI_LABEL} by their title`) }),
+    interpret: (rec) => ({ "IN-16": ratio(num(rec[0]?.ok), num(rec[0]?.total), `workflows resolve to an application by their title`) }),
   },
   {
     key: "alertRouting",
@@ -229,15 +229,15 @@ export const PROBES: ProbeDef[] = [
 ];
 
 export const INPUTS: InputDef[] = [
-  { id: "IN-01", name: `${APP_CI_LABEL} resolution`, description: `Services and hosts can be tied to an ${APP_CI_LABEL}, by an ${APP_CI_FIELD} tag or by an Application tag listed in the ${APP_CI_LABEL} map. Every score is keyed on it.`, fix: `Tag services and hosts with ${APP_CI_FIELD}:<code>, or add each application name to the ${APP_CI_LABEL} map on the Lookups tab.`, probe: "resolution" },
+  { id: "IN-01", name: `${APP_CI_LABEL} resolution`, description: `Services and hosts can be tied to an application, by an ${APP_CI_FIELD} tag or by an Application tag listed in the ${APP_CI_LABEL} map. Every score is keyed on it.`, fix: `Tag services and hosts with ${APP_CI_FIELD}:<code>, or add each application name to the ${APP_CI_LABEL} map on the Lookups tab.`, probe: "resolution" },
   { id: "IN-02", name: "CMDB table with tiers", description: "The CMDB lookup lists the active applications, each with a business criticality (its tier).", fix: "Set a business criticality for each application in the CMDB table on the Lookups tab.", probe: "cmdb" },
-  { id: "IN-03", name: `${APP_CI_LABEL} map`, description: `The lookup that translates an Application tag name into an ${APP_CI_LABEL} exists and has rows.`, fix: `Create the ${APP_CI_LABEL} map on the Lookups tab, with one row per application name.`, probe: "map" },
+  { id: "IN-03", name: `${APP_CI_LABEL} map`, description: `The lookup that translates an Application tag name into an application exists and has rows.`, fix: `Create the ${APP_CI_LABEL} map on the Lookups tab, with one row per application name.`, probe: "map" },
   { id: "IN-04", name: "Log attribution", description: `Log records carry an ${APP_CI_FIELD} attribute, so logs can be counted per application.`, fix: `Add an ${APP_CI_FIELD} attribute to log records at ingest, for example with an OpenPipeline processor that derives it from host or Kubernetes metadata.`, probe: "logs" },
-  { id: "IN-05", name: "Kubernetes attribution", description: `Kubernetes clusters are named so that they start with an ${APP_CI_LABEL}, which is how the scorecard attributes them.`, fix: `Name Kubernetes clusters so they start with the ${APP_CI_LABEL}, or extend the app to attribute clusters through workload tags.`, probe: "k8s" },
-  { id: "IN-06", name: "Cloud attribution", description: `Cloud resources (AWS, Azure, GCP) carry an ${APP_CI_LABEL} tag or label.`, fix: `Tag or label cloud resources with ${APP_CI_LABEL}.`, probe: "cloud" },
-  { id: "IN-07", name: "RUM and synthetic tagging", description: `Active RUM applications and synthetic tests can be tied to an ${APP_CI_LABEL}.`, fix: `Tag RUM applications and synthetic tests with their application, and add each spelling to the ${APP_CI_LABEL} map.`, probe: "rumSynthetic" },
+  { id: "IN-05", name: "Kubernetes attribution", description: `Kubernetes clusters are named so that they start with an application, which is how the scorecard attributes them.`, fix: `Name Kubernetes clusters so they start with the ${APP_CI_LABEL}, or extend the app to attribute clusters through workload tags.`, probe: "k8s" },
+  { id: "IN-06", name: "Cloud attribution", description: `Cloud resources (AWS, Azure, GCP) carry an application tag or label.`, fix: `Tag or label cloud resources with ${APP_CI_LABEL}.`, probe: "cloud" },
+  { id: "IN-07", name: "RUM and synthetic tagging", description: `Active RUM applications and synthetic tests can be tied to an application.`, fix: `Tag RUM applications and synthetic tests with their application, and add each spelling to the ${APP_CI_LABEL} map.`, probe: "rumSynthetic" },
   { id: "IN-08", name: "SLO convention", description: "SLOs follow a naming or tagging convention that identifies their application.", fix: `Name SLOs with the ${APP_CI_LABEL} as a prefix, or tag them.`, probe: null },
-  { id: "IN-09", name: "Guardians tagged", description: `Site Reliability Guardians carry an ${APP_CI_LABEL} tag.`, fix: `Tag each Site Reliability Guardian with ${APP_CI_FIELD}:<code>.`, probe: null },
+  { id: "IN-09", name: "Guardians tagged", description: `Site Reliability Guardians carry an application tag.`, fix: `Tag each Site Reliability Guardian with ${APP_CI_FIELD}:<code>.`, probe: null },
   { id: "IN-10", name: "SLO dashboards named", description: "SLO dashboards follow the naming convention that identifies their application.", fix: `Name SLO dashboards with the ${APP_CI_LABEL} as a prefix and include 'SLO'.`, probe: null },
   { id: "IN-11", name: "Runbook notebooks", description: "Runbooks are notebooks whose names identify their application.", fix: `Name runbook notebooks with the ${APP_CI_LABEL} as a prefix and include 'Runbook'.`, probe: null },
   { id: "IN-12", name: "Critical-services seed", description: "The critical-services list has rows, and they resolve to real Dynatrace entities.", fix: "List the application's critical endpoints or services on the Lookups tab, using names Dynatrace actually sees.", probe: "seed" },

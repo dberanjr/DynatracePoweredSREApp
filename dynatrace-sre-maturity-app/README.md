@@ -54,7 +54,7 @@ Customer-specific values are configured in the app, per browser, and applied aft
 
 - **Organization** — company name (defaults to `COMPANY_NAME` from `.env`) and an optional landing-page logo.
 - **Application identifier** — the key your entity tags / records / app-managed lookups use for an application
-  (default `applicationci`) and its display label.
+  (default `appId`) and its display label (default "Application ID").
 - **Lookup tables** — the path of each lookup the app reads (CMDB, application-name map, critical services, SLOs,
   SLO dashboards, guardians) and a mapping from your column names to the ones the app needs. **Detect columns**
   reads a table and suggests names. The app renames your columns right after each `load`, so queries are otherwise

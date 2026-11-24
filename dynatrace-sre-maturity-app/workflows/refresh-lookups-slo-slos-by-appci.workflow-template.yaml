@@ -76,8 +76,8 @@ workflow:
             // 3. Upload as a lookup table (overwrite existing)
             const meta = {
               filePath: '/lookups/slo',
-              displayName: 'SLOs by AppCI',
-              description: 'One row per SLO name; AppCI is derived from the first 3 characters of the name',
+              displayName: 'SLOs by application ID',
+              description: 'One row per SLO name; the application is derived from the first 3 characters of the name, or from the ID column when there is one',
               lookupField: 'slo',
               parsePattern: ID_COL ? "LD:slo '^' LD:" + ID_COL : 'LD:slo',
               skippedRecords: 1,

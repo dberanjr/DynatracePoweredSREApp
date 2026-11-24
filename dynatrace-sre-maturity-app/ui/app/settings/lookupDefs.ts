@@ -36,7 +36,7 @@ export const LOOKUP_DEFS = {
     label: "Application catalog (CMDB)",
     description:
       "One row per application: identity, owner and tier. Feeds the application selector, profile banner and leaderboard.",
-    defaultPath: "/lookups/dynatrace/cmdb_appci_owner_mapping",
+    defaultPath: "/lookups/sre/cmdb",
     fields: {
       appId: { canonical: APPCI_TOKEN, default: APPCI_TOKEN, label: "Application ID", hint: "Unique application identifier" },
       name: { canonical: "name", default: "name", label: "Application name", hint: "Human-readable name" },
@@ -50,7 +50,7 @@ export const LOOKUP_DEFS = {
   appciMap: {
     label: "Application name → ID map",
     description: "Translates the application name in an entity's Application tag to its application ID, for tenants that don't tag the ID directly.",
-    defaultPath: "/lookups/appci_map",
+    defaultPath: "/lookups/sre/app_map",
     fields: {
       appName: { canonical: "app_name", default: "app_name", label: "Application name", hint: "Lower-case name from the Application tag" },
       appId: { canonical: APPCI_TOKEN, default: APPCI_TOKEN, label: "Application ID", hint: "Application identifier it maps to" },
@@ -59,9 +59,9 @@ export const LOOKUP_DEFS = {
   criticalServices: {
     label: "Critical services",
     description: "One row per critical service, with the Dynatrace entity IDs it resolved to (space separated, or \"-\" when unresolved).",
-    defaultPath: "/lookups/critical_services",
+    defaultPath: "/lookups/sre/critical_services",
     fields: {
-      appId: { canonical: "appci", default: "appci", label: "Application ID", hint: "Joins to the application identifier" },
+      appId: { canonical: "appci", default: APPCI_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
       entityIds: { canonical: "entity_ids", default: "entity_ids", label: "Entity IDs", hint: 'Space-separated entity IDs; "-" if none' },
       entityName: { canonical: "entity_name", default: "entity_name", label: "Service name", hint: "Display name of the critical service" },
       severity: { canonical: "severity", default: "severity", label: "Severity", hint: "high / medium / low" },
@@ -71,7 +71,7 @@ export const LOOKUP_DEFS = {
   slo: {
     label: "SLOs",
     description: "One row per SLO. The application is the Application ID column when you map one, otherwise the first 3 characters of the SLO name.",
-    defaultPath: "/lookups/slo",
+    defaultPath: "/lookups/sre/slo",
     fields: {
       slo: { canonical: "slo", default: "slo", label: "SLO name", hint: "Name starting with the application code" },
       appId: { canonical: "appci", default: "", label: "Application ID", hint: "Leave blank to use the first 3 characters of the SLO name", optional: true },
@@ -80,17 +80,17 @@ export const LOOKUP_DEFS = {
   sloDashboards: {
     label: "SLO dashboards",
     description: "One row per SLO dashboard.",
-    defaultPath: "/lookups/slo-dashboards",
+    defaultPath: "/lookups/sre/slo_dashboards",
     fields: {
-      appId: { canonical: "appci", default: "appci", label: "Application ID", hint: "Joins to the application identifier" },
+      appId: { canonical: "appci", default: APPCI_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
     },
   },
   guardians: {
     label: "Site Reliability Guardians",
     description: "One row per guardian.",
-    defaultPath: "/lookups/guardians",
+    defaultPath: "/lookups/sre/guardians",
     fields: {
-      appId: { canonical: "appci", default: "appci", label: "Application ID", hint: "Joins to the application identifier" },
+      appId: { canonical: "appci", default: APPCI_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
     },
   },
 } as const satisfies Record<string, LookupTableDef>;
@@ -313,16 +313,14 @@ export function resolveConfig(appciField: string, lookups: LookupSettings, catal
   };
 }
 
-export const DEFAULT_APPCI_FIELD = "applicationci";
-/** Tag key the original deployment's cloud resources (AWS/Azure/GCP) and guardians carry. Case-sensitive in Grail. */
-export const DEFAULT_CLOUD_TAG_KEY = "ApplicationCI";
-
+export const DEFAULT_APPCI_FIELD = "appId";
+/** Seed table the critical-services workflow reads (not remappable in Settings; the Lookups tab edits it). */
+export const DEFAULT_ENTITY_SEVERITY_PATH = "/lookups/sre/entity_severity";
 /**
- * Cloud resource / guardian tag key. Unset: the original "ApplicationCI" while the identifier is the original
- * "applicationci", otherwise the identifier field as typed (tag keys are case-sensitive: override it if yours differs).
+ * Cloud resource / guardian tag key. Unset: the identifier field as typed (tag keys are case-sensitive:
+ * override it if the tag on your cloud resources is spelled differently, for example "ApplicationCI").
  */
-export const resolveCloudTagKey = (appciField: string, override: string): string =>
-  override.trim() || (appciField === DEFAULT_APPCI_FIELD ? DEFAULT_CLOUD_TAG_KEY : appciField);
+export const resolveCloudTagKey = (appciField: string, override: string): string => override.trim() || appciField;
 export const defaultConfig = (): SreConfig => resolveConfig(DEFAULT_APPCI_FIELD, defaultLookupSettings());
 
 /** The config the app publishes at startup (see settings/appSettings.ts) and the workflow generator sets. */

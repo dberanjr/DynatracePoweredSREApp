@@ -36,13 +36,13 @@ interface TableDef {
 // Keep in sync with LOOKUP_TABLES in ui/app/pages/lookupTables.ts.
 const TABLES: Record<string, TableDef> = {
   cmdb: {
-    path: '/lookups/dynatrace/cmdb_appci_owner_mapping',
-    backupPath: '/lookups/dynatrace/cmdb_appci_owner_mapping_backup',
-    displayName: 'CMDB AppCI owner mapping',
-    description: 'One row per AppCI: owner, criticality, status and support group. Maintained from the Lookups tab of the SRE maturity app.',
-    lookupField: 'applicationci',
+    path: '/lookups/sre/cmdb',
+    backupPath: '/lookups/sre/cmdb_backup',
+    displayName: 'CMDB application owner mapping',
+    description: 'One row per application: owner, criticality, status and support group. Maintained from the Lookups tab of the SRE maturity app.',
+    lookupField: 'appId',
     columns: [
-      'applicationci',
+      'appId',
       'name',
       'operational_status',
       'business_criticality',
@@ -54,36 +54,36 @@ const TABLES: Record<string, TableDef> = {
       'managed_by.u_vp',
       'managed_by.u_director',
     ],
-    required: ['applicationci', 'name'],
-    appciColumn: 'applicationci',
+    required: ['appId', 'name'],
+    appciColumn: 'appId',
     lowercase: [],
-    keyColumns: ['applicationci'],
+    keyColumns: ['appId'],
   },
   entity_severity: {
     // The refresh-lookups-critical-services workflow loads this exact path.
-    path: '/lookups/entity_severity',
-    backupPath: '/lookups/entity_severity_backup',
+    path: '/lookups/sre/entity_severity',
+    backupPath: '/lookups/sre/entity_severity_backup',
     displayName: 'Entity severity (critical services seed)',
-    description: 'Services/endpoints considered critical per AppCI. Seed for the critical services workflow. Maintained from the Lookups tab of the SRE maturity app.',
-    lookupField: 'appci',
-    columns: ['appci', 'entity_name', 'severity', 'business_impact'],
-    required: ['appci', 'entity_name', 'severity'],
-    appciColumn: 'appci',
-    lowercase: ['appci', 'severity'],
-    keyColumns: ['appci', 'entity_name'],
+    description: 'Services/endpoints considered critical per application. Seed for the critical services workflow. Maintained from the Lookups tab of the SRE maturity app.',
+    lookupField: 'appId',
+    columns: ['appId', 'entity_name', 'severity', 'business_impact'],
+    required: ['appId', 'entity_name', 'severity'],
+    appciColumn: 'appId',
+    lowercase: ['appId', 'severity'],
+    keyColumns: ['appId', 'entity_name'],
   },
   appci_map: {
     // Read by the shared AppCI resolver in ui/app/queries/maturityQueries.ts (APPCI_MAP_PATH) -
     // keep this path in sync with that constant. Backend code cannot import from the UI.
-    path: '/lookups/appci_map',
-    backupPath: '/lookups/appci_map_backup',
-    displayName: 'AppCI map (Application tag name to AppCI)',
-    description: 'Maps an Application tag name (environment suffix removed, lower case) to its AppCI, for tenants that do not tag applicationci directly. Maintained from the Lookups tab of the SRE maturity app.',
+    path: '/lookups/sre/app_map',
+    backupPath: '/lookups/sre/app_map_backup',
+    displayName: 'Application ID map (Application tag name to application ID)',
+    description: 'Maps an Application tag name (environment suffix removed, lower case) to its application ID, for tenants that do not tag applicationci directly. Maintained from the Lookups tab of the SRE maturity app.',
     lookupField: 'app_name',
-    columns: ['app_name', 'applicationci'],
-    required: ['app_name', 'applicationci'],
-    appciColumn: 'applicationci',
-    lowercase: ['app_name', 'applicationci'],
+    columns: ['app_name', 'appId'],
+    required: ['app_name', 'appId'],
+    appciColumn: 'appId',
+    lowercase: ['app_name', 'appId'],
     keyColumns: ['app_name'],
     // The queries strip backslashes and cut the tag at "::" (the environment suffix) before matching,
     // so a name containing either could never match and would fail silently.
@@ -175,8 +175,8 @@ async function upload(t: TableDef, filePath: string, displayName: string, descri
   if (!resp.ok) throw new Error(`Lookup upload to ${filePath} failed: ${resp.status} ${await resp.text()}`);
 }
 
-// The reference deployment's ID column; the tables above are written with it and re-keyed per request.
-const DEFAULT_FIELD = 'applicationci';
+// The default ID column; the tables above are written with it and re-keyed per request.
+const DEFAULT_FIELD = 'appId';
 function withField(t: TableDef, field: string): TableDef {
   const sub = (v: string) => (v === DEFAULT_FIELD ? field : v);
   return {

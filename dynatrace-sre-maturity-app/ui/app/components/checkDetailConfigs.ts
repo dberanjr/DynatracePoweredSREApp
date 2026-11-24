@@ -132,9 +132,9 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
     level: "L1",
     levelColor: "#57C0F4",
     description:
-      `Checks whether hosts tagged with this ${APP_CI_LABEL} have OneAgent installed and are actively reporting. Only hosts alive in the last 2 hours are counted to confirm current coverage. The table lists every entity (hosts, EKS nodes, PaaS-injected ECS/EKS Fargate tasks, etc.) tagged with this ${APP_CI_LABEL} along with its OneAgent mode. Click any row to open that entity in Infrastructure & Operations. The pass detail shows Full-Stack hosts vs the total — Full-Stack mode enables deep code-level traces and the widest set of signals. PaaS-injected OneAgent (ECS Fargate, EKS Fargate, etc.) has no partial mode — it reports a blank monitoringMode but is always full-stack, so those hosts are counted as Full-Stack (PaaS).`,
+      `Checks whether hosts tagged with this application have OneAgent installed and are actively reporting. Only hosts alive in the last 2 hours are counted to confirm current coverage. The table lists every entity (hosts, EKS nodes, PaaS-injected ECS/EKS Fargate tasks, etc.) tagged with this application along with its OneAgent mode. Click any row to open that entity in Infrastructure & Operations. The pass detail shows Full-Stack hosts vs the total — Full-Stack mode enables deep code-level traces and the widest set of signals. PaaS-injected OneAgent (ECS Fargate, EKS Fargate, etc.) has no partial mode — it reports a blank monitoringMode but is always full-stack, so those hosts are counted as Full-Stack (PaaS).`,
     passLogic:
-      `Pass: at least one host is tagged with this ${APP_CI_LABEL} and was alive in the last 2 hours.`,
+      `Pass: at least one host is tagged with this application and was alive in the last 2 hours.`,
     guidance:
       `Deploy OneAgent on all hosts serving this application. Tag them with the '${APP_CI_FIELD}:<code>' host metadata tag. Ensure hosts are in Full-Stack mode for the richest signal coverage. Infrastructure mode provides limited observability; Discovery mode means OneAgent is not installed, only lightweight scanning is active. PaaS/container workloads (ECS Fargate, EKS Fargate) don't expose a monitoringMode at all but are inherently full-stack once OneAgent is injected.`,
     chartType: "table",
@@ -213,8 +213,8 @@ ${appciFromEntityTags()}
     level: "L1",
     levelColor: "#57C0F4",
     description:
-      `Verifies that at least one service entity tagged with this ${APP_CI_LABEL} is emitting distributed traces. Services appear in Dynatrace when OneAgent captures HTTP or RPC traffic between processes. Click any service row to open it in Distributed Tracing (last 2 hours). Note: dependency count uses the service topology 'calls' relationship, which reflects direct downstream service connections.`,
-    passLogic: `Pass: at least one service (dt.entity.service) is tagged with this ${APP_CI_LABEL}.`,
+      `Verifies that at least one service entity tagged with this application is emitting distributed traces. Services appear in Dynatrace when OneAgent captures HTTP or RPC traffic between processes. Click any service row to open it in Distributed Tracing (last 2 hours). Note: dependency count uses the service topology 'calls' relationship, which reflects direct downstream service connections.`,
+    passLogic: `Pass: at least one service (dt.entity.service) is tagged with this application.`,
     guidance:
       `Ensure OneAgent is installed on all service hosts and processes. Confirm that HTTP/gRPC traffic is flowing through the monitored process. If a service exists but is not tagged, add the '${APP_CI_FIELD}:<code>' tag via host metadata, tag rules, or the entity API.`,
     chartType: "table",
@@ -260,9 +260,9 @@ ${appciFromEntityTags()}
     level: "L1",
     levelColor: "#57C0F4",
     description:
-      `Confirms that logs are flowing into Dynatrace and are correlated to this ${APP_CI_LABEL}. The table breaks log volume down by source (last 1h) with error/warn severity counts, so you can spot gaps in log coverage. The 'type' column shows whether each row is a real Host (node-level OneAgent — classic hosts, Cloud Native Full Stack) or a Service (Firehose/OpenPipeline-ingested PaaS logs — ECS Fargate, etc. — which never carry a host.name, so the container name is shown instead). Queries sample at 1:1000 to keep cost low, then extrapolate back to the true volume via dt.system.sampling_ratio — the numbers shown are estimated real totals, not raw sampled counts. Click any row to open its logs in the Logs app. Log correlation enables Davis to surface log-based root causes and powers the Logs tab in problem cards.`,
+      `Confirms that logs are flowing into Dynatrace and are correlated to this application. The table breaks log volume down by source (last 1h) with error/warn severity counts, so you can spot gaps in log coverage. The 'type' column shows whether each row is a real Host (node-level OneAgent — classic hosts, Cloud Native Full Stack) or a Service (Firehose/OpenPipeline-ingested PaaS logs — ECS Fargate, etc. — which never carry a host.name, so the container name is shown instead). Queries sample at 1:1000 to keep cost low, then extrapolate back to the true volume via dt.system.sampling_ratio — the numbers shown are estimated real totals, not raw sampled counts. Click any row to open its logs in the Logs app. Log correlation enables Davis to surface log-based root causes and powers the Logs tab in problem cards.`,
     passLogic:
-      `Pass: at least one log record carrying this ${APP_CI_LABEL} exists in the selected timeframe (sampled at 1:1000).`,
+      `Pass: at least one log record carrying this application exists in the selected timeframe (sampled at 1:1000).`,
     guidance:
       `Configure log ingest via OneAgent log monitoring or the Dynatrace Log Ingest API. Ensure the '${APP_CI_FIELD}' field is set on log records — typically via host metadata propagation or a log enrichment rule in OpenPipeline.`,
     chartType: "table",
@@ -305,7 +305,7 @@ ${appciFromEntityTags()}
     description:
       "Verifies that Dynatrace Smartscape has discovered the application's topology — its services, their dependencies, and the infrastructure they run on. This is derived from service presence: if services exist, Smartscape has built a topology map. The table shows each service's direct downstream dependency count and direct upstream caller count (derived from the service topology 'calls' relationship). Click any row to open that service in this app's Dependencies tab, pre-selected so its upstream/downstream call chains load immediately — or use the View button on a row to jump straight into a specific native Smartscape topology view (related nodes, direct calls, hierarchy, or downstream/upstream call chain) for that service. This enables Davis to correlate problems across the full dependency chain.",
     passLogic:
-      `Pass: at least one service is tagged with this ${APP_CI_LABEL} (same signal as Tracing Validated).`,
+      `Pass: at least one service is tagged with this application (same signal as Tracing Validated).`,
     guidance:
       `Smartscape discovery is automatic once OneAgent is installed and services are tagged. Ensure services are correctly tagged with '${APP_CI_FIELD}:<code>'. Full topology discovery may take 1–2 hours after initial instrumentation.`,
     chartType: "table",
@@ -345,9 +345,9 @@ fetch dt.entity.service
     level: "L1",
     levelColor: "#57C0F4",
     description:
-      `Detects Kubernetes clusters belonging to this ${APP_CI_LABEL} by matching the cluster name against the ${APP_CI_LABEL} prefix (e.g. '<code>-us-east-1-prd'), not by workload tags — a shared EKS cluster's workloads (cloud_application entities) are often tagged with a sub-application's CI, which under-detects the parent app. This check is N/A for applications that do not run on Kubernetes. The table lists every workload running on the app's cluster(s), following Kubernetes SRE best practice by surfacing the two signals that matter most for workload health: desired vs. running replica count (drift indicates a scheduling or capacity problem) and health events (24h count of restarts, OOM kills, failed scheduling, and failed health probes — a crash-loop/instability indicator). Workloads with running < desired sort to the top. Click any row to open that specific workload in the Kubernetes app, or use the View menu to jump straight into a Smartscape topology view (related nodes, direct calls, hierarchy, downstream/upstream call chain) for it. The chart breaks down the same event types over time, so you can see when and how the trouble happened, not just how much. Click the chart to open this ${APP_CI_LABEL}'s clusters in the Kubernetes app.`,
+      `Detects Kubernetes clusters belonging to this application by matching the cluster name against the ${APP_CI_LABEL} prefix (e.g. '<code>-us-east-1-prd'), not by workload tags — a shared EKS cluster's workloads (cloud_application entities) are often tagged with a sub-application's CI, which under-detects the parent app. This check is N/A for applications that do not run on Kubernetes. The table lists every workload running on the app's cluster(s), following Kubernetes SRE best practice by surfacing the two signals that matter most for workload health: desired vs. running replica count (drift indicates a scheduling or capacity problem) and health events (24h count of restarts, OOM kills, failed scheduling, and failed health probes — a crash-loop/instability indicator). Workloads with running < desired sort to the top. Click any row to open that specific workload in the Kubernetes app, or use the View menu to jump straight into a Smartscape topology view (related nodes, direct calls, hierarchy, downstream/upstream call chain) for it. The chart breaks down the same event types over time, so you can see when and how the trouble happened, not just how much. Click the chart to open this application's clusters in the Kubernetes app.`,
     passLogic:
-      `N/A (counted as a pass): no Kubernetes cluster matches this ${APP_CI_LABEL} — not every app runs on K8s. When a cluster does match: Pass requires the Cloud Native Full Stack OneAgent Operator DaemonSet to be present and fully ready, plus K8s-scoped tracing and logs both flowing for the cluster. Fail: a cluster matches but the operator isn't healthy or a signal is missing.`,
+      `N/A (counted as a pass): no Kubernetes cluster matches this application — not every app runs on K8s. When a cluster does match: Pass requires the Cloud Native Full Stack OneAgent Operator DaemonSet to be present and fully ready, plus K8s-scoped tracing and logs both flowing for the cluster. Fail: a cluster matches but the operator isn't healthy or a signal is missing.`,
     guidance:
       `Connect your Kubernetes cluster to Dynatrace via the Kubernetes Operator. Name clusters with the '<${APP_CI_FIELD}>-<region>-<env>' convention so they're attributable to the owning app. Investigate workloads where running < desired (scheduling/capacity issue) or where health events are climbing (crash loop, OOM, or scheduling instability) first.`,
     chartType: "table",
@@ -434,9 +434,9 @@ fetch dt.entity.service
     level: "L1",
     levelColor: "#57C0F4",
     description:
-      `Detects all cloud resources (AWS, Azure, GCP) tagged with this ${APP_CI_LABEL}, using the same data source as the Clouds app. Click a resource row, a resource-type row, or a word-cloud item to open it filtered in the Clouds app.`,
+      `Detects all cloud resources (AWS, Azure, GCP) tagged with this application, using the same data source as the Clouds app. Click a resource row, a resource-type row, or a word-cloud item to open it filtered in the Clouds app.`,
     passLogic:
-      `Pass: at least one cloud resource (AWS, Azure, or GCP; any type) is tagged with this ${APP_CI_LABEL}. N/A: no cloud resources found for this app.`,
+      `Pass: at least one cloud resource (AWS, Azure, or GCP; any type) is tagged with this application. N/A: no cloud resources found for this app.`,
     guidance:
       `Ensure cloud resources are tagged with '${APP_CI_LABEL}:<code>' at the cloud-provider level, and that a Cloud connection (AWS/Azure/GCP integration) is configured in Dynatrace so those resources are discovered.`,
     chartType: "table",
@@ -508,7 +508,7 @@ fetch dt.entity.service
     description:
       "Checks whether the application has Real User Monitoring (RUM) configured via a Dynatrace Application entity, or synthetic tests covering key user flows. RUM apps active in the last 7 days are counted. Synthetics provide continuous availability checks. This check is most relevant for frontend applications; backend-only apps may legitimately have neither.",
     passLogic:
-      `Pass: at least one RUM app (active in the last 7 days) OR at least one synthetic test is tagged with this ${APP_CI_LABEL}.`,
+      `Pass: at least one RUM app (active in the last 7 days) OR at least one synthetic test is tagged with this application.`,
     guidance:
       "For frontend applications: inject the RUM JavaScript snippet via OneAgent automatic injection or manual instrumentation, and tag the resulting Dynatrace Application entity. Create browser clickpath or HTTP monitor synthetics for critical user journeys.",
     chartType: "table",
@@ -540,8 +540,8 @@ fetch dt.entity.synthetic_test
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Verifies that golden signal metrics (traffic, errors, latency, saturation) are actually flowing for this application — not just that services are tagged, but that real data exists for all four. The table shows live 1h traffic, error rate, and p95 latency per service, sorted to surface the worst error rate first. Below the table, all four signals are trended over the last 6h as four small charts, each auto-scaled to its own range — traffic (request count), errors (% of requests failing), latency (p95 response time), and saturation (avg CPU % of the processes backing these services). Saturation is derived from the CPU usage of the process groups tagged with this ${APP_CI_LABEL}, since there is no native per-service saturation metric.`,
-    passLogic: `Pass: at least one service tagged with this ${APP_CI_LABEL} is present (and thus emitting golden-signal metrics).`,
+      `Verifies that golden signal metrics (traffic, errors, latency, saturation) are actually flowing for this application — not just that services are tagged, but that real data exists for all four. The table shows live 1h traffic, error rate, and p95 latency per service, sorted to surface the worst error rate first. Below the table, all four signals are trended over the last 6h as four small charts, each auto-scaled to its own range — traffic (request count), errors (% of requests failing), latency (p95 response time), and saturation (avg CPU % of the processes backing these services). Saturation is derived from the CPU usage of the process groups tagged with this application, since there is no native per-service saturation metric.`,
+    passLogic: `Pass: at least one service tagged with this application is present (and thus emitting golden-signal metrics).`,
     guidance:
       "Golden signals are automatic with Full-Stack OneAgent. Ensure services are correctly tagged. To explicitly define SLIs, navigate to SLO Management and create SLOs referencing golden-signal metrics (request rate, error rate, latency) for this application's services.",
     chartType: "table",
@@ -630,9 +630,9 @@ ${appciFromEntityTags()}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Counts Service Level Objectives (SLOs) configured for this ${APP_CI_LABEL}. This check calls the Gen3 SLO platform API live (via an app function) rather than the /lookups/slo table, so each row shows its real target and description, not just a name. The ${APP_CI_LABEL} is identified by the first 3 characters of each SLO name. Each SLO's own name is parsed to derive its Type (Availability, Performance, etc.) — pure string-parsing of the name itself, not a cross-reference — and the secondary panel breaks down SLO count by that type, showing whether coverage leans on one signal (e.g. all-Availability) or spans multiple. Click a row to open the SLO settings page — the native SLO table has no deep-linkable URL for an individual SLO (row names are plain text with a JS-only click handler, confirmed via DOM inspection), so this opens the full list rather than that specific row.`,
+      `Counts Service Level Objectives (SLOs) configured for this application. This check calls the Gen3 SLO platform API live (via an app function) rather than the /lookups/sre/slo table, so each row shows its real target and description, not just a name. The ${APP_CI_LABEL} is identified by the first 3 characters of each SLO name. Each SLO's own name is parsed to derive its Type (Availability, Performance, etc.) — pure string-parsing of the name itself, not a cross-reference — and the secondary panel breaks down SLO count by that type, showing whether coverage leans on one signal (e.g. all-Availability) or spans multiple. Click a row to open the SLO settings page — the native SLO table has no deep-linkable URL for an individual SLO (row names are plain text with a JS-only click handler, confirmed via DOM inspection), so this opens the full list rather than that specific row.`,
     passLogic:
-      `Pass: at least one SLO exists whose name starts with this ${APP_CI_LABEL}'s 3-letter code.`,
+      `Pass: at least one SLO exists whose name starts with this application's 3-letter code.`,
     guidance:
       `Create SLOs in Dynatrace → SLO Management. Name each SLO starting with the 3-letter ${APP_CI_LABEL} code (e.g., 'ADH-API-AvailabilitySLO').`,
     chartType: "table",
@@ -663,7 +663,7 @@ ${appciFromEntityTags()}
     secondaryChartType: "table",
     secondaryLabel: "SLO count by type (parsed from SLO name)",
     sloRowClick: true,
-    scorecardSnippet: `// Source: /lookups/slo  (refreshed hourly by workflow "Refresh /lookups/slo (SLOs by ${APP_CI_LABEL})")
+    scorecardSnippet: `// Source: /lookups/sre/slo  (refreshed hourly by workflow "Refresh /lookups/sre/slo (SLOs by ${APP_CI_LABEL})")
 ${LOAD.slo}
 | fieldsAdd appci = ${SLO_APPCI_EXPR}
 | summarize sloCount = count(), by:{appci}
@@ -677,9 +677,9 @@ ${LOAD.slo}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Counts Site Reliability Guardians (SRGs) configured for this ${APP_CI_LABEL}. SRGs automate reliability validation by evaluating SLOs, metrics, and events against defined thresholds during deployments or on a schedule. This check calls the Guardian Settings API live (via an app function) rather than a scheduled lookup table — the Automation Engine workflow that used to populate a /lookups/guardians table proved unreliable to keep in sync, so guardian detail is now fetched fresh every time this modal opens. The table lists each guardian's name, objective count, and trigger kind; click a row to open that guardian's validation results. The secondary panel expands every guardian's individual objectives, showing exactly what's being validated.`,
+      `Counts Site Reliability Guardians (SRGs) configured for this application. SRGs automate reliability validation by evaluating SLOs, metrics, and events against defined thresholds during deployments or on a schedule. This check calls the Guardian Settings API live (via an app function) rather than a scheduled lookup table — the Automation Engine workflow that used to populate a /lookups/sre/guardians table proved unreliable to keep in sync, so guardian detail is now fetched fresh every time this modal opens. The table lists each guardian's name, objective count, and trigger kind; click a row to open that guardian's validation results. The secondary panel expands every guardian's individual objectives, showing exactly what's being validated.`,
     passLogic:
-      `Pass: at least one SRG is found tagged with this ${APP_CI_LABEL}'s appci code (case-insensitive, ${APP_CI_FIELD} or appci tag key).`,
+      `Pass: at least one SRG is found tagged with this application's appci code (case-insensitive, ${APP_CI_FIELD} or appci tag key).`,
     guidance:
       `Create an SRG in Dynatrace → Site Reliability Guardian, tag it with '${APP_CI_FIELD}:<code>', and define evaluation objectives for the app's critical SLOs. SRGs are most impactful when triggered automatically by deployment events.`,
     chartType: "table",
@@ -708,7 +708,7 @@ ${LOAD.slo}
     secondaryChartType: "table",
     secondaryLabel: "Objectives per guardian",
     guardianRowClick: true,
-    scorecardSnippet: `// Scorecard pass/fail source: /lookups/guardians
+    scorecardSnippet: `// Scorecard pass/fail source: /lookups/sre/guardians
 // (one row per guardian, refreshed on a schedule by an Automation Engine workflow)
 ${LOAD.guardians}
 | fieldsAdd appci = lower(appci)
@@ -727,9 +727,9 @@ ${LOAD.guardians}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Checks whether SLO dashboards have been published for this ${APP_CI_LABEL}. This check calls the Documents API live (via an app function) rather than a scheduled lookup table, for the same reliability reason as the Guardians check. Dashboards whose name starts with the 3-letter ${APP_CI_LABEL} code and contains the word 'SLO' in standalone uppercase are listed with their creation date, last-modified date, and owner. Click a row to open that dashboard directly.`,
+      `Checks whether SLO dashboards have been published for this application. This check calls the Documents API live (via an app function) rather than a scheduled lookup table, for the same reliability reason as the Guardians check. Dashboards whose name starts with the 3-letter ${APP_CI_LABEL} code and contains the word 'SLO' in standalone uppercase are listed with their creation date, last-modified date, and owner. Click a row to open that dashboard directly.`,
     passLogic:
-      `Pass: at least one dashboard exists whose name starts with this ${APP_CI_LABEL}'s 3-letter code and contains uppercase 'SLO'.`,
+      `Pass: at least one dashboard exists whose name starts with this application's 3-letter code and contains uppercase 'SLO'.`,
     guidance:
       `Create a Dynatrace dashboard named '<${APP_CI_LABEL}> SLO Dashboard' (e.g., 'ADH SLO Dashboard'). Include SLO burn-rate tiles, error budget gauges, and trend charts for all application SLOs.`,
     chartType: "table",
@@ -749,7 +749,7 @@ ${LOAD.guardians}
       },
     },
     dashboardRowClick: true,
-    scorecardSnippet: `// Scorecard pass/fail source: /lookups/slo-dashboards
+    scorecardSnippet: `// Scorecard pass/fail source: /lookups/sre/slo_dashboards
 // (one row per dashboard, refreshed on a schedule by an Automation Engine workflow)
 ${LOAD.sloDashboards}
 | fieldsAdd appci = lower(appci)
@@ -771,7 +771,7 @@ ${LOAD.sloDashboards}
     description:
       `Verifies that this application has a tier (business criticality) assigned. The tier (1–4) determines the SRE engagement level and which maturity checks apply. The check passes when the application's row in the CMDB table (maintained on the Lookups tab, the same table the identity bar and ${APP_CI_LABEL} picker read) has a business criticality, or when a ServiceNow import event carried a tier for it in the last 24 hours (the original source, still honored). The card shows the CMDB record: name, tier, owner, support group and managing director. The chart counts ServiceNow import events over the last 7 days; it is empty if no such import runs in this environment.`,
     passLogic:
-      `Pass: this ${APP_CI_LABEL}'s CMDB row has a non-blank business criticality, or a 'workflow.import.servicenow.appci' bizevent with a non-null tier arrived in the last 24 hours.`,
+      `Pass: this application's CMDB row has a non-blank business criticality, or a 'workflow.import.servicenow.appci' bizevent with a non-null tier arrived in the last 24 hours.`,
     guidance:
       "Set the application's business criticality in the CMDB table (Lookups tab → CMDB owner mapping), for example '1 - critical'. If the CMDB is the source of truth, load it from a ServiceNow export rather than typing it. The tier decides which checks apply to this application, so it should be assigned before anything else is judged.",
     chartType: "table",
@@ -788,7 +788,7 @@ ${LOAD.sloDashboards}
     secondaryChartType: "bar",
     secondaryLabel: "ServiceNow import events (7d, daily). Empty means no such import runs here",
     scorecardSnippet: `// Scorecard pass/fail source: the CMDB row's business criticality, or a ServiceNow import tier
-// (replace "abc" with an ${APP_CI_LABEL} to run this as is)
+// (replace "abc" with an application to run this as is)
 data record(${APP_CI_FIELD} = "abc")
 ${hasTierLookup()}
 
@@ -799,9 +799,9 @@ ${hasTierLookup()}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Checks whether the critical services for this application are tagged and identified in Dynatrace. Critical service tagging enables priority routing in ITSM, auto-escalation in incident management, and targeted alerting thresholds. WIRED UP (2026-08-29): sources /lookups/critical_services, a table refreshed daily at 06:00 UTC carrying 9,072 service rows across 361 ${APP_CI_LABEL}s, each with a severity (high / medium / low) and a business-impact description. A pass requires at least one listed service whose entity_ids resolved to a real Dynatrace entity — being merely listed is not enough, since only ~38% of rows tenant-wide (3,462 of 9,072) have resolved. The table below lists every critical service for this app with its resolution state, sorted unresolved-first so the biggest gaps are immediately visible.`,
+      `Checks whether the critical services for this application are tagged and identified in Dynatrace. Critical service tagging enables priority routing in ITSM, auto-escalation in incident management, and targeted alerting thresholds. WIRED UP (2026-08-29): sources /lookups/sre/critical_services, a table refreshed daily at 06:00 UTC carrying 9,072 service rows across 361 ${APP_CI_LABEL}s, each with a severity (high / medium / low) and a business-impact description. A pass requires at least one listed service whose entity_ids resolved to a real Dynatrace entity — being merely listed is not enough, since only ~38% of rows tenant-wide (3,462 of 9,072) have resolved. The table below lists every critical service for this app with its resolution state, sorted unresolved-first so the biggest gaps are immediately visible.`,
     passLogic:
-      `Pass: at least one critical service listed for this ${APP_CI_LABEL} has entity_ids resolved to a real Dynatrace entity (not '-'). Fail: services are listed but none have resolved. N/A: no critical services are listed for this ${APP_CI_LABEL} at all.`,
+      `Pass: at least one critical service listed for this application has entity_ids resolved to a real Dynatrace entity (not '-'). Fail: services are listed but none have resolved. N/A: no critical services are listed for this application at all.`,
     guidance:
       "Work down the table starting with unresolved high-severity rows — those are business-critical services Dynatrace can't yet tie back to a monitored entity. Resolution happens upstream in the BigPanda/CMDB pipeline that feeds this lookup; improving the tenant-wide 38% resolution rate is a data-hygiene effort owned by the configuration-management team, tracked separately from this app.",
     chartType: "table",
@@ -814,7 +814,7 @@ ${hasTierLookup()}
 | sort resolved asc, severityRank asc
 | fields service = entity_name, severity, businessImpact = business_impact, resolved
 | limit 200`,
-    scorecardSnippet: `// Wired to /lookups/critical_services (refreshed daily at 06:00 UTC)
+    scorecardSnippet: `// Wired to /lookups/sre/critical_services (refreshed daily at 06:00 UTC)
 // Note the table name uses an UNDERSCORE, not a hyphen.
 ${LOAD.criticalServices}
 | fieldsAdd appci = lower(appci)
@@ -825,12 +825,12 @@ ${LOAD.criticalServices}
 
 // Pass: resolved > 0 (at least one listed service's entity_ids resolved)
 // Fail: criticalCount > 0 but resolved == 0 (listed, none resolved)
-// N/A:  criticalCount == 0 (no critical services listed for this ${APP_CI_LABEL})
+// N/A:  criticalCount == 0 (no critical services listed for this application)
 //
 // Columns: appci, entity_name, severity (high|medium|low),
 //          business_impact, entity_ids, id_count, row_id
 // Scale:   9,072 rows / 361 ${APP_CI_LABEL}s; 3,462 (38%) have resolved entity_ids
-// Source:  workflow "Refresh /lookups/critical_services
+// Source:  workflow "Refresh /lookups/sre/critical_services
 //          (entity_severity resolved to entity IDs)"`,
   },
 
@@ -842,7 +842,7 @@ ${LOAD.criticalServices}
     description:
       "Verifies that Davis Causal AI is actively detecting problems and correlating related signals for this application. Only meaningful problems are counted: ERROR or SLOWDOWN category with more than one grouped event, excluding Davis duplicates. The table lists each problem with how many raw events Davis folded into it, how many entities it spans, and whether a root cause was pinpointed — click any row to open that problem in the Problems app. The donut shows how the app's entire 7-day problem volume splits three ways: Causal (real, investigable), Noise (single-event flaps — see Alert Noise Review), and Other, a bucket that is invisible on the scorecard but often sizeable. CORRECTED: this check previously counted correlation from the 'affected_entities' field, which is null on every problem record in this tenant, so it reported 0 correlated for every application. It now uses 'affected_entity_ids', which is populated on 100% of records; and the correlation figure is now measured over the same 7-day window as the rest of the check, rather than the dashboard's default timeframe.",
     passLogic:
-      `Pass: at least one ERROR or SLOWDOWN category problem with more than one grouped event (non-duplicate) exists for this ${APP_CI_LABEL} in the last 7 days. A problem is counted as correlated when it affects more than one entity.`,
+      `Pass: at least one ERROR or SLOWDOWN category problem with more than one grouped event (non-duplicate) exists for this application in the last 7 days. A problem is counted as correlated when it affects more than one entity.`,
     guidance:
       "Davis Causal AI is automatic once OneAgent is deployed and alerting is enabled. Correlation quality depends on topology completeness — Davis can only link entities it can see, so gaps in tracing or untagged services reduce multi-entity correlation. If the donut shows a large Noise slice, tune anomaly detection thresholds; if it shows a large Other slice, those problems match neither the causal nor the noise definition and are worth reviewing to decide which they belong in.",
     chartType: "table",
@@ -907,9 +907,9 @@ ${appciFromProblemTags()}
     level: "L3",
     levelColor: "#611CD9",
     description:
-      `Counts deployment events for this ${APP_CI_LABEL} over the last 30 days, from CUSTOM_DEPLOYMENT events. The table lists individual deployments with the repository, target environment, branch or tag, outcome, and how long the deploy took — click any row to open that exact pipeline run in the CI platform. The chart trends deployments per day stacked by outcome, so a run of failures is visible immediately rather than hidden inside a single total. Every deployment event in this tenant currently originates from GitHub Actions; the query deliberately accepts any CUSTOM_DEPLOYMENT event rather than filtering on the CDK workflow, so Harness pipelines are counted automatically once they begin reporting.`,
+      `Counts deployment events for this application over the last 30 days, from CUSTOM_DEPLOYMENT events. The table lists individual deployments with the repository, target environment, branch or tag, outcome, and how long the deploy took — click any row to open that exact pipeline run in the CI platform. The chart trends deployments per day stacked by outcome, so a run of failures is visible immediately rather than hidden inside a single total. Every deployment event in this tenant currently originates from GitHub Actions; the query deliberately accepts any CUSTOM_DEPLOYMENT event rather than filtering on the CDK workflow, so Harness pipelines are counted automatically once they begin reporting.`,
     passLogic:
-      `Pass: at least one CUSTOM_DEPLOYMENT event exists for this ${APP_CI_LABEL} in the last 30 days, from any CI/CD platform.`,
+      `Pass: at least one CUSTOM_DEPLOYMENT event exists for this application in the last 30 days, from any CI/CD platform.`,
     guidance:
       "Integrate your CI/CD pipeline to send deployment events to Dynatrace, including the 'application_ci' field — that field is what attributes the deploy to this application. For GitHub Actions with CDK the shared workflow already emits these events. For Harness, configure the Dynatrace deployment notification step. Deployments to dev and qa are counted alongside production; use the environment column to see the split.",
     chartType: "table",
@@ -1017,9 +1017,9 @@ fetch events, from:now()-30d
     level: "L3",
     levelColor: "#611CD9",
     description:
-      `Counts runbook notebooks linked to this ${APP_CI_LABEL} — the step-by-step remediation procedures an on-call operator follows during an incident. A notebook qualifies when its name starts with the 3-letter ${APP_CI_LABEL} code and contains the word 'Runbook'. The table lists each matching notebook with its owner and last-modified date; click a row to open it. Below it, a second table lists notebooks that belong to this app but did NOT qualify, and says exactly why — so a failing check tells you whether runbooks genuinely don't exist or simply aren't named to convention. RESOLVED (2026-08-29): the scorecard's pass/fail and the leaderboard ranking now both read the Documents API live too, the same as the modal — the /lookups/runbooks table (which held only an empty sentinel row despite its refresh workflow reporting success daily) is no longer used anywhere. The per-app scorecard calls getRunbookDetail directly; the portfolio leaderboard calls a bulk sibling, getAllRunbookCounts, which reads the same Documents API once for every app instead of filtering to one. All three views now agree by construction, not by coincidence.`,
+      `Counts runbook notebooks linked to this application — the step-by-step remediation procedures an on-call operator follows during an incident. A notebook qualifies when its name starts with the 3-letter ${APP_CI_LABEL} code and contains the word 'Runbook'. The table lists each matching notebook with its owner and last-modified date; click a row to open it. Below it, a second table lists notebooks that belong to this app but did NOT qualify, and says exactly why — so a failing check tells you whether runbooks genuinely don't exist or simply aren't named to convention. RESOLVED (2026-08-29): the scorecard's pass/fail and the leaderboard ranking now both read the Documents API live too, the same as the modal — the /lookups/runbooks table (which held only an empty sentinel row despite its refresh workflow reporting success daily) is no longer used anywhere. The per-app scorecard calls getRunbookDetail directly; the portfolio leaderboard calls a bulk sibling, getAllRunbookCounts, which reads the same Documents API once for every app instead of filtering to one. All three views now agree by construction, not by coincidence.`,
     passLogic:
-      `Pass: at least one notebook exists whose name starts with this ${APP_CI_LABEL}'s 3-letter code and contains the word 'Runbook' (any case).`,
+      `Pass: at least one notebook exists whose name starts with this application's 3-letter code and contains the word 'Runbook' (any case).`,
     guidance:
       `Create a Dynatrace Notebook named '<${APP_CI_LABEL}> Runbook - <Topic>', for example 'CCL Runbook - High Error Rate'. The name must start with the exact 3-letter ${APP_CI_LABEL} code and include the word 'Runbook' — both are required for attribution. Document investigation steps, the DQL queries that confirm the diagnosis, and the remediation commands. Link the runbook from the corresponding alert workflow so responders reach it from the notification. If the second table below lists notebooks, those are near-misses that only need renaming.`,
     chartType: "table",
@@ -1060,7 +1060,7 @@ fetch events, from:now()-30d
 // and is deliberately excluded from the DQL-side passCount. The real
 // pass/fail is applied client-side after the query resolves, via
 // useLiveCheckOverride, which calls the getRunbookDetail app function for
-// this ${APP_CI_LABEL} and overwrites the check value + adjusts the "X / 7" score:
+// this application and overwrites the check value + adjusts the "X / 7" score:
 //
 //   pass "N runbook(s)"   if getRunbookDetail returns any matching notebook
 //   fail "No ${APP_CI_LABEL} runbooks"  otherwise
@@ -1192,7 +1192,7 @@ fetch dt.davis.problems, from:now()-7d
     description:
       "DORA delivery metrics derived from this application's deployment events over the last 30 days. The table breaks the app down by repository — deployments, success rate, average lead time for changes, and average pipeline duration — so you can see which repo drives the app's delivery profile; click a row to open that repository. The chart trends all three headline DORA measures together on independent scales: deployment frequency, lead time for changes, and change failure rate. Change failure rate is newly available here: deployment events carry an outcome on 100% of records, so failed and cancelled deploys can be measured directly rather than estimated. Lead time comes from the 'avg-release-age' field, which is only present on deployments flagged as new releases (about a quarter of all events), so it reflects genuine releases rather than repeated redeploys of the same artifact.",
     passLogic:
-      `Pass: deployment event data exists for this ${APP_CI_LABEL} in the last 30 days. Computed from the same CUSTOM_DEPLOYMENT events as the CI/CD Integration check.`,
+      `Pass: deployment event data exists for this application in the last 30 days. Computed from the same CUSTOM_DEPLOYMENT events as the CI/CD Integration check.`,
     guidance:
       "Deployment frequency and lead time flow automatically once CI/CD events are reporting. To improve lead time, shorten the gap between merge and release rather than speeding up the pipeline itself — the measure is release age, not build duration. To improve change failure rate, look at the repositories with the lowest success rate in the table first. NOTE: this remains an interim implementation; a company-wide DORA standard including a formal change-failure and MTTR definition is being finalised, and these calculations will be aligned to it.",
     chartType: "table",
@@ -1271,9 +1271,9 @@ fetch events, from:now()-30d
     level: "L4",
     levelColor: "#B23BE4",
     description:
-      `Detects SLO breaches and notifies teams before customer impact. Counts distinct SLO burn-rate alerts that fired for this ${APP_CI_LABEL} over the last 30 days, sourced from Davis CUSTOM_ALERT problems. Alert names follow the tenant convention '<${APP_CI_LABEL}> - SLO <name> for Availability or Performance Burn Rate is above <threshold>', so the owning app is the 3-character token before the first ' - '. The table lists one row per SLO, split by burn type (Availability vs Performance), with how many times it fired, how many of those problems are still active, and when it last fired — sorted by fire count so the noisiest SLO surfaces first. Click any row to open that SLO's most recent burn-rate problem in the Problems app. IMPORTANT CAVEAT: this measures burn-rate alerts that FIRED, not alert configurations that EXIST. A correctly configured burn-rate alert on a consistently healthy SLO produces no problems and will not appear here, so a fail can mean either 'no alert configured' or 'alert configured and never breached'. Alert definitions live in anomaly-detector settings objects, which DQL cannot read; resolving this distinction requires an app function against the settings API, the same way the Guardians and SLO Dashboards checks work.`,
+      `Detects SLO breaches and notifies teams before customer impact. Counts distinct SLO burn-rate alerts that fired for this application over the last 30 days, sourced from Davis CUSTOM_ALERT problems. Alert names follow the tenant convention '<${APP_CI_LABEL}> - SLO <name> for Availability or Performance Burn Rate is above <threshold>', so the owning app is the 3-character token before the first ' - '. The table lists one row per SLO, split by burn type (Availability vs Performance), with how many times it fired, how many of those problems are still active, and when it last fired — sorted by fire count so the noisiest SLO surfaces first. Click any row to open that SLO's most recent burn-rate problem in the Problems app. IMPORTANT CAVEAT: this measures burn-rate alerts that FIRED, not alert configurations that EXIST. A correctly configured burn-rate alert on a consistently healthy SLO produces no problems and will not appear here, so a fail can mean either 'no alert configured' or 'alert configured and never breached'. Alert definitions live in anomaly-detector settings objects, which DQL cannot read; resolving this distinction requires an app function against the settings API, the same way the Guardians and SLO Dashboards checks work.`,
     passLogic:
-      `Pass: at least one distinct SLO burn-rate alert fired for this ${APP_CI_LABEL} in the last 30 days. Fail: none fired (see the caveat above — this may be a healthy app rather than an unconfigured one).`,
+      `Pass: at least one distinct SLO burn-rate alert fired for this application in the last 30 days. Fail: none fired (see the caveat above — this may be a healthy app rather than an unconfigured one).`,
     guidance:
       `Create a burn-rate alert for each critical SLO. In Dynatrace, add a metric event / anomaly detector on the SLO's error-budget burn rate and name it following the '<${APP_CI_LABEL}> - SLO <SLO name> for Availability or Performance Burn Rate is above <threshold>' convention — the leading 3-letter ${APP_CI_LABEL} token is what attributes the alert to this application. Route the resulting problem to the team via the '<${APP_CI_LABEL}> Production Dynatrace Alerts' workflow (see L3 ITSM Integration). Fast-burn (2% budget in 1h) and slow-burn (5% in 6h) thresholds are the standard pair.`,
     chartType: "table",
@@ -1334,7 +1334,7 @@ fetch dt.davis.problems, from:now()-30d
     description:
       "Confirms auto-scaling behavior is visible for this application's ECS and Kubernetes workloads. Rather than counting cloud resources generally (the old proxy), this counts actual autoscaling constructs from the smartscapeNodes inventory: EC2/EKS Auto Scaling Groups, Application Auto Scaling scalable targets (which is how ECS services scale), and EKS managed nodegroups. The table lists every autoscaling target with its mechanism, region, and — parsed live from the resource's AWS configuration JSON — its min, max, and desired capacity. The Elasticity column is the most useful signal here: a group whose max equals its min is Pinned, meaning it is an 'Auto Scaling Group' in name only and cannot actually scale. Click any row to open the resource in the Clouds app. KNOWN GAP: in-cluster autoscalers — HPA, KEDA, and Karpenter — are not counted. Dynatrace collects the Kubernetes object YAML that would reveal them, but each mechanism needs its own evaluation, and the out-of-the-box HPA metric (dt.kubernetes.hpa.current_replicas) has no data in this tenant. Note that a Karpenter-managed nodegroup still appears here as its underlying ASG, which is often Pinned because Karpenter — not the ASG — does the scaling.",
     passLogic:
-      `Pass: at least one autoscaling target (Auto Scaling Group, ECS scalable target, or EKS nodegroup) is tagged with this ${APP_CI_LABEL}. Fail: the app has cloud resources but none of them autoscale. N/A: the app has no cloud footprint at all, so autoscaling does not apply.`,
+      `Pass: at least one autoscaling target (Auto Scaling Group, ECS scalable target, or EKS nodegroup) is tagged with this application. Fail: the app has cloud resources but none of them autoscale. N/A: the app has no cloud footprint at all, so autoscaling does not apply.`,
     guidance:
       `Tag autoscaling resources with '${APP_CI_LABEL}:<code>' at the cloud-provider level so they are attributable. For workloads showing Pinned elasticity, review whether min and max capacity should differ — a pinned group provides no elasticity during demand spikes. For Kubernetes, note that HPA/KEDA/Karpenter configuration is not yet evaluated by this check; if your team relies on one of those, coordinate with the Dynatrace platform team on the Kubernetes YAML-based evaluation, and reference the existing HRD auto-scaling validation process (config + log based) rather than duplicating it.`,
     chartType: "table",
@@ -1529,7 +1529,7 @@ fetch events, from:now()-30d
     description:
       "Checks whether a Dynatrace Automation Engine workflow exists for this application — evidenced by at least one workflow whose title starts with the app's 3-letter code that has executed in the last 30 days. FIXED (2026-08-30): previously counted any bizevent whose event.type merely contained the substring 'workflow', regardless of source — that matched near-universal noise (ServiceNow CMDB import events, other teams' cost/cloud-inventory reporting workflows, and even this app's own daily maturity-snapshot bizevent), so nearly every app in the tenant passed this check whether or not it had real automation. The corrected signal instead queries actual Automation Engine WORKFLOW_EXECUTION events and requires the workflow's title to start with this app's code — the same convention the L3 ITSM Integration check already relies on. The table lists each matching workflow with its execution/success count; click a row to open it in the Workflows app.",
     passLogic:
-      `Pass: at least one Automation Engine workflow whose title starts with this ${APP_CI_LABEL}'s 3-letter code has executed in the last 30 days.`,
+      `Pass: at least one Automation Engine workflow whose title starts with this application's 3-letter code has executed in the last 30 days.`,
     guidance:
       `Identify repetitive manual tasks by reviewing incident post-mortems and runbooks. Build a Dynatrace Automation workflow to automate them, and name it with this app's 3-letter code as the leading token (e.g. '<${APP_CI_LABEL}> — <task name>') so it's attributed to this application here.`,
     chartType: "table",
@@ -1569,7 +1569,7 @@ ${appciFromWorkflowTitle("wfAppci")}
     description:
       "Confirms that Dynatrace Automation workflows are actively running for this application. Uses the same signal as 'Repetitive Tasks Identified' — at least one Automation Engine workflow whose title starts with this app's code has executed in the last 30 days. FIXED (2026-08-30): see 'Repetitive Tasks Identified' — this check shared the same over-broad bizevents-based signal and has been corrected the same way.",
     passLogic:
-      `Pass: at least one Automation Engine workflow whose title starts with this ${APP_CI_LABEL}'s 3-letter code has executed in the last 30 days (same signal as Repetitive Tasks Identified).`,
+      `Pass: at least one Automation Engine workflow whose title starts with this application's 3-letter code has executed in the last 30 days (same signal as Repetitive Tasks Identified).`,
     guidance:
       "Build automation workflows for: alert noise suppression, auto-scaling triggers, incident auto-remediation, and post-incident reporting. Name the workflow with this app's 3-letter code as the leading token so it's attributed here. Use the Dynatrace Automation Workflow catalog for pre-built templates that integrate with Davis problems.",
     chartType: "bar",
@@ -1618,9 +1618,9 @@ ${appciFromWorkflowTitle("wfAppci")}
     description:
       "Measures what proportion of Davis problems are automatically enriched with non-default alerting profiles. Enriched problems have additional context (severity, owner, runbook links, business impact) automatically attached — reducing the time operators spend gathering context during incidents.",
     passLogic:
-      `Pass: ≥ 50% of all Davis problems for this ${APP_CI_LABEL} have a non-default alerting profile. Warn: < 50%.`,
+      `Pass: ≥ 50% of all Davis problems for this application have a non-default alerting profile. Warn: < 50%.`,
     guidance:
-      `Configure alerting profiles in Dynatrace → Settings → Alerting. Assign non-default profiles to entities tagged with this ${APP_CI_LABEL}. Create automation workflows that tag problems with runbook links, owners, and severity context on creation.`,
+      `Configure alerting profiles in Dynatrace → Settings → Alerting. Assign non-default profiles to entities tagged with this application. Create automation workflows that tag problems with runbook links, owners, and severity context on creation.`,
     chartType: "table",
     detailQuery: (appCI: string) => `fetch dt.davis.problems
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)

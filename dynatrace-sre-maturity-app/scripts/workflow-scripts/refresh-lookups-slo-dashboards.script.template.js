@@ -41,8 +41,8 @@ export default async function () {
   // 4. Upload as a lookup table (overwrite existing)
   const meta = {
     filePath: '__PATH__',
-    displayName: 'SLO Dashboards by AppCI',
-    description: 'Count of dashboards per AppCI whose name starts with a 3-letter AppCI token and contains "SLO"',
+    displayName: 'SLO dashboards by application ID',
+    description: 'Count of dashboards per application whose name starts with a 3-letter application token and contains "SLO"',
     lookupField: '__ID_COL__',
     parsePattern: "LD:__ID_COL__ ',' LD:dashboardCount",
     skippedRecords: 1,

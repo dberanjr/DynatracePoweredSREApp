@@ -39,8 +39,8 @@ const DEFAULT_TABLES: LookupTableConfig[] = [
     title: "CMDB — Application Owner Mapping",
     description:
       `Supplies application names, owners, criticality and status across the app (header ${APP_CI_LABEL} picker, scorecards, leaderboard, dependencies).`,
-    path: "/lookups/dynatrace/cmdb_appci_owner_mapping",
-    backupPath: "/lookups/dynatrace/cmdb_appci_owner_mapping_backup",
+    path: "/lookups/sre/cmdb",
+    backupPath: "/lookups/sre/cmdb_backup",
     columns: [
       { key: `${APP_CI_FIELD}`, label: `${APP_CI_LABEL}`, required: true },
       { key: "name", label: "Name", required: true },
@@ -65,10 +65,10 @@ const DEFAULT_TABLES: LookupTableConfig[] = [
     title: "Critical Services — Entity Severity Seed",
     description:
       `Which services or endpoints are critical for each ${APP_CI_LABEL}. The refresh-lookups-critical-services workflow reads this table and resolves each name to Dynatrace entity IDs. Entity names must match the service or endpoint name in Dynatrace exactly.`,
-    path: "/lookups/entity_severity",
-    backupPath: "/lookups/entity_severity_backup",
+    path: "/lookups/sre/entity_severity",
+    backupPath: "/lookups/sre/entity_severity_backup",
     columns: [
-      { key: "appci", label: `${APP_CI_LABEL}`, required: true },
+      { key: `${APP_CI_FIELD}`, label: `${APP_CI_LABEL}`, required: true },
       { key: "entity_name", label: "Entity name", required: true },
       { key: "severity", label: "Severity (critical, high, medium…)", required: true },
       { key: "business_impact", label: "Business impact" },
@@ -84,8 +84,8 @@ const DEFAULT_TABLES: LookupTableConfig[] = [
     title: `${APP_CI_LABEL} Map — Application Tag to ${APP_CI_LABEL}`,
     description:
       `Translates the application name in your tenant's Application tag to its 3-letter ${APP_CI_LABEL}, so entities, hosts and problems can be scored without an ${APP_CI_FIELD} tag. Enter the name WITHOUT its environment suffix: the tag Application:BillingPortal::CRT (or ::SPT, ::PRD) is matched by the name billingportal. Names are matched case-insensitively. Several names can share one ${APP_CI_LABEL}; a name can have only one.`,
-    path: "/lookups/appci_map",
-    backupPath: "/lookups/appci_map_backup",
+    path: "/lookups/sre/app_map",
+    backupPath: "/lookups/sre/app_map_backup",
     columns: [
       { key: "app_name", label: "Application name (no environment suffix)", required: true },
       { key: `${APP_CI_FIELD}`, label: `${APP_CI_LABEL}`, required: true },
