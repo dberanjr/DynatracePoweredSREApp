@@ -36,8 +36,8 @@ interface TableDef {
 // Keep in sync with LOOKUP_TABLES in ui/app/pages/lookupTables.ts.
 const TABLES: Record<string, TableDef> = {
   cmdb: {
-    path: '/lookups/sre/cmdb',
-    backupPath: '/lookups/sre/cmdb_backup',
+    path: '/lookups/dtsrepoweredapp/cmdb',
+    backupPath: '/lookups/dtsrepoweredapp/cmdb_backup',
     displayName: 'CMDB application owner mapping',
     description: 'One row per application: owner, criticality, status and support group. Maintained from the Lookups tab of the SRE maturity app.',
     lookupField: 'appId',
@@ -61,8 +61,8 @@ const TABLES: Record<string, TableDef> = {
   },
   entity_severity: {
     // The refresh-lookups-critical-services workflow loads this exact path.
-    path: '/lookups/sre/entity_severity',
-    backupPath: '/lookups/sre/entity_severity_backup',
+    path: '/lookups/dtsrepoweredapp/entity_severity',
+    backupPath: '/lookups/dtsrepoweredapp/entity_severity_backup',
     displayName: 'Entity severity (critical services seed)',
     description: 'Services/endpoints considered critical per application. Seed for the critical services workflow. Maintained from the Lookups tab of the SRE maturity app.',
     lookupField: 'appId',
@@ -75,8 +75,8 @@ const TABLES: Record<string, TableDef> = {
   app_map: {
     // Read by the shared application ID resolver in ui/app/queries/maturityQueries.ts (APP_ID_MAP_PATH) -
     // keep this path in sync with that constant. Backend code cannot import from the UI.
-    path: '/lookups/sre/app_map',
-    backupPath: '/lookups/sre/app_map_backup',
+    path: '/lookups/dtsrepoweredapp/app_map',
+    backupPath: '/lookups/dtsrepoweredapp/app_map_backup',
     displayName: 'Application ID map (Application tag name to application ID)',
     description: 'Maps an Application tag name (environment suffix removed, lower case) to its application ID, for tenants that do not tag applicationci directly. Maintained from the Lookups tab of the SRE maturity app.',
     lookupField: 'app_name',

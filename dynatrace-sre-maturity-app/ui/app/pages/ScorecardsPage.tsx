@@ -234,14 +234,14 @@ data record(${APP_ID_FIELD} = lower("${appId}"))
   ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{serviceCount}
 | fieldsRename goldenSignalServices = serviceCount
 
-// Signal 2: SLOs created (from the /lookups/sre/slo table; ${APP_ID_LABEL} = first 3 chars of the SLO name)
+// Signal 2: SLOs created (from the /lookups/dtsrepoweredapp/slo table; ${APP_ID_LABEL} = first 3 chars of the SLO name)
 | lookup [
     ${LOAD.slo}
     | fieldsAdd appId = ${SLO_APP_ID_EXPR}
     | summarize sloCount = count(), by:{appId}
   ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{sloCount}
 
-// Signal 3: Site Reliability Guardians (from /lookups/sre/guardians; itemized one row per
+// Signal 3: Site Reliability Guardians (from /lookups/dtsrepoweredapp/guardians; itemized one row per
 //   guardian, refreshed daily at 06:00 UTC by workflow — summarize to a count here)
 | lookup [
     ${LOAD.guardians}
@@ -249,7 +249,7 @@ data record(${APP_ID_FIELD} = lower("${appId}"))
     | summarize guardianCount = count(), by:{appId}
   ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{guardianCount}
 
-// Signal 4: SLO dashboards published (from /lookups/sre/slo_dashboards; itemized one row
+// Signal 4: SLO dashboards published (from /lookups/dtsrepoweredapp/slo_dashboards; itemized one row
 //   per dashboard, refreshed daily at 06:00 UTC by workflow — counts dashboards whose
 //   name starts with a 3-letter ${APP_ID_LABEL} token and contains "SLO")
 | lookup [
@@ -263,7 +263,7 @@ data record(${APP_ID_FIELD} = lower("${appId}"))
 ${hasTierLookup()}
 | fieldsRename sreAssessment = hasTier
 
-// Signal 6: Critical services tagged (from /lookups/sre/critical_services; itemized one
+// Signal 6: Critical services tagged (from /lookups/dtsrepoweredapp/critical_services; itemized one
 //   row per service, refreshed daily at 06:00 UTC by workflow — a pass requires at
 //   least one listed service whose entity_ids actually resolved to a real Dynatrace
 //   entity, not merely being listed. ~38% of rows resolve tenant-wide.)

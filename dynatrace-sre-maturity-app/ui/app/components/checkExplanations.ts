@@ -25,15 +25,15 @@ export const CHECK_EXPLANATIONS: Record<string, string> = {
   "1. Golden Signal SLIs":
     `Counts services (dt.entity.service) tagged with this ${APP_ID_FIELD} that emit golden-signal metrics. Pass = at least one service.`,
   "2. SLOs Created":
-    `Counts SLOs for this application from the /lookups/sre/slo table, where the ${APP_ID_LABEL} is the first 3 characters of each SLO name. Pass = at least one SLO.`,
+    `Counts SLOs for this application from the /lookups/dtsrepoweredapp/slo table, where the ${APP_ID_LABEL} is the first 3 characters of each SLO name. Pass = at least one SLO.`,
   "3. Site Reliability Guardians Created":
-    `Number of Site Reliability Guardians (SRGs) created for this application. The scorecard counts guardians tagged applicationCI/appId = this application (case-insensitive) from the /lookups/sre/guardians table, which a workflow refreshes daily at 06:00 UTC from the guardian Settings API, itemized per guardian. Pass = at least one guardian. The modal instead reads the Settings API live via the getGuardianDetail app function, so objectives stay current even if the daily refresh lags.`,
+    `Number of Site Reliability Guardians (SRGs) created for this application. The scorecard counts guardians tagged applicationCI/appId = this application (case-insensitive) from the /lookups/dtsrepoweredapp/guardians table, which a workflow refreshes daily at 06:00 UTC from the guardian Settings API, itemized per guardian. Pass = at least one guardian. The modal instead reads the Settings API live via the getGuardianDetail app function, so objectives stay current even if the daily refresh lags.`,
   "4. SLO Dashboards Published":
-    `Counts dashboards for this application from the /lookups/sre/slo_dashboards table - dashboards whose name starts with a 3-letter ${APP_ID_LABEL} token and contains 'SLO' (standalone uppercase). The table is refreshed daily at 06:00 UTC by a workflow reading the documents API, itemized per dashboard. Pass = at least one dashboard. The modal reads the Documents API live via the getDashboardDetail app function.`,
+    `Counts dashboards for this application from the /lookups/dtsrepoweredapp/slo_dashboards table - dashboards whose name starts with a 3-letter ${APP_ID_LABEL} token and contains 'SLO' (standalone uppercase). The table is refreshed daily at 06:00 UTC by a workflow reading the documents API, itemized per dashboard. Pass = at least one dashboard. The modal reads the Documents API live via the getDashboardDetail app function.`,
   "5. SRE Assessment in ARD":
     `Checks that this ${APP_ID_FIELD} has a tier. The CMDB table (Lookups tab) must give the application a business criticality, or a ServiceNow import event with a tier must have arrived in the last 24h. Pass = a tier is present.`,
   "6. Critical Services Tagged":
-    `Whether this app's critical services are tagged in Dynatrace, so ITSM can route them at priority. Reads /lookups/sre/critical_services: Pass = at least one listed critical service resolves to a real entity ID. Fail = critical services are listed for this application but none resolve. N/A (counted as a pass) = no critical services are listed for this application at all.`,
+    `Whether this app's critical services are tagged in Dynatrace, so ITSM can route them at priority. Reads /lookups/dtsrepoweredapp/critical_services: Pass = at least one listed critical service resolves to a real entity ID. Fail = critical services are listed for this application but none resolve. N/A (counted as a pass) = no critical services are listed for this application at all.`,
 
   // L3 - AI-Assisted Operations
   "1. Causal AI Detection + Event Correlation":

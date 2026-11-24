@@ -10,7 +10,7 @@
 // combined (a union, so a tenant that already tags `${APP_ID}:<code>` keeps working):
 //   1. An `${APP_ID}:<code>` entity tag, as the app has always read it.
 //   2. An `Application:<Name>` entity tag, translated to a code through the app-managed lookup
-//      /lookups/sre/app_map (columns app_name, applicationci; edited on the Lookups tab).
+//      /lookups/dtsrepoweredapp/app_map (columns app_name, applicationci; edited on the Lookups tab).
 // The environment suffix is dropped before matching, so `Application:BillingPortal\:\:CRT`,
 // `...\:\:SPT` and `...\:\:PRD` all resolve through one map row, `billingportal`.
 
@@ -18,7 +18,7 @@
 // ── Settings (published by ui/app/settings/appSettings.ts, or by the workflow generator) ──
 // APP_ID is the customer's application identifier field (entity tag key, DQL alias, ID column of app-managed
 // lookups). LOAD.<table> is `load "<their path>"` plus a rename of their columns to the names used below.
-// Defaults reproduce the original queries exactly: applicationci and the /lookups/* paths.
+// Lookup tables are at the fixed /lookups/dtsrepoweredapp/ location; the identifier defaults to appId.
 type SreConfigShape = { appIdField: string; cloudTagKey: string; idMaxLength: number; sloIdFromColumn: boolean; loads: Record<string, string>; paths: Record<string, string> };
 const SRE_CONFIG = (globalThis as unknown as Record<string, SreConfigShape | undefined>)["__SRE_CONFIG__"];
 if (!SRE_CONFIG) throw new Error("maturityQueries: settings were not published before this module loaded (import settings/appSettings first).");
@@ -26,7 +26,7 @@ export const APP_ID = SRE_CONFIG.appIdField;
 export const LOAD = SRE_CONFIG.loads;
 export const CLOUD_TAG = SRE_CONFIG.cloudTagKey;
 export const ID_MAX = SRE_CONFIG.idMaxLength;
-/** DQL expression giving each /lookups/sre/slo row's application ID: its ID column when mapped, else the first 3 characters of the name. */
+/** DQL expression giving each /lookups/dtsrepoweredapp/slo row's application ID: its ID column when mapped, else the first 3 characters of the name. */
 export const SLO_APP_ID_EXPR = SRE_CONFIG.sloIdFromColumn ? "lower(appId)" : "lower(substring(slo, from:0, to:3))";
 export const SLO_ID_FROM_COLUMN = SRE_CONFIG.sloIdFromColumn;
 export const LOOKUP_PATHS = SRE_CONFIG.paths;
@@ -269,7 +269,7 @@ ${appIdFromEntityTags()}
 // Checks: golden signals, SLOs, guardians, dashboards, SRE assessment, critical services → 6 max
 // FIXED (2026-08-29): SLOs and Guardians were both hardcoded +0 despite being plain
 // DQL lookups (no REST call needed) — trivial to add, previously just never wired.
-// Critical Services Tagged is new: see /lookups/sre/critical_services in ScorecardsPage.tsx.
+// Critical Services Tagged is new: see /lookups/dtsrepoweredapp/critical_services in ScorecardsPage.tsx.
 // Mirrors l2Query in ScorecardsPage.tsx; keep the two in sync.
 export const BULK_L2_QUERY = `fetch dt.entity.service
 ${appIdFromEntityTags()}

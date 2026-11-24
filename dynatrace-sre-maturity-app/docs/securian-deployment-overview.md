@@ -13,8 +13,8 @@ leaves the tenant: the app and its workflows call only Dynatrace platform APIs i
 | # | Item | Details |
 |---|---|---|
 | 1 | **App** `my.dynatrace.sre.maturity.app` ("DynatracePoweredSRE") | One custom app installed from our build. Requests the 15 scopes in section 5. |
-| 2 | **Six Automation workflows** | Listed below. Five refresh lookup tables; one writes the daily snapshot. The sixth, the "active applications" filter, is optional and depends on your CMDB data ([confirm]). |
-| 3 | **Lookup tables** (Grail) | Under `/lookups/sre/` by default (paths are configurable): see below. |
+| 2 | **Six Automation workflows** | Listed below: five build lookup tables and one writes the daily snapshot. They are the same standard set for every customer. The only customer-specific values are a few constants (your source table, its column names, the identifier). |
+| 3 | **Lookup tables** (Grail) | All in one fixed folder, `/lookups/dtsrepoweredapp/` (not configurable): see below. |
 | 4 | **Business events** | One event per application per day, type `workflow.summary.sre_maturity`, in your default business-events bucket. |
 | 5 | **Per-user app settings** | Stored in each user's browser only. **Nothing is written to tenant Settings.** |
 
@@ -22,21 +22,25 @@ leaves the tenant: the app and its workflows call only Dynatrace platform APIs i
 
 | Workflow | Schedule (UTC) | Reads | Writes |
 |---|---|---|---|
-| Refresh /lookups/slo | hourly (`0 * * * *`) | Gen3 SLO API | `slo` lookup |
-| Refresh /lookups/guardians | daily 06:00 | Guardian settings objects | `guardians` lookup |
-| Refresh /lookups/slo-dashboards | daily 06:15 | Dashboard documents | `slo_dashboards` lookup |
-| Refresh /lookups/critical_services | **none** (run manually, or we add a schedule) | `entity_severity` seed lookup, Smartscape, services | `critical_services` lookup |
-| Refresh active applications (optional) | daily 05:00 | CMDB lookup, Smartscape | active-applications lookup |
-| SRE Maturity Daily Snapshot | daily 06:15 | Grail (5 scoring queries), lookups | Business events |
+| DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo (SLOs by AppId) | hourly (`0 * * * *`) | Gen3 SLO API | `slo` lookup |
+| DT-SRE APP: Refresh /lookups/dtsrepoweredapp/guardians (SRG by AppId) | daily 06:00 | Guardian settings objects | `guardians` lookup |
+| DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo_dashboards (SLO dashboards by AppId) | daily 06:15 | Dashboard documents | `slo_dashboards` lookup |
+| DT-SRE APP: Refresh /lookups/dtsrepoweredapp/critical_services (entity_severity resolved to entity IDs) | **none** (run manually, or we add a schedule) | `entity_severity` seed lookup, Smartscape, services | `critical_services` lookup |
+| DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table) | daily 05:00 | **your source table** (the only table you supply), Smartscape | `cmdb` lookup: your columns normalised, only applications with live nodes |
+| DT-SRE APP: Daily Maturity Snapshot (one bizevent per AppId) | daily 06:15 | Grail (5 scoring queries), lookups | Business events |
 
 **Lookup tables**
 
 | Table | Filled by | Purpose |
 |---|---|---|
-| CMDB (application catalog) | **Securian** (from your CMDB export) | Application name, tier, owner |
+| **Your source table** | **Securian** (your CMDB export, any columns, any `/lookups/...` path) | Initial application data; the only table you provide |
+| `cmdb` (application catalog) | Workflow, from your source table | Fixed-column catalog the app reads; only applications with live nodes |
 | Application name map | **Securian**, or generated from the CMDB | Name to application ID |
 | Entity severity (critical-services seed) | **Securian**, by hand | Which services count as critical |
 | `slo`, `slo_dashboards`, `guardians`, `critical_services` | Workflows | Scoring inputs |
+
+The source table can have any column names and any path; the catalog workflow maps and filters it. The other tables
+are at the fixed location above.
 
 Saving a table from the app's Lookups tab also writes a `*_backup` copy of the previous version.
 
@@ -75,7 +79,7 @@ ALLOW app-engine:apps:run, app-engine:functions:run;
   events). It cannot change entities, settings, dashboards, SLOs or alerting.
 - **Everything else is read-only.**
 - **Optional tightening:** limit `storage:files:*` to lookups with
-  `WHERE storage:file-path startsWith "/lookups/"`. Add `/sre/` to narrow it further.
+  `WHERE storage:file-path startsWith "/lookups/"`. Add `/dtsrepoweredapp/` to narrow it further.
 - **Without `openpipeline:bizevents:ingest`** the snapshot fails with
   `403: User is missing required permission: openpipeline:bizevents:ingest`. Without `storage:files:write`, lookup
   refreshes fail.
@@ -126,8 +130,8 @@ user actually used; this list has been checked against the documentation, but no
 ## 8. Backing out
 
 - Uninstall the app (removes it and its UI).
-- Disable or delete the six workflows.
-- Delete the lookup tables under `/lookups/sre/` (and the `*_backup` copies).
+- Disable or delete the workflows.
+- Delete the lookup tables under `/lookups/dtsrepoweredapp/` (and the `*_backup` copies).
 - Delete the service user and its policy.
 - Business events already written expire with the bucket's retention; individual events can't be deleted.
 

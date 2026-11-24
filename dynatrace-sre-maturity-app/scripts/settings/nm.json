@@ -3,52 +3,16 @@
   "cloudTagKey": "",
   "appCiMaxLength": 10,
   "lookups": {
-    "cmdb": {
-      "path": "/lookups/utan_active",
+    "slo": {
       "columns": {
-        "appId": "$APPCI",
-        "name": "SNOW_app_name",
-        "tier": "top_tier",
-        "status": "",
-        "director": "managed_by",
-        "owner": "ownership_by",
-        "supportGroup": "maintained_by"
-      }
-    },
-    "appciMap": {
-      "path": "/lookups/utan_map",
-      "columns": {
-        "appName": "app_name",
+        "slo": "slo",
         "appId": "$APPCI"
       }
     },
-    "slo": {
-      "path": "/lookups/slo",
+    "appciMap": {
       "columns": {
-        "slo": "slo",
-        "appId": "appci"
-      }
-    },
-    "criticalServices": {
-      "path": "/lookups/critical_services",
-      "columns": {
-        "appId": "appci",
-        "entityIds": "entity_ids",
-        "entityName": "entity_name",
-        "severity": "severity",
-        "businessImpact": "business_impact"
-      }
-    },
-    "sloDashboards": {
-      "path": "/lookups/slo-dashboards",
-      "columns": {
-        "appId": "appci"
-      }
-    },
-    "guardians": {
-      "path": "/lookups/guardians",
-      "columns": {
-        "appId": "appci"
+        "appName": "app_name",
+        "appId": "$APPCI"
       }
     }
   },
@@ -68,8 +32,26 @@
       }
     ]
   },
-  "entitySeverity": {
-    "path": "/lookups/entity_severity",
-    "idColumn": "appci"
+  "catalogSource": {
+    "path": "/lookups/updated_utan_data",
+    "columns": {
+      "appId": "utan",
+      "name": "SNOW_app_name",
+      "tier": "top_tier",
+      "status": "",
+      "director": "managed_by",
+      "owner": "ownership_by",
+      "supportGroup": "maintained_by"
+    },
+    "passThrough": [
+      "Engineering_lead",
+      "severity",
+      "impact_of_downtime",
+      "portfolio"
+    ],
+    "activeTagKeys": [
+      "nm.kubernetes/utan"
+    ],
+    "activeWindow": "24h"
   }
 }

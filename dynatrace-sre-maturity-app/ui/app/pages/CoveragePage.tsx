@@ -79,9 +79,9 @@ interface Signal {
 const SIGNALS: Signal[] = [
   { key: "services", label: "Services", how: `Services tagged ${APP_ID_FIELD}:<code>, or tagged Application:<name> with that name mapped to the code on Lookups > ${APP_ID_LABEL} map` },
   { key: "hosts", label: "Hosts", how: `Hosts tagged ${APP_ID_FIELD}:<code>, or tagged Application:<name> mapped to the code on Lookups > ${APP_ID_LABEL} map` },
-  { key: "slos", label: "SLOs", how: "SLO names that start with the code (from /lookups/sre/slo)" },
-  { key: "guardians", label: "Guardians", how: `Site Reliability Guardians tagged ${APP_ID_FIELD}:<code> (from /lookups/sre/guardians)` },
-  { key: "dashboards", label: "SLO dashboards", how: "Dashboards named <code> … SLO (from /lookups/sre/slo_dashboards)" },
+  { key: "slos", label: "SLOs", how: "SLO names that start with the code (from /lookups/dtsrepoweredapp/slo)" },
+  { key: "guardians", label: "Guardians", how: `Site Reliability Guardians tagged ${APP_ID_FIELD}:<code> (from /lookups/dtsrepoweredapp/guardians)` },
+  { key: "dashboards", label: "SLO dashboards", how: "Dashboards named <code> … SLO (from /lookups/dtsrepoweredapp/slo_dashboards)" },
   { key: "critical", label: "Critical services", how: "Rows in the critical services seed; resolved = matched to a Dynatrace entity" },
   { key: "workflows", label: "Workflows", how: `Automation workflows whose title starts with the code, or with an application name in the ${APP_ID_LABEL} map (last 30 days)` },
 ];

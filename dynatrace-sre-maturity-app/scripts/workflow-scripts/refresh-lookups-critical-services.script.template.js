@@ -6,7 +6,7 @@ import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 // module and run `npm run generate:workflows`; the template for this script is
 // workflows/refresh-lookups-critical-services.script.template.js.
 //
-// Builds /lookups/critical_services: every row of the entity_severity seed table resolved to the
+// Builds the critical services lookup: every row of the entity_severity seed table resolved to the
 // Dynatrace entity ID(s) it refers to, over a rolling 24h window.
 //
 // Covers every appId in the source list. Runs them in chunks rather than one appId at a time:

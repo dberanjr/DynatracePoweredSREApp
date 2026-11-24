@@ -1,6 +1,6 @@
 import { settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 
-// Refreshes the /lookups/guardians table (appId -> guardianCount) from the
+// Refreshes the guardians lookup table (appId -> guardianCount) from the
 // Site Reliability Guardian settings objects, matching on the applicationCI/appId tag.
 export default async function () {
   // 1. Read all guardian settings objects

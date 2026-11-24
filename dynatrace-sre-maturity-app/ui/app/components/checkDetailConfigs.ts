@@ -630,7 +630,7 @@ ${appIdFromEntityTags()}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Counts Service Level Objectives (SLOs) configured for this application. This check calls the Gen3 SLO platform API live (via an app function) rather than the /lookups/sre/slo table, so each row shows its real target and description, not just a name. The ${APP_ID_LABEL} is identified by the first 3 characters of each SLO name. Each SLO's own name is parsed to derive its Type (Availability, Performance, etc.) — pure string-parsing of the name itself, not a cross-reference — and the secondary panel breaks down SLO count by that type, showing whether coverage leans on one signal (e.g. all-Availability) or spans multiple. Click a row to open the SLO settings page — the native SLO table has no deep-linkable URL for an individual SLO (row names are plain text with a JS-only click handler, confirmed via DOM inspection), so this opens the full list rather than that specific row.`,
+      `Counts Service Level Objectives (SLOs) configured for this application. This check calls the Gen3 SLO platform API live (via an app function) rather than the /lookups/dtsrepoweredapp/slo table, so each row shows its real target and description, not just a name. The ${APP_ID_LABEL} is identified by the first 3 characters of each SLO name. Each SLO's own name is parsed to derive its Type (Availability, Performance, etc.) — pure string-parsing of the name itself, not a cross-reference — and the secondary panel breaks down SLO count by that type, showing whether coverage leans on one signal (e.g. all-Availability) or spans multiple. Click a row to open the SLO settings page — the native SLO table has no deep-linkable URL for an individual SLO (row names are plain text with a JS-only click handler, confirmed via DOM inspection), so this opens the full list rather than that specific row.`,
     passLogic:
       `Pass: at least one SLO exists whose name starts with this application's 3-letter code.`,
     guidance:
@@ -663,7 +663,7 @@ ${appIdFromEntityTags()}
     secondaryChartType: "table",
     secondaryLabel: "SLO count by type (parsed from SLO name)",
     sloRowClick: true,
-    scorecardSnippet: `// Source: /lookups/sre/slo  (refreshed hourly by workflow "Refresh /lookups/sre/slo (SLOs by ${APP_ID_LABEL})")
+    scorecardSnippet: `// Source: /lookups/dtsrepoweredapp/slo  (refreshed hourly by workflow "DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo (SLOs by AppId)")
 ${LOAD.slo}
 | fieldsAdd appId = ${SLO_APP_ID_EXPR}
 | summarize sloCount = count(), by:{appId}
@@ -677,7 +677,7 @@ ${LOAD.slo}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Counts Site Reliability Guardians (SRGs) configured for this application. SRGs automate reliability validation by evaluating SLOs, metrics, and events against defined thresholds during deployments or on a schedule. This check calls the Guardian Settings API live (via an app function) rather than a scheduled lookup table — the Automation Engine workflow that used to populate a /lookups/sre/guardians table proved unreliable to keep in sync, so guardian detail is now fetched fresh every time this modal opens. The table lists each guardian's name, objective count, and trigger kind; click a row to open that guardian's validation results. The secondary panel expands every guardian's individual objectives, showing exactly what's being validated.`,
+      `Counts Site Reliability Guardians (SRGs) configured for this application. SRGs automate reliability validation by evaluating SLOs, metrics, and events against defined thresholds during deployments or on a schedule. This check calls the Guardian Settings API live (via an app function) rather than a scheduled lookup table — the Automation Engine workflow that used to populate a /lookups/dtsrepoweredapp/guardians table proved unreliable to keep in sync, so guardian detail is now fetched fresh every time this modal opens. The table lists each guardian's name, objective count, and trigger kind; click a row to open that guardian's validation results. The secondary panel expands every guardian's individual objectives, showing exactly what's being validated.`,
     passLogic:
       `Pass: at least one SRG is found tagged with this application's appId code (case-insensitive, ${APP_ID_FIELD} or appId tag key).`,
     guidance:
@@ -708,7 +708,7 @@ ${LOAD.slo}
     secondaryChartType: "table",
     secondaryLabel: "Objectives per guardian",
     guardianRowClick: true,
-    scorecardSnippet: `// Scorecard pass/fail source: /lookups/sre/guardians
+    scorecardSnippet: `// Scorecard pass/fail source: /lookups/dtsrepoweredapp/guardians
 // (one row per guardian, refreshed on a schedule by an Automation Engine workflow)
 ${LOAD.guardians}
 | fieldsAdd appId = lower(appId)
@@ -749,7 +749,7 @@ ${LOAD.guardians}
       },
     },
     dashboardRowClick: true,
-    scorecardSnippet: `// Scorecard pass/fail source: /lookups/sre/slo_dashboards
+    scorecardSnippet: `// Scorecard pass/fail source: /lookups/dtsrepoweredapp/slo_dashboards
 // (one row per dashboard, refreshed on a schedule by an Automation Engine workflow)
 ${LOAD.sloDashboards}
 | fieldsAdd appId = lower(appId)
@@ -799,7 +799,7 @@ ${hasTierLookup()}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Checks whether the critical services for this application are tagged and identified in Dynatrace. Critical service tagging enables priority routing in ITSM, auto-escalation in incident management, and targeted alerting thresholds. WIRED UP (2026-08-29): sources /lookups/sre/critical_services, a table refreshed daily at 06:00 UTC carrying 9,072 service rows across 361 ${APP_ID_LABEL}s, each with a severity (high / medium / low) and a business-impact description. A pass requires at least one listed service whose entity_ids resolved to a real Dynatrace entity — being merely listed is not enough, since only ~38% of rows tenant-wide (3,462 of 9,072) have resolved. The table below lists every critical service for this app with its resolution state, sorted unresolved-first so the biggest gaps are immediately visible.`,
+      `Checks whether the critical services for this application are tagged and identified in Dynatrace. Critical service tagging enables priority routing in ITSM, auto-escalation in incident management, and targeted alerting thresholds. WIRED UP (2026-08-29): sources /lookups/dtsrepoweredapp/critical_services, a table refreshed daily at 06:00 UTC carrying 9,072 service rows across 361 ${APP_ID_LABEL}s, each with a severity (high / medium / low) and a business-impact description. A pass requires at least one listed service whose entity_ids resolved to a real Dynatrace entity — being merely listed is not enough, since only ~38% of rows tenant-wide (3,462 of 9,072) have resolved. The table below lists every critical service for this app with its resolution state, sorted unresolved-first so the biggest gaps are immediately visible.`,
     passLogic:
       `Pass: at least one critical service listed for this application has entity_ids resolved to a real Dynatrace entity (not '-'). Fail: services are listed but none have resolved. N/A: no critical services are listed for this application at all.`,
     guidance:
@@ -814,7 +814,7 @@ ${hasTierLookup()}
 | sort resolved asc, severityRank asc
 | fields service = entity_name, severity, businessImpact = business_impact, resolved
 | limit 200`,
-    scorecardSnippet: `// Wired to /lookups/sre/critical_services (refreshed daily at 06:00 UTC)
+    scorecardSnippet: `// Wired to /lookups/dtsrepoweredapp/critical_services (refreshed daily at 06:00 UTC)
 // Note the table name uses an UNDERSCORE, not a hyphen.
 ${LOAD.criticalServices}
 | fieldsAdd appId = lower(appId)
@@ -830,7 +830,7 @@ ${LOAD.criticalServices}
 // Columns: appId, entity_name, severity (high|medium|low),
 //          business_impact, entity_ids, id_count, row_id
 // Scale:   9,072 rows / 361 ${APP_ID_LABEL}s; 3,462 (38%) have resolved entity_ids
-// Source:  workflow "Refresh /lookups/sre/critical_services
+// Source:  workflow "DT-SRE APP: Refresh /lookups/dtsrepoweredapp/critical_services
 //          (entity_severity resolved to entity IDs)"`,
   },
 

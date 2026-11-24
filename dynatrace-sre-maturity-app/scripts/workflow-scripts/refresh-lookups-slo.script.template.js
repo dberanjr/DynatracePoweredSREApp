@@ -1,4 +1,4 @@
-// Refreshes /lookups/slo (one row per SLO name) from the Gen3 SLO platform API.
+// Refreshes the SLOs lookup (/lookups/dtsrepoweredapp/slo; one row per SLO name) from the Gen3 SLO platform API.
 // The scorecard derives application ID from the first 3 characters of the name, unless the settings map an Application ID
 // column for this table (ID_COL below is then non-empty): the ID is the SLO's `<APP_ID>:<id>` tag, falling back to the
 // name up to its first separator when the SLO has no such tag.

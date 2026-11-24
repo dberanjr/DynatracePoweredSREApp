@@ -6,9 +6,9 @@ metadata:
       version: ^1.3590.2
   inputs: []
 workflow:
-  title: Refresh /lookups/slo (SLOs by AppCI)
-  description: Hourly refresh of /lookups/slo from the Gen3 SLO platform API. Writes
-    one row per SLO name; the scorecard derives the AppCI from the first 3 characters
+  title: 'DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo (SLOs by AppId)'
+  description: Hourly refresh of /lookups/dtsrepoweredapp/slo from the Gen3 SLO platform API.
+    Writes one row per SLO name; the scorecard derives the application ID from the first 3 characters
     of each name. Feeds the L2 SLOs Created check in ScorecardsPage and MaturityLeaderboard.
   schemaVersion: 4
   trigger:
@@ -30,7 +30,7 @@ workflow:
       name: refresh_slo_lookup
       input:
         script: |
-          // Refreshes /lookups/slo (one row per SLO name) from the Gen3 SLO platform API.
+          // Refreshes the SLOs lookup (/lookups/dtsrepoweredapp/slo; one row per SLO name) from the Gen3 SLO platform API.
           // The scorecard derives application ID from the first 3 characters of the name, unless the settings map an Application ID
           // column for this table (ID_COL below is then non-empty): the ID is the SLO's `<APP_ID>:<id>` tag, falling back to the
           // name up to its first separator when the SLO has no such tag.
@@ -75,7 +75,7 @@ workflow:
 
             // 3. Upload as a lookup table (overwrite existing)
             const meta = {
-              filePath: '/lookups/sre/slo',
+              filePath: '/lookups/dtsrepoweredapp/slo',
               displayName: 'SLOs by application ID',
               description: 'One row per SLO name; the application is derived from the first 3 characters of the name, or from the ID column when there is one',
               lookupField: 'slo',

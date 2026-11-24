@@ -153,7 +153,7 @@ function tenantWorkflows(): Wf[] {
   out.push(
     { workflow: "Platform Nightly Cloud Inventory", workflowId: "b7a1c0de-0001-demo-wf", executions: 30, succeeded: 30, failed: 0, lastRun: iso(Date.now() - 6 * HOUR), itsm: false },
     { workflow: "Refresh lookups - guardians by appId", workflowId: "b7a1c0de-0002-demo-wf", executions: 30, succeeded: 29, failed: 1, lastRun: iso(Date.now() - 9 * HOUR), itsm: false },
-    { workflow: "SRE Maturity Daily Snapshot", workflowId: "b7a1c0de-0003-demo-wf", executions: 30, succeeded: 30, failed: 0, lastRun: iso(Date.now() - 5 * HOUR), itsm: false },
+    { workflow: "DT-SRE APP: Daily Maturity Snapshot (one bizevent per AppId)", workflowId: "b7a1c0de-0003-demo-wf", executions: 30, succeeded: 30, failed: 0, lastRun: iso(Date.now() - 5 * HOUR), itsm: false },
   );
   tenantWfCache = out.sort((a, b) => b.executions - a.executions);
   return tenantWfCache;

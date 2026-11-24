@@ -1,4 +1,4 @@
-// Refreshes /lookups/slo-dashboards (appId -> dashboardCount) from dashboard
+// Refreshes the SLO dashboards lookup (appId -> dashboardCount) from dashboard
 // documents whose name starts with a 3-letter application ID token and contains "SLO".
 export default async function () {
   // 1. Page through all dashboard documents

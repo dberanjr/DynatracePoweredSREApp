@@ -6,9 +6,9 @@ metadata:
       version: ^1.3590.2
   inputs: []
 workflow:
-  title: Refresh /lookups/slo-dashboards (SLO dashboards by AppCI)
-  description: Daily refresh of /lookups/slo-dashboards from dashboard documents whose
-    name starts with a 3-letter AppCI token and contains SLO (standalone uppercase
+  title: 'DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo_dashboards (SLO dashboards by AppId)'
+  description: Daily refresh of /lookups/dtsrepoweredapp/slo_dashboards from dashboard documents whose
+    name starts with a 3-letter application token and contains SLO (standalone uppercase
     token). Feeds the L2 SLO Dashboards Published scorecard check.
   schemaVersion: 4
   trigger:
@@ -30,7 +30,7 @@ workflow:
       name: refresh_slo_dashboards_lookup
       input:
         script: |
-          // Refreshes /lookups/slo-dashboards (appId -> dashboardCount) from dashboard
+          // Refreshes the SLO dashboards lookup (appId -> dashboardCount) from dashboard
           // documents whose name starts with a 3-letter application ID token and contains "SLO".
           export default async function () {
             // 1. Page through all dashboard documents
@@ -68,15 +68,15 @@ workflow:
             // appId can never equal a real application ID (it never joins to a scorecard row).
             const rows = appIds.map((a) => `${a},${counts[a]}`);
             if (rows.length === 0) rows.push('__none__,0');
-            const csv = 'appci,dashboardCount\n' + rows.join('\n') + '\n';
+            const csv = 'utan,dashboardCount\n' + rows.join('\n') + '\n';
 
             // 4. Upload as a lookup table (overwrite existing)
             const meta = {
-              filePath: '/lookups/slo-dashboards',
+              filePath: '/lookups/dtsrepoweredapp/slo_dashboards',
               displayName: 'SLO dashboards by application ID',
               description: 'Count of dashboards per application whose name starts with a 3-letter application token and contains "SLO"',
-              lookupField: 'appci',
-              parsePattern: "LD:appci ',' LD:dashboardCount",
+              lookupField: 'utan',
+              parsePattern: "LD:utan ',' LD:dashboardCount",
               skippedRecords: 1,
               autoFlatten: true,
               timezone: 'UTC',
@@ -113,6 +113,6 @@ workflow:
         y: 1
       conditions:
         states: {}
-      description: Read dashboard documents, aggregate appci->count, upload lookup
+      description: Read dashboard documents, aggregate application ID->count, upload lookup
         table
       predecessors: []

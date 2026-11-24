@@ -65,6 +65,17 @@ if (!templates.length) {
   process.exit(2);
 }
 
+// Workflows deployed under an earlier title keep working: match them by the old title once, and the update renames
+// them in place.
+const LEGACY_TITLES = {
+  "DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo (SLOs by AppId)": ["Refresh /lookups/slo (SLOs by AppCI)", "SRE App: Refresh SLOs lookup"],
+  "DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo_dashboards (SLO dashboards by AppId)": ["Refresh /lookups/slo-dashboards (SLO dashboards by AppCI)", "SRE App: Refresh SLO dashboards lookup"],
+  "DT-SRE APP: Refresh /lookups/dtsrepoweredapp/guardians (SRG by AppId)": ["Refresh /lookups/guardians (SRG by AppCI)", "SRE App: Refresh guardians lookup"],
+  "DT-SRE APP: Refresh /lookups/dtsrepoweredapp/critical_services (entity_severity resolved to entity IDs)": ["Refresh /lookups/critical_services (entity_severity resolved to entity IDs)", "SRE App: Refresh critical services lookup"],
+  "DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table)": ["Refresh /lookups/utan_active (UTANs with live entities)", "SRE App: Refresh application catalog (active UTANs)", "SRE App: Build application catalog"],
+  "DT-SRE APP: Daily Maturity Snapshot (one bizevent per AppId)": ["SRE Maturity Daily Snapshot"],
+};
+
 // Existing workflows on the tenant, by title. Two with the same title would make the target ambiguous.
 const existing = new Map();
 for (const w of dtctl(["get", "workflows"], { json: true }).result ?? []) {
@@ -75,7 +86,7 @@ const tmp = mkdtempSync(join(tmpdir(), "sre-workflows-"));
 const failures = [];
 try {
   for (const { file, workflow } of templates) {
-    const ids = existing.get(workflow.title) ?? [];
+    const ids = [workflow.title, ...(LEGACY_TITLES[workflow.title] ?? [])].flatMap((t) => existing.get(t) ?? []);
     if (ids.length > 1) {
       failures.push(`${workflow.title}: ${ids.length} workflows share this title (${ids.join(", ")}); delete the extras and retry`);
       continue;

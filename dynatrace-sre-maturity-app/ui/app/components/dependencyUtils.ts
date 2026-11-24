@@ -1,4 +1,4 @@
-// Normalizes /lookups/sre/critical_services severity values, which carry known
+// Normalizes /lookups/dtsrepoweredapp/critical_services severity values, which carry known
 // data-hygiene noise (a "medum" typo and blank "-" rows) — same tolerance
 // pattern already used in checkDetailConfigs.ts's "Critical Services Tagged" check.
 export function severityRank(severity: string | null): number {

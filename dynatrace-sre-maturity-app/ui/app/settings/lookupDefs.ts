@@ -28,15 +28,21 @@ export interface LookupTableDef {
   label: string;
   description: string;
   defaultPath: string;
+  /** The table always has the app's own column names (a workflow builds it from the customer's source), so there is nothing to map. */
+  fixedColumns?: boolean;
   fields: Record<string, LookupFieldDef>;
 }
+
+/** Every lookup table the app reads or writes lives here. Fixed on purpose: all tenants use the same location. */
+export const LOOKUP_FOLDER = "/lookups/dtsrepoweredapp";
 
 export const LOOKUP_DEFS = {
   cmdb: {
     label: "Application catalog (CMDB)",
     description:
-      "One row per application: identity, owner and tier. Feeds the application selector, profile banner and leaderboard.",
-    defaultPath: "/lookups/sre/cmdb",
+      "One row per application: identity, owner and tier. Built by the \"Build application catalog\" workflow from your own table, so its columns are fixed. Feeds the application selector, profile banner and leaderboard.",
+    defaultPath: `${LOOKUP_FOLDER}/cmdb`,
+    fixedColumns: true,
     fields: {
       appId: { canonical: APP_ID_TOKEN, default: APP_ID_TOKEN, label: "Application ID", hint: "Unique application identifier" },
       name: { canonical: "name", default: "name", label: "Application name", hint: "Human-readable name" },
@@ -50,7 +56,7 @@ export const LOOKUP_DEFS = {
   appciMap: {
     label: "Application name → ID map",
     description: "Translates the application name in an entity's Application tag to its application ID, for tenants that don't tag the ID directly.",
-    defaultPath: "/lookups/sre/app_map",
+    defaultPath: `${LOOKUP_FOLDER}/app_map`,
     fields: {
       appName: { canonical: "app_name", default: "app_name", label: "Application name", hint: "Lower-case name from the Application tag" },
       appId: { canonical: APP_ID_TOKEN, default: APP_ID_TOKEN, label: "Application ID", hint: "Application identifier it maps to" },
@@ -59,7 +65,7 @@ export const LOOKUP_DEFS = {
   criticalServices: {
     label: "Critical services",
     description: "One row per critical service, with the Dynatrace entity IDs it resolved to (space separated, or \"-\" when unresolved).",
-    defaultPath: "/lookups/sre/critical_services",
+    defaultPath: `${LOOKUP_FOLDER}/critical_services`,
     fields: {
       appId: { canonical: "appId", default: APP_ID_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
       entityIds: { canonical: "entity_ids", default: "entity_ids", label: "Entity IDs", hint: 'Space-separated entity IDs; "-" if none' },
@@ -71,7 +77,7 @@ export const LOOKUP_DEFS = {
   slo: {
     label: "SLOs",
     description: "One row per SLO. The application is the Application ID column when you map one, otherwise the first 3 characters of the SLO name.",
-    defaultPath: "/lookups/sre/slo",
+    defaultPath: `${LOOKUP_FOLDER}/slo`,
     fields: {
       slo: { canonical: "slo", default: "slo", label: "SLO name", hint: "Name starting with the application code" },
       appId: { canonical: "appId", default: "", label: "Application ID", hint: "Leave blank to use the first 3 characters of the SLO name", optional: true },
@@ -80,7 +86,7 @@ export const LOOKUP_DEFS = {
   sloDashboards: {
     label: "SLO dashboards",
     description: "One row per SLO dashboard.",
-    defaultPath: "/lookups/sre/slo_dashboards",
+    defaultPath: `${LOOKUP_FOLDER}/slo_dashboards`,
     fields: {
       appId: { canonical: "appId", default: APP_ID_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
     },
@@ -88,7 +94,7 @@ export const LOOKUP_DEFS = {
   guardians: {
     label: "Site Reliability Guardians",
     description: "One row per guardian.",
-    defaultPath: "/lookups/sre/guardians",
+    defaultPath: `${LOOKUP_FOLDER}/guardians`,
     fields: {
       appId: { canonical: "appId", default: APP_ID_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
     },
@@ -179,15 +185,6 @@ export function defaultLookupSettings(): LookupSettings {
   return out;
 }
 
-const PATH_PATTERN = /^\/lookups\/[A-Za-z0-9_\-./]+$/;
-
-export function validateLookupPath(path: string): string | null {
-  const p = path.trim();
-  if (!p) return "Path is required.";
-  if (!PATH_PATTERN.test(p)) return 'Must start with "/lookups/" and contain only letters, digits, _ - . /';
-  return null;
-}
-
 export function validateColumn(name: string, optional: boolean | undefined): string | null {
   const n = name.trim();
   if (!n) return optional ? null : "Column name is required.";
@@ -202,8 +199,9 @@ export function normalizeLookupSettings(stored: unknown): LookupSettings {
   for (const k of LOOKUP_KEYS) {
     const s = (stored as Record<string, { path?: unknown; columns?: unknown } | undefined>)[k];
     if (!s) continue;
-    if (typeof s.path === "string" && !validateLookupPath(s.path)) out[k].path = s.path.trim();
-    if (s.columns && typeof s.columns === "object") {
+    // The lookup location is fixed (LOOKUP_FOLDER): a stored or exported path is ignored, so every tenant
+    // uses the same tables and the same deployed workflows.
+    if (!(LOOKUP_DEFS[k] as LookupTableDef).fixedColumns && s.columns && typeof s.columns === "object") {
       const fields: Record<string, LookupFieldDef> = LOOKUP_DEFS[k].fields;
       for (const [f, d] of Object.entries(fields)) {
         const v = (s.columns as Record<string, unknown>)[f];
@@ -314,8 +312,8 @@ export function resolveConfig(appIdField: string, lookups: LookupSettings, catal
 }
 
 export const DEFAULT_APP_ID_FIELD = "appId";
-/** Seed table the critical-services workflow reads (not remappable in Settings; the Lookups tab edits it). */
-export const DEFAULT_ENTITY_SEVERITY_PATH = "/lookups/sre/entity_severity";
+/** Seed table the critical-services workflow reads (edited on the Lookups tab). */
+export const DEFAULT_ENTITY_SEVERITY_PATH = `${LOOKUP_FOLDER}/entity_severity`;
 /**
  * Cloud resource / guardian tag key. Unset: the identifier field as typed (tag keys are case-sensitive:
  * override it if the tag on your cloud resources is spelled differently, for example "ApplicationCI").

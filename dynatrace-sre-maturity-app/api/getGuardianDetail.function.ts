@@ -20,7 +20,7 @@ export interface GuardianDetail {
   eventKind: string;
 }
 
-// Live equivalent of the "Refresh /lookups/sre/guardians" workflow's aggregation logic,
+// Live equivalent of the "DT-SRE APP: Refresh /lookups/dtsrepoweredapp/guardians" workflow's aggregation logic,
 // called on-demand from the modal instead of relying on a scheduled workflow — the
 // Automation Engine schedule for that workflow proved unreliable to edit directly
 // (edits didn't propagate to the actual trigger; see dql-lookup-table-load-cache-lag

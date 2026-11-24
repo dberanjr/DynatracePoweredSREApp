@@ -32,7 +32,6 @@ import {
   defaultCatalogSettings,
   type CatalogSettings,
   type TierRule,
-  validateLookupPath,
   type LookupKey,
   type LookupSettings,
   type LookupTableDef,
@@ -285,38 +284,25 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
   const def: LookupTableDef = LOOKUP_DEFS[tableKey];
   const demo = useDemoMode();
   const [detect, setDetect] = useState(false);
-  const pathError = validateLookupPath(value.path);
-  const { columns, error, isLoading } = useDetectedColumns(value.path.trim(), detect && !pathError && !demo);
+  const { columns, error, isLoading } = useDetectedColumns(value.path.trim(), detect && !demo);
 
   return (
     <div style={cardStyle}>
       <div style={{ fontWeight: 700, fontSize: 15 }}>{def.label}</div>
       <div style={{ fontSize: 12, color: muted, margin: "2px 0 12px" }}>{def.description}</div>
 
-      <label style={{ fontSize: 12, fontWeight: 700 }} htmlFor={`path-${tableKey}`}>
-        Lookup table path
-      </label>
+      <div style={{ fontSize: 12, fontWeight: 700 }}>Lookup table</div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <input
-          id={`path-${tableKey}`}
-          style={inputStyle}
-          value={value.path}
-          spellCheck={false}
-          onChange={(e) => {
-            setDetect(false);
-            onChange({ ...value, path: e.target.value });
-          }}
-        />
+        <code style={{ ...inputStyle, display: "flex", alignItems: "center", opacity: 0.85 }} title="Fixed: every tenant uses this location">{value.path}</code>
         <button
-          style={{ ...buttonStyle(false, !!pathError || demo), whiteSpace: "nowrap" }}
-          disabled={!!pathError || demo}
+          style={{ ...buttonStyle(false, demo), whiteSpace: "nowrap" }}
+          disabled={demo}
           title={demo ? "Turn off demo mode to read your tenant's lookup tables" : "Read the table and suggest its column names"}
           onClick={() => setDetect(true)}
         >
           {isLoading ? "Reading…" : "Detect columns"}
         </button>
       </div>
-      <ErrorText msg={pathError} />
       {detect && error && <ErrorText msg={`Couldn't read this table: ${error.message ?? "unknown error"}`} />}
       {detect && !error && !isLoading && columns.length > 0 && (
         <div style={{ fontSize: 12, color: muted, marginTop: 3 }}>Found {columns.length} columns — use the ▾ button next to a column box to pick one.</div>
@@ -339,6 +325,11 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
                 <div style={{ fontSize: 11, color: muted }}>{f.hint}</div>
               </div>
               <div>
+                {def.fixedColumns ? (
+                  <code style={{ ...inputStyle, display: "flex", alignItems: "center", opacity: 0.85 }} title="Fixed: the catalog workflow writes this column">
+                    {(f.canonical === APP_ID_TOKEN ? APP_ID_FIELD : f.canonical) || "(none)"}
+                  </code>
+                ) : (
                 <ColumnInput
                   label={`${def.label}: ${f.label} column`}
                   columns={columns}
@@ -346,6 +337,7 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
                   placeholder={f.optional ? "(none)" : f.default === APP_ID_TOKEN ? "(same as identifier field)" : f.default}
                   onChange={(v) => onChange({ ...value, columns: { ...value.columns, [fieldKey]: v } })}
                 />
+                )}
                 <ErrorText msg={err} />
               </div>
               {showLabels && (
@@ -384,7 +376,6 @@ export const SettingsPage = () => {
   const lookupsValid = LOOKUP_KEYS.every((k) => {
     const def: LookupTableDef = LOOKUP_DEFS[k];
     return (
-      !validateLookupPath(lookups[k].path) &&
       Object.entries(def.fields).every(([f, d]) => !validateColumn(lookups[k].columns[f] ?? "", d.optional))
     );
   });
@@ -408,7 +399,6 @@ export const SettingsPage = () => {
     if (!valid) return;
     const clean = structuredClone(lookups);
     for (const k of LOOKUP_KEYS) {
-      clean[k].path = clean[k].path.trim();
       for (const f of Object.keys(clean[k].columns)) clean[k].columns[f] = clean[k].columns[f].trim();
     }
     saveSettings({ appCiField: field, appCiLabel: label, cloudTagKey: cloudTag, idMaxLength: normalizeIdMaxLength(idMax), companyName, companyLogoUrl: logoUrl, lookups: clean, catalog });

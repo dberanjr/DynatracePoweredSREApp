@@ -6,10 +6,10 @@ metadata:
       version: ^1.3590.2
   inputs: []
 workflow:
-  title: Refresh /lookups/critical_services (entity_severity resolved to entity IDs)
-  description: Resolves every row of /lookups/entity_severity to the Dynatrace entity
-    ID(s) it refers to over a rolling 24h window, covering all appcis in the source
-    list, and publishes the result as /lookups/critical_services. No schedule attached
+  title: 'DT-SRE APP: Refresh /lookups/dtsrepoweredapp/critical_services (entity_severity resolved to entity IDs)'
+  description: Resolves every row of /lookups/dtsrepoweredapp/entity_severity to the Dynatrace entity
+    ID(s) it refers to over a rolling 24h window, covering all application IDs in the source
+    list, and publishes the result as /lookups/dtsrepoweredapp/critical_services. No schedule attached
     yet - run manually.
   schemaVersion: 4
   trigger: {}
@@ -31,7 +31,7 @@ workflow:
           // module and run `npm run generate:workflows`; the template for this script is
           // workflows/refresh-lookups-critical-services.script.template.js.
           //
-          // Builds /lookups/critical_services: every row of the entity_severity seed table resolved to the
+          // Builds the critical services lookup: every row of the entity_severity seed table resolved to the
           // Dynatrace entity ID(s) it refers to, over a rolling 24h window.
           //
           // Covers every appId in the source list. Runs them in chunks rather than one appId at a time:
@@ -39,9 +39,9 @@ workflow:
           // unchunked estate-wide query fails with JOIN_RIGHT_TABLE_SIZE. Chunks of 100 keep the
           // Smartscape subquery bounded and finish in ~6s each.
 
-          const SRC    = '/lookups/entity_severity';
-          const SEED_ID = 'appci'; // the seed table's application ID column; renamed to `appId` below
-          const DST    = '/lookups/critical_services';
+          const SRC    = '/lookups/dtsrepoweredapp/entity_severity';
+          const SEED_ID = 'applicationci'; // the seed table's application ID column; renamed to `appId` below
+          const DST    = '/lookups/dtsrepoweredapp/critical_services';
           const CHUNK  = 100;        // appIds per query
           const D      = '^';        // field delimiter - verified to appear 0 times in the source data
           const WINDOW = 'now()-24h';
@@ -80,7 +80,7 @@ workflow:
             )
           | fieldsAdd idAppIdName = lower(arrayFirst(splitString(replaceString(arrayFirst(arrayRemoveNulls(iCollectArray(if(startsWith(lower(id_tags[]), "application:"), substring(id_tags[], from: 12))))), "\\\\", ""), "::")))
           | lookup [
-              load "/lookups/appci_map"
+              load "/lookups/dtsrepoweredapp/app_map"
               | fields app_name, applicationci
             ], sourceField:idAppIdName, lookupField:app_name, fields:{idAppIdMapped = applicationci}
           | fieldsAdd id_appIds = arrayDistinct(
@@ -105,7 +105,7 @@ workflow:
             )
           | fieldsAdd appIdName = lower(arrayFirst(splitString(replaceString(arrayFirst(arrayRemoveNulls(iCollectArray(if(startsWith(lower(tags[]), "application:"), substring(tags[], from: 12))))), "\\\\", ""), "::")))
           | lookup [
-              load "/lookups/appci_map"
+              load "/lookups/dtsrepoweredapp/app_map"
               | fields app_name, applicationci
             ], sourceField:appIdName, lookupField:app_name, fields:{appIdMapped = applicationci}
           | fieldsAdd applicationci = arrayDistinct(
@@ -119,7 +119,7 @@ workflow:
 
           const APP_ID_FROM_TAG_MAP = `| fieldsAdd smapName = lower(arrayFirst(splitString(replaceString(trim(arrayFirst(splitString(replaceString(replaceString(replaceString(toString(coalesce(tags[Application], tags[application])), "[", ""), "]", ""), "\\"", ""), ","))), "\\\\", ""), "::")))
           | lookup [
-              load "/lookups/appci_map"
+              load "/lookups/dtsrepoweredapp/app_map"
               | fields app_name, applicationci
             ], sourceField:smapName, lookupField:app_name, fields:{smapMapped = applicationci}`;
 
@@ -208,7 +208,7 @@ workflow:
               ].join(D));
             }
 
-            const header = ['row_id', 'appci', 'entity_name', 'severity', 'entity_ids', 'id_count', 'business_impact'].join(D);
+            const header = ['row_id', 'applicationci', 'entity_name', 'severity', 'entity_ids', 'id_count', 'business_impact'].join(D);
             const content = header + '\n' + lines.join('\n') + '\n';
 
             // 4. publish the lookup table
@@ -217,7 +217,7 @@ workflow:
               displayName: 'Critical Services (resolved)',
               description: 'Critical services and endpoints from ' + SRC + ', resolved to Dynatrace entity IDs over a rolling 24h window. One row per source entry (row_id). entity_ids is space-separated; id_count = 0 means the row did not resolve; \'-\' means empty.',
               lookupField: 'row_id',
-              parsePattern: "INT:row_id '^' LD:appci '^' LD:entity_name '^' LD:severity '^' LD:entity_ids '^' INT:id_count '^' LD:business_impact",
+              parsePattern: "INT:row_id '^' LD:applicationci '^' LD:entity_name '^' LD:severity '^' LD:entity_ids '^' INT:id_count '^' LD:business_impact",
               // 0, not 1: the header line starts with 'row_id', which can't match INT:row_id, so it is already
               // dropped as an unparseable record. skippedRecords: 1 then also discarded the first real row.
               skippedRecords: 0,
@@ -263,5 +263,5 @@ workflow:
         y: 1
       conditions:
         states: {}
-      description: Resolve entity_severity to entity IDs in appci chunks and upload
-        /lookups/critical_services
+      description: Resolve entity_severity to entity IDs in application ID chunks and upload
+        /lookups/dtsrepoweredapp/critical_services

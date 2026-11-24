@@ -6,9 +6,9 @@ metadata:
       version: ^1.3590.2
   inputs: []
 workflow:
-  title: Refresh /lookups/guardians (SRG by AppCI)
-  description: Daily refresh of the /lookups/guardians table from Site Reliability
-    Guardian settings objects, keyed by the applicationCI/appci tag. Feeds the L2
+  title: 'DT-SRE APP: Refresh /lookups/dtsrepoweredapp/guardians (SRG by AppId)'
+  description: Daily refresh of the /lookups/dtsrepoweredapp/guardians table from Site Reliability
+    Guardian settings objects, keyed by the application ID tag. Feeds the L2
     Error Budget Tracking scorecard check.
   schemaVersion: 4
   trigger:
@@ -32,7 +32,7 @@ workflow:
         script: |
           import { settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 
-          // Refreshes the /lookups/guardians table (appId -> guardianCount) from the
+          // Refreshes the guardians lookup table (appId -> guardianCount) from the
           // Site Reliability Guardian settings objects, matching on the applicationCI/appId tag.
           export default async function () {
             // 1. Read all guardian settings objects
@@ -70,7 +70,7 @@ workflow:
 
             // 4. Upload as a lookup table (overwrite existing)
             const meta = {
-              filePath: '/lookups/sre/guardians',
+              filePath: '/lookups/dtsrepoweredapp/guardians',
               displayName: 'Guardians by application ID',
               description: 'Count of Site Reliability Guardians per applicationCI, refreshed from the guardian Settings API',
               lookupField: 'appId',
@@ -112,5 +112,5 @@ workflow:
         y: 1
       conditions:
         states: {}
-      description: Read guardians, aggregate appci->count, upload lookup table
+      description: Read guardians, aggregate application ID->count, upload lookup table
       predecessors: []

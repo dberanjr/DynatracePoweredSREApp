@@ -31,7 +31,7 @@ const outDir = outIdx > 0 ? resolve(process.argv[outIdx + 1] ?? "") : null;
 if (outIdx > 0 && (!process.argv[outIdx + 1] || check)) { console.error("--out needs a directory and cannot be combined with --check"); process.exit(2); }
 // Settings. maturityQueries.ts reads the app's settings (identifier field, lookup paths and column mapping)
 // from a global the app publishes at startup; do the same here so generated workflows match the app.
-//   default                         the original deployment (applicationci, /lookups/* paths)
+//   default                         the standard set (identifier appId, /lookups/dtsrepoweredapp/* paths)
 //   --config settings.json          the settings JSON the app stores (Settings page -> "Export settings"),
 //                                   or just { "appCiField": "...", "lookups": { ... } }
 const core = await import(pathToFileURL(join(root, "ui/app/settings/lookupDefs.ts")).href);
@@ -53,6 +53,30 @@ const settingsOf = (key) => {
   const merged = core.normalizeLookupSettings(stored ? { [key]: stored } : {})[key];
   const resolve = (c) => (c === core.APP_ID_TOKEN ? sreConfig.appIdField : c);
   return { path: merged.path, col: (f) => resolve(merged.columns[f]) };
+};
+
+// The one table a customer supplies: where it is, and which of its columns hold what. Optional "catalogSource" block
+// of the settings JSON:
+//   { "path": "/lookups/<theirs>", "columns": { "appId": "utan", "name": "SNOW_app_name", "tier": "top_tier", ... },
+//     "passThrough": ["extra column", ...], "activeTagKeys": ["extra.smartscape/tag"], "activeWindow": "24h" }
+// A column left out is assumed to have the app's own name; "" = the customer's table has no such column.
+const catalogSource = () => {
+  const given = (configArg > 0 ? JSON.parse(readFileSync(process.argv[configArg + 1], "utf8")).catalogSource : undefined) ?? {};
+  const okName = (v, what) => {
+    if (typeof v !== "string" || /[`"'\\\r\n^]/.test(v)) throw new Error(`catalogSource: invalid ${what} "${v}"`);
+    return v.trim();
+  };
+  const fields = core.LOOKUP_DEFS.cmdb.fields;
+  const columns = {};
+  for (const [f, d] of Object.entries(fields)) {
+    const out = d.canonical === core.APP_ID_TOKEN ? sreConfig.appIdField : d.canonical;
+    columns[out] = okName(given.columns?.[f] ?? out, `column for ${f}`);
+  }
+  const path = typeof given.path === "string" && given.path.trim() ? given.path.trim() : `${core.LOOKUP_FOLDER}/app_source`;
+  if (!/^\/lookups\/[A-Za-z0-9_\-./]+$/.test(path)) throw new Error(`catalogSource: invalid path "${path}"`);
+  const tagKeys = [...new Set([sreConfig.appIdField, sreConfig.cloudTagKey, ...(given.activeTagKeys ?? [])].map((k) => okName(k, "tag key")).filter(Boolean))];
+  const window = /^\d+[hd]$/.test(given.activeWindow ?? "24h") ? given.activeWindow ?? "24h" : (() => { throw new Error('catalogSource.activeWindow must look like "24h" or "7d"'); })();
+  return { path, columns, passThrough: (given.passThrough ?? []).map((c) => okName(c, "pass-through column")), tagKeys, window };
 };
 
 const fill = (script, vars) => {
@@ -87,6 +111,23 @@ const TARGETS = [
     },
   },
   {
+    name: "application catalog",
+    yaml: "workflows/refresh-application-catalog.workflow-template.yaml",
+    template: "scripts/workflow-scripts/refresh-application-catalog.script.template.js",
+    vars: () => {
+      const src = catalogSource();
+      return {
+        __SOURCE_PATH__: src.path,
+        __DEST_PATH__: settingsOf("cmdb").path,
+        __WINDOW__: `now()-${src.window}`,
+        __ID_MAX__: String(sreConfig.idMaxLength),
+        __TAG_KEYS__: JSON.stringify(src.tagKeys),
+        __SOURCE_COLUMNS__: JSON.stringify(src.columns, null, 2).replace(/\n/g, "\n"),
+        __PASS_THROUGH__: JSON.stringify(src.passThrough),
+      };
+    },
+  },
+  {
     name: "critical services refresh",
     yaml: "workflows/refresh-lookups-critical-services-entity-severity-resolved-to-entity-ids.workflow-template.yaml",
     template: "scripts/workflow-scripts/refresh-lookups-critical-services.script.template.js",
@@ -102,16 +143,14 @@ const TARGETS = [
         .join("\n\n"),
     vars: () => {
       const s = settingsOf("criticalServices");
-      // The seed table (entity_severity) is not a Settings lookup: its path and ID column come from the optional
-      // "entitySeverity" block of the settings JSON, defaulting to the app's own table.
-      const seed = (configArg > 0 ? JSON.parse(readFileSync(process.argv[configArg + 1], "utf8")).entitySeverity : undefined) ?? {};
+      // Lookup locations are fixed (core.LOOKUP_FOLDER); the seed table's ID column is named after the identifier.
       return {
         __APP_ID__: sreConfig.appIdField,
         __CLOUD_TAG__: sreConfig.cloudTagKey,
         __PATH__: s.path,
         __ID_COL__: s.col("appId"),
-        __SEED_PATH__: typeof seed.path === "string" && seed.path ? seed.path : core.DEFAULT_ENTITY_SEVERITY_PATH,
-        __SEED_ID_COL__: typeof seed.idColumn === "string" && seed.idColumn ? seed.idColumn : sreConfig.appIdField,
+        __SEED_PATH__: core.DEFAULT_ENTITY_SEVERITY_PATH,
+        __SEED_ID_COL__: sreConfig.appIdField,
       };
     },
   },

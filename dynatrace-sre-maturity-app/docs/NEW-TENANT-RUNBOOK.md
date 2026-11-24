@@ -40,44 +40,58 @@ most common cause of an empty or confusing app.
 
 ## 2. Load and clean the lookup tables
 
-The app reads these tables from Grail (`load "/lookups/..."`). Paths are configurable in Settings. See
-[HOW-TO-USE.md section 4.3](HOW-TO-USE.md) for the sample CSVs in [lookups/](../lookups/).
+**Every tenant uses the same location: `/lookups/dtsrepoweredapp/`.** The location is not a setting. The app, the
+Lookups tab and the workflows all use it, so one set of workflows deploys everywhere. If you already have data
+elsewhere, copy it into these tables; do not point the app at your own paths. Your **column names** can differ: map
+them in Settings (step 5). See [HOW-TO-USE.md section 4.3](HOW-TO-USE.md) for the sample CSVs in
+[lookups/](../lookups/).
 
-| Table | Purpose | Who maintains it | Default path |
+| Table | Purpose | Who maintains it | Path |
 |---|---|---|---|
-| CMDB | Application catalog: name, tier, owner, status | Customer (source data) | `/lookups/cmdb_appci_owner_mapping` |
-| Application-name map | Display name per identifier | Customer, or generated from the CMDB | `/lookups/appci_map` |
-| Critical services | Entities marked critical (seeds L2 checks) | Workflow, from `entity_severity` | `/lookups/critical_services` |
-| Entity severity | Seed list: which entities are critical | **Customer, by hand** | `/lookups/entity_severity` |
-| SLOs / SLO dashboards / Guardians | Per-application lookups | Workflows | `/lookups/slo`, `/lookups/slo_dashboards`, `/lookups/guardians` |
+| **Source table (the only one you choose)** | Your initial application data, in **your own** columns and at a path you pick | **Customer** | any `/lookups/...` path, set in the catalog workflow |
+| Application catalog (CMDB) | Fixed-column catalog the app reads: name, tier, owner, status | Workflow, from your source table | `/lookups/dtsrepoweredapp/cmdb` |
+| Application-name map | Display name per identifier | Customer, or generated from the CMDB | `/lookups/dtsrepoweredapp/app_map` |
+| Critical services | Entities marked critical (seeds L2 checks) | Workflow, from `entity_severity` | `/lookups/dtsrepoweredapp/critical_services` |
+| Entity severity | Seed list: which entities are critical | **Customer, by hand** | `/lookups/dtsrepoweredapp/entity_severity` |
+| SLOs / SLO dashboards / Guardians | Per-application lookups | Workflows | `/lookups/dtsrepoweredapp/slo`, `…/slo_dashboards`, `…/guardians` |
 
-### 2.1 Upload the CMDB table
+### 2.1 Upload your source table
+
+Upload your application data as a lookup table at any path you like, with **your own column names** (one row per
+application; it needs at least an identifier). You do not reshape it: the catalog workflow does that.
 
 ```
-dtctl apply -f <lookup-definition>.yaml      # or upload the CSV from the Lookups tab / Notebooks
+dtctl apply -f <lookup-definition>.yaml      # or upload the CSV from a Notebook
 ```
 
 **TODO:** pin down the exact `dtctl` command for lookup upload (the NM tables were created through the
-`lookup:upload` API with a `^` delimiter; see `scripts/workflow-scripts/refresh-lookups-utan-active*.js`).
+`lookup:upload` API with a `^` delimiter; see `scripts/workflow-scripts/refresh-application-catalog.script.template.js`).
 
-### 2.2 Drop identifiers that have no live entities (recommended)
+### 2.2 Build the application catalog (workflow)
 
-A CMDB lists applications that are retired or never instrumented. They clutter the picker and score zero.
-NM solved this with a workflow, **Refresh /lookups/utan_active**
-([workflows/customers/nm/refresh-lookups-utan-active.workflow-template.yaml](../workflows/customers/nm/refresh-lookups-utan-active.workflow-template.yaml)):
+The standard workflow **DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table)**
+([workflows/refresh-application-catalog.workflow-template.yaml](../workflows/refresh-application-catalog.workflow-template.yaml))
+reads your source table, **maps your columns onto the app's fixed catalog columns**, and writes
+`/lookups/dtsrepoweredapp/cmdb`. It keeps a row **only if its application ID has at least one live Smartscape node**
+in the tenant (tagged with the ID in the last 24 hours), so retired or never-instrumented applications never reach
+the picker or the leaderboard. It throws if it would keep zero rows, so a broken query never wipes the catalog.
 
-- Reads the source table, keeps only identifiers that have at least one live Smartscape node tagged with them in
-  the last 24 hours, writes the result to `/lookups/utan_active`.
-- Throws if it would keep zero rows, so a broken query never wipes the table.
-- Runs daily. **Edit the constants at the top of the script** (source path, destination path, tag key, columns)
-  for the new customer.
+What you tell it, as constants at the top of the script (or in the settings JSON, `catalogSource`, when generating):
 
-Point the app's CMDB path at the destination table (step 5).
+| Setting | Meaning | NM example |
+|---|---|---|
+| `path` | Your source table | `/lookups/updated_utan_data` |
+| `columns` | Which of your columns holds each catalog field (`appId`, `name`, `tier`, `status`, `director`, `owner`, `supportGroup`); `""` = you have none (written blank) | `appId: utan`, `name: SNOW_app_name`, `tier: top_tier` |
+| `passThrough` | Extra columns copied as they are (usable as profile-banner extras in Settings) | `Engineering_lead`, `portfolio` |
+| `activeTagKeys` | Smartscape tag keys that carry the ID, besides the identifier and the cloud tag key | `nm.kubernetes/utan` |
+| `activeWindow` | How recent "live" is | `24h` |
+
+The same workflow serves every customer; only these values differ. It never modifies your source table.
 
 ### 2.3 Create the name map
 
-The map is two columns: the identifier and a display name. NM generated it from the CMDB export
-(`/lookups/utan_map`, 784 rows). The name of the table is up to you; set it in Settings.
+The map has two columns: the application name from your `Application` tag and the identifier. NM generated it from the
+CMDB export (784 rows) and uploaded it to `/lookups/dtsrepoweredapp/app_map`.
 
 ### 2.4 Create placeholders for the hand-maintained tables
 
@@ -85,8 +99,8 @@ Workflows fail with `UNKNOWN_TABULAR_FILE` if a table they `load` does not exist
 consumers. Until the customer supplies real data, create each of these with a single sentinel row whose values
 are `__none__`:
 
-- `/lookups/entity_severity` (seed for the critical-services workflow)
-- `/lookups/critical_services` (read by the snapshot workflow)
+- `/lookups/dtsrepoweredapp/entity_severity` (seed for the critical-services workflow; ID column named after your identifier)
+- `/lookups/dtsrepoweredapp/critical_services` (read by the snapshot workflow)
 
 Replace them with real data later (see step 8).
 
@@ -146,40 +160,41 @@ once, or import the same settings export. Save reloads the page.
 |---|---|---|
 | Application identifier field | `utan` | Must be a plain identifier. |
 | Longest identifier (characters) | `10` | Default is 3. A value that is too small silently drops every application. |
-| CMDB path | `/lookups/utan_active` | Use **Detect columns**, then map each column. |
+| Application catalog | nothing to map | Its columns are fixed; the catalog workflow fills them from your source table. Use **Detect columns** to list pass-through columns for the profile banner. |
 | Operational status column | blank | A mapped column that does not exist makes the picker show only "N/A". The Settings page warns in red. |
-| Name map path | `/lookups/utan_map` | |
+| Name map columns | name `app_name`, ID = identifier | |
 | Tier values | `yes` = Top tier (critical), `no` = Not top tier | |
-| SLOs table: Application ID column | `appci` (after the SLO workflow has run once) | Blank = first 3 characters of the SLO name. |
+| SLOs table: Application ID column | the identifier (`$APPCI`) | Blank = first 3 characters of the SLO name. Set it only after the SLO workflow has written the column. |
 
 Use **Export saved settings** to produce the JSON that drives the workflow generator in step 6. A worked example
 is [scripts/settings/nm.json](../scripts/settings/nm.json).
 
-Tables you point at your own paths are shown read-only in the Lookups tab.
+Tables whose columns you remapped are shown read-only in the Lookups tab, so an edit never overwrites your extra columns.
 
 ## 6. Generate and deploy the workflows
 
-The workflows embed the same queries as the app, so they are generated from the app's code and your settings.
-The files in [workflows/](../workflows/) are the **generic defaults** (`/lookups/sre/…` paths, identifier `appId`).
-Each customer's set is generated into its own folder, so a customer's pinned paths never leak into another's:
+The workflows embed the same queries as the app, so they are generated from the app's code. The files in
+[workflows/](../workflows/) are the **standard set**: `/lookups/dtsrepoweredapp/…` paths and the default identifier
+`appId`. A tenant whose identifier differs (NM: `utan`) generates its own copy. **Only the identifier, its maximum
+length, the cloud tag key and the source-table settings (`catalogSource`) change, never the lookup paths.**
 
 ```
-# 1. Write a settings file for the customer (start from scripts/settings/nm.json or Settings > Export saved settings)
-# 2. Generate that customer's workflows into their own folder
+# 1. Write the customer's settings file (start from scripts/settings/nm.json or Settings > Export saved settings)
+# 2. Generate their workflows into their own folder
 node scripts/generate-snapshot-workflow.mjs --config scripts/settings/<customer>.json --out workflows/customers/<customer>
 ```
 
-Existing sets: [workflows/customers/nm/](../workflows/customers/nm/) and
-[workflows/customers/united/](../workflows/customers/united/) (`npm run generate:customers` regenerates both).
-`npm run check:workflows` checks only the generic defaults. Customer-specific hand-written workflows (for example NM's
-active-UTAN filter) live in that customer's folder.
+A tenant that uses the default identifier deploys `workflows/` as is. Existing sets:
+[workflows/customers/nm/](../workflows/customers/nm/) and [workflows/customers/united/](../workflows/customers/united/)
+(`npm run generate:customers` regenerates both). `npm run check:workflows` checks the standard set.
 
 **Deploy with the script.** The generated files are templates wrapped in `metadata:` / `workflow:`, which
 `dtctl apply` would treat as a dashboard. [scripts/deploy-workflows.mjs](../scripts/deploy-workflows.mjs) flattens
 each one and updates the workflow with the same title in place (or creates it):
 
 ```
-npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer> --dry-run   # preview
+npm run deploy:workflows -- --context <dtctl-context> --dry-run                                          # standard set
+npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer> --dry-run   # a customer's set
 npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer>             # deploy all
 npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer> --run       # deploy, then run each and wait
 npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer> --only slo  # one workflow
@@ -193,12 +208,12 @@ Workflows to deploy:
 
 | Workflow | Writes | Schedule |
 |---|---|---|
-| Refresh /lookups/utan_active (NM only, step 2.2; in `workflows/customers/nm/`) | `/lookups/utan_active` | daily |
-| Refresh /lookups/critical_services | `/lookups/critical_services` | daily |
-| Refresh /lookups/guardians | `/lookups/guardians` | daily |
-| Refresh /lookups/slo_dashboards | `/lookups/slo_dashboards` | daily |
-| Refresh /lookups/slo | `/lookups/slo` | daily |
-| SRE Maturity Daily Snapshot | bizevents `workflow.summary.sre_maturity` | daily |
+| DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table) (step 2.2) | `/lookups/dtsrepoweredapp/cmdb` | daily |
+| DT-SRE APP: Refresh /lookups/dtsrepoweredapp/critical_services (entity_severity resolved to entity IDs) | `/lookups/dtsrepoweredapp/critical_services` | none; run manually |
+| DT-SRE APP: Refresh /lookups/dtsrepoweredapp/guardians (SRG by AppId) | `/lookups/dtsrepoweredapp/guardians` | daily |
+| DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo_dashboards (SLO dashboards by AppId) | `/lookups/dtsrepoweredapp/slo_dashboards` | daily |
+| DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo (SLOs by AppId) | `/lookups/dtsrepoweredapp/slo` | hourly |
+| DT-SRE APP: Daily Maturity Snapshot (one bizevent per AppId) | bizevents `workflow.summary.sre_maturity` | daily |
 
 Deploy and run the lookup refreshes **before** the snapshot, since it reads them.
 
@@ -233,7 +248,7 @@ at least one snapshot.
 
 - Give the customer the `entity_severity` format ([lookups/entity_severity.sample.csv](../lookups/entity_severity.sample.csv))
   and a process for keeping it current.
-- Tell them who owns the CMDB source table and how often it changes. The `utan_active` workflow only filters; it
+- Tell them who owns the CMDB source table and how often it changes. The catalog workflow only filters and reshapes; it
   does not fix bad source data.
 - Record the service user, the workflow IDs, and the exported settings JSON somewhere the customer controls.
 - **TODO:** decide how Settings are shared across users (per-browser storage means each user repeats step 5).
@@ -263,7 +278,7 @@ These are conventions in the app that settings do not cover yet:
 |---|---|---|
 | Picker shows only "N/A" | Mapped column (usually operational status) does not exist in the table | Clear that mapping in Settings. |
 | Picker is empty after changing the identifier | Longest-identifier setting is below the real length | Raise it in Settings. |
-| `UNKNOWN_TABULAR_FILE` in a card or workflow | A lookup the query loads does not exist | Create it (placeholder in step 2.4) or fix the path in Settings. |
+| `UNKNOWN_TABULAR_FILE` in a card or workflow | A lookup the query loads does not exist | Create it in `/lookups/dtsrepoweredapp/` (placeholder in step 2.4); the location is fixed, so it can't be fixed in Settings. |
 | `FIELD_DOES_NOT_EXIST` | A column name in Settings is not a column of the table | Re-run **Detect columns**. |
 | Lookups tab: 403 on save | Missing `storage:files:write` | Add it to the user's policy. |
 | Snapshot "succeeds" but no bizevents | Older versions swallowed ingest errors | Regenerate and redeploy; the current script throws on failure. |
