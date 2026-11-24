@@ -1,4 +1,4 @@
-import { APP_CI_LABEL } from "../settings/appSettings";
+import { APP_ID_LABEL } from "../settings/appSettings";
 // Deterministic per-app model behind the scorecard + check-detail demo fixtures.
 // One `getFacts(app)` call yields every number/list the L1..L5 check strings and
 // their detail tables/charts need, so the headline ("pass 6 SLOs configured") and
@@ -434,12 +434,12 @@ export function checkValue(f: Facts, level: LevelNo, idx: number): string {
         case 1: return p ? `pass ${f.svcs.length} services with metrics` : "fail No services";
         case 2: return p ? `pass ${f.slos.length} SLOs configured` : "fail No SLOs detected";
         case 3: return p ? `pass ${f.guardians.length} guardian(s)` : "fail None found";
-        case 4: return p ? `pass ${f.dashboards.length} dashboards` : `fail No ${APP_CI_LABEL} dashboards`;
+        case 4: return p ? `pass ${f.dashboards.length} dashboards` : `fail No ${APP_ID_LABEL} dashboards`;
         case 5: return p ? "pass CMDB tier assigned" : "fail No tier data";
         default: {
           const c = f.critical.length;
           const res = f.critical.filter((x) => x.resolved).length;
-          return res > 0 ? `pass ${res} of ${c} tagged services resolved` : c > 0 ? `fail Listed but unresolved (0/${c})` : "n/a No critical services listed for this AppCI";
+          return res > 0 ? `pass ${res} of ${c} tagged services resolved` : c > 0 ? `fail Listed but unresolved (0/${c})` : "n/a No critical services listed for this application ID";
         }
       }
     case 3:

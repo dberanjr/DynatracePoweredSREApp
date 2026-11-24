@@ -2,7 +2,7 @@
 // built-in type stripping so generated workflows use the same settings as the app.
 
 /** Sentinel default meaning "the same name as the application identifier field (Settings)". */
-export const APPCI_TOKEN = "$APPCI";
+export const APP_ID_TOKEN = "$APPCI";
 
 /**
  * Lookup tables the app reads, and the columns it needs from each.
@@ -38,7 +38,7 @@ export const LOOKUP_DEFS = {
       "One row per application: identity, owner and tier. Feeds the application selector, profile banner and leaderboard.",
     defaultPath: "/lookups/sre/cmdb",
     fields: {
-      appId: { canonical: APPCI_TOKEN, default: APPCI_TOKEN, label: "Application ID", hint: "Unique application identifier" },
+      appId: { canonical: APP_ID_TOKEN, default: APP_ID_TOKEN, label: "Application ID", hint: "Unique application identifier" },
       name: { canonical: "name", default: "name", label: "Application name", hint: "Human-readable name" },
       tier: { canonical: "business_criticality", default: "business_criticality", label: "Business criticality / tier", hint: "Drives the leaderboard tier groups (see Tier values)", optional: true, display: { label: "Tier", bannerLabel: "Criticality" } },
       status: { canonical: "operational_status", default: "operational_status", label: "Operational status", hint: 'Leave blank if you have none. Rows with "Retired" are hidden from the selector', optional: true, display: { label: "Status", bannerLabel: "Status" } },
@@ -53,7 +53,7 @@ export const LOOKUP_DEFS = {
     defaultPath: "/lookups/sre/app_map",
     fields: {
       appName: { canonical: "app_name", default: "app_name", label: "Application name", hint: "Lower-case name from the Application tag" },
-      appId: { canonical: APPCI_TOKEN, default: APPCI_TOKEN, label: "Application ID", hint: "Application identifier it maps to" },
+      appId: { canonical: APP_ID_TOKEN, default: APP_ID_TOKEN, label: "Application ID", hint: "Application identifier it maps to" },
     },
   },
   criticalServices: {
@@ -61,7 +61,7 @@ export const LOOKUP_DEFS = {
     description: "One row per critical service, with the Dynatrace entity IDs it resolved to (space separated, or \"-\" when unresolved).",
     defaultPath: "/lookups/sre/critical_services",
     fields: {
-      appId: { canonical: "appci", default: APPCI_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
+      appId: { canonical: "appId", default: APP_ID_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
       entityIds: { canonical: "entity_ids", default: "entity_ids", label: "Entity IDs", hint: 'Space-separated entity IDs; "-" if none' },
       entityName: { canonical: "entity_name", default: "entity_name", label: "Service name", hint: "Display name of the critical service" },
       severity: { canonical: "severity", default: "severity", label: "Severity", hint: "high / medium / low" },
@@ -74,7 +74,7 @@ export const LOOKUP_DEFS = {
     defaultPath: "/lookups/sre/slo",
     fields: {
       slo: { canonical: "slo", default: "slo", label: "SLO name", hint: "Name starting with the application code" },
-      appId: { canonical: "appci", default: "", label: "Application ID", hint: "Leave blank to use the first 3 characters of the SLO name", optional: true },
+      appId: { canonical: "appId", default: "", label: "Application ID", hint: "Leave blank to use the first 3 characters of the SLO name", optional: true },
     },
   },
   sloDashboards: {
@@ -82,7 +82,7 @@ export const LOOKUP_DEFS = {
     description: "One row per SLO dashboard.",
     defaultPath: "/lookups/sre/slo_dashboards",
     fields: {
-      appId: { canonical: "appci", default: APPCI_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
+      appId: { canonical: "appId", default: APP_ID_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
     },
   },
   guardians: {
@@ -90,7 +90,7 @@ export const LOOKUP_DEFS = {
     description: "One row per guardian.",
     defaultPath: "/lookups/sre/guardians",
     fields: {
-      appId: { canonical: "appci", default: APPCI_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
+      appId: { canonical: "appId", default: APP_ID_TOKEN, label: "Application ID", hint: "Joins to the application identifier" },
     },
   },
 } as const satisfies Record<string, LookupTableDef>;
@@ -164,8 +164,8 @@ export type LookupSettings = Record<LookupKey, LookupTableSettings>;
 
 export const LOOKUP_KEYS = Object.keys(LOOKUP_DEFS) as LookupKey[];
 
-/** Resolve the APPCI sentinel to the configured identifier field. */
-const resolveColumn = (name: string, appciField: string): string => (name === APPCI_TOKEN ? appciField : name);
+/** Resolve the APP_ID sentinel to the configured identifier field. */
+const resolveColumn = (name: string, appIdField: string): string => (name === APP_ID_TOKEN ? appIdField : name);
 
 export function defaultLookupSettings(): LookupSettings {
   const out = {} as LookupSettings;
@@ -225,10 +225,10 @@ export function dqlColumn(name: string): string {
  * DQL that loads a lookup table and renames the customer's columns to the names the
  * app's queries use. Columns that already match are not touched.
  */
-export function buildLoad(key: LookupKey, s: LookupTableSettings, appciField: string, extras: ExtraField[] = []): string {
+export function buildLoad(key: LookupKey, s: LookupTableSettings, appIdField: string, extras: ExtraField[] = []): string {
   const fields: Record<string, LookupFieldDef> = LOOKUP_DEFS[key].fields;
   const renames = Object.entries(fields)
-    .map(([f, d]) => [resolveColumn(d.canonical, appciField), resolveColumn(s.columns[f] ?? d.default, appciField)] as const)
+    .map(([f, d]) => [resolveColumn(d.canonical, appIdField), resolveColumn(s.columns[f] ?? d.default, appIdField)] as const)
     // an optional column that is unmapped and has no default is simply absent (not renamed to "")
     .filter(([canonical, mapped], i) => mapped !== canonical && !(mapped === "" && Object.values(fields)[i].default === ""))
     .map(([canonical, mapped]) => `${dqlColumn(canonical)} = ${dqlColumn(mapped)}`);
@@ -268,7 +268,7 @@ export function buildProfileFields(lookups: LookupSettings, catalog: CatalogSett
 /** What the query layer needs, computed once from the settings. */
 export interface SreConfig {
   /** Application identifier field: entity tag key, DQL alias, and the ID column of app-managed lookups. */
-  appciField: string;
+  appIdField: string;
   /** Tag key on cloud resources (smartscapeNodes: AWS tags, Azure tags, GCP labels) and guardians. */
   cloudTagKey: string;
   /** Longest application ID the bulk queries accept (a sanity cap on tag values). The original deployment's IDs are 3 characters. */
@@ -293,16 +293,16 @@ export const normalizeIdMaxLength = (v: unknown): number => {
   return Number.isInteger(n) && n >= 1 && n <= 64 ? n : DEFAULT_ID_MAX_LENGTH;
 };
 
-export function resolveConfig(appciField: string, lookups: LookupSettings, catalog: CatalogSettings = defaultCatalogSettings(), cloudTagKeyOverride = "", idMaxLength = DEFAULT_ID_MAX_LENGTH): SreConfig {
+export function resolveConfig(appIdField: string, lookups: LookupSettings, catalog: CatalogSettings = defaultCatalogSettings(), cloudTagKeyOverride = "", idMaxLength = DEFAULT_ID_MAX_LENGTH): SreConfig {
   const loads = {} as Record<LookupKey, string>;
   const paths = {} as Record<LookupKey, string>;
   for (const k of LOOKUP_KEYS) {
-    loads[k] = buildLoad(k, lookups[k], appciField, catalog.extras);
+    loads[k] = buildLoad(k, lookups[k], appIdField, catalog.extras);
     paths[k] = lookups[k].path;
   }
   return {
-    appciField,
-    cloudTagKey: resolveCloudTagKey(appciField, cloudTagKeyOverride),
+    appIdField,
+    cloudTagKey: resolveCloudTagKey(appIdField, cloudTagKeyOverride),
     idMaxLength,
     sloIdFromColumn: !!lookups.slo.columns.appId,
     loads,
@@ -313,15 +313,15 @@ export function resolveConfig(appciField: string, lookups: LookupSettings, catal
   };
 }
 
-export const DEFAULT_APPCI_FIELD = "appId";
+export const DEFAULT_APP_ID_FIELD = "appId";
 /** Seed table the critical-services workflow reads (not remappable in Settings; the Lookups tab edits it). */
 export const DEFAULT_ENTITY_SEVERITY_PATH = "/lookups/sre/entity_severity";
 /**
  * Cloud resource / guardian tag key. Unset: the identifier field as typed (tag keys are case-sensitive:
  * override it if the tag on your cloud resources is spelled differently, for example "ApplicationCI").
  */
-export const resolveCloudTagKey = (appciField: string, override: string): string => override.trim() || appciField;
-export const defaultConfig = (): SreConfig => resolveConfig(DEFAULT_APPCI_FIELD, defaultLookupSettings());
+export const resolveCloudTagKey = (appIdField: string, override: string): string => override.trim() || appIdField;
+export const defaultConfig = (): SreConfig => resolveConfig(DEFAULT_APP_ID_FIELD, defaultLookupSettings());
 
 /** The config the app publishes at startup (see settings/appSettings.ts) and the workflow generator sets. */
 export const CONFIG_GLOBAL_KEY = "__SRE_CONFIG__";

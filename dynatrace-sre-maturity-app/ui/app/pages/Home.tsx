@@ -7,9 +7,9 @@ import { RefreshOverlay } from "../components/RefreshOverlay";
 import { AppContextBanner } from "../components/AppContextBanner";
 import { SimpleTable } from "../components/SimpleTable";
 
-import { APP_CI_FIELD } from "../settings/appSettings";
+import { APP_ID_FIELD } from "../settings/appSettings";
 interface Props {
-  appCI: string;
+  appId: string;
   timeframe: { from: string; to: string };
 }
 
@@ -140,51 +140,51 @@ function QueryTable({
   );
 }
 
-export const Home = ({ appCI, timeframe }: Props) => {
+export const Home = ({ appId, timeframe }: Props) => {
   const tf = `from:${timeframe.from}, to:${timeframe.to}`;
 
   // ── Signal queries ──
   const servicesQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter lower(appId) == lower("${appId}")
 | dedup id
 | summarize Count = count()`;
 
   const hostsQuery = `fetch dt.entity.host
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter lower(appId) == lower("${appId}")
 | dedup id
 | summarize Count = count()`;
 
   const processGroupsQuery = `fetch dt.entity.process_group
-| fieldsAdd ${APP_CI_FIELD}=splitString(arrayRemoveNulls(iCollectArray(if(matchesValue(tags[], "*${APP_CI_FIELD}*"), lower(tags[]))))[0], ":")[1]
-| filter in(${APP_CI_FIELD}, {lower("${appCI}")})
+| fieldsAdd ${APP_ID_FIELD}=splitString(arrayRemoveNulls(iCollectArray(if(matchesValue(tags[], "*${APP_ID_FIELD}*"), lower(tags[]))))[0], ":")[1]
+| filter in(${APP_ID_FIELD}, {lower("${appId}")})
 | dedup id
 | summarize Count = count()`;
 
   const k8sQuery = `fetch dt.entity.cloud_application
 | expand tags
-| filter contains(lower(tags), "${APP_CI_FIELD}")
+| filter contains(lower(tags), "${APP_ID_FIELD}")
 | parse tags, "LD:key ':' LD:value"
-| filter contains(lower(key), "${APP_CI_FIELD}")
-| filter lower(value) == lower("${appCI}")
+| filter contains(lower(key), "${APP_ID_FIELD}")
+| filter lower(value) == lower("${appId}")
 | dedup id
 | summarize Count = count()`;
 
   const logsQuery = `fetch logs, samplingRatio:100
-| filter ${APP_CI_FIELD} == lower("${appCI}")
+| filter ${APP_ID_FIELD} == lower("${appId}")
 | limit 1
 | summarize Count = count()`;
 
   const rumQuery = `fetch dt.entity.application, from:now()-1000d
-| fieldsAdd ${APP_CI_FIELD}=splitString(arrayRemoveNulls(iCollectArray(if(matchesValue(tags[], "*${APP_CI_FIELD}*"), lower(tags[]))))[0], ":")[1]
-| filter in(${APP_CI_FIELD}, {lower("${appCI}")})
+| fieldsAdd ${APP_ID_FIELD}=splitString(arrayRemoveNulls(iCollectArray(if(matchesValue(tags[], "*${APP_ID_FIELD}*"), lower(tags[]))))[0], ":")[1]
+| filter in(${APP_ID_FIELD}, {lower("${appId}")})
 | summarize Count = count()`;
 
   const awsQuery = `fetch bizevents, from:now()-24h
-| filter event.type=="workflow.summary.cloud.aws" and lower(${APP_CI_FIELD})==lower("${appCI}")
+| filter event.type=="workflow.summary.cloud.aws" and lower(${APP_ID_FIELD})==lower("${appId}")
 | filter type != "RUM_APPLICATION"
 | summarize Count = count()`;
 
@@ -192,16 +192,16 @@ export const Home = ({ appCI, timeframe }: Props) => {
 | filter event.kind == "DAVIS_EVENT"
 | filter event.type == "CUSTOM_DEPLOYMENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter isNotNull(appci)
-| filter lower(appci) == lower("${appCI}")
+| parse affected_entity_tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter isNotNull(appId)
+| filter lower(appId) == lower("${appId}")
 | summarize Count = count()`;
 
   // ── Detail table queries ──
   const serviceListQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter lower(appId) == lower("${appId}")
 | dedup id
 | fields Service = entity.name
 | sort Service asc
@@ -209,8 +209,8 @@ export const Home = ({ appCI, timeframe }: Props) => {
 
   const hostListQuery = `fetch dt.entity.host
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter lower(appId) == lower("${appId}")
 | dedup id
 | fields Host = entity.name, monitoringMode
 | sort Host asc
@@ -218,10 +218,10 @@ export const Home = ({ appCI, timeframe }: Props) => {
 
   const k8sListQuery = `fetch dt.entity.cloud_application
 | expand tags
-| filter contains(lower(tags), "${APP_CI_FIELD}")
+| filter contains(lower(tags), "${APP_ID_FIELD}")
 | parse tags, "LD:key ':' LD:value"
-| filter contains(lower(key), "${APP_CI_FIELD}")
-| filter lower(value) == lower("${appCI}")
+| filter contains(lower(key), "${APP_ID_FIELD}")
+| filter lower(value) == lower("${appId}")
 | dedup id
 | fields Workload = entity.name
 | sort Workload asc
@@ -230,7 +230,7 @@ export const Home = ({ appCI, timeframe }: Props) => {
   return (
     <Flex flexDirection="column" gap={20} padding={16}>
       {/* App context banner */}
-      <AppContextBanner appCI={appCI} />
+      <AppContextBanner appId={appId} />
 
       {/* Observability signals overview */}
       <div style={{

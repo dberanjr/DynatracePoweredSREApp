@@ -13,7 +13,7 @@
 // TARGETS: workflows/*.workflow-template.yaml. Each target rewrites only the `script` of the workflow's one
 //          task and leaves the rest of the YAML byte for byte as it was.
 // SETTINGS: default = the original deployment; --config <exported settings JSON> = a customer's identifier,
-//          lookup paths and column mapping. Placeholders in the templates: __APPCI__ (identifier field),
+//          lookup paths and column mapping. Placeholders in the templates: __APP_ID__ (identifier field),
 //          __CLOUD_TAG__ (cloud tag key), __PATH__ / __ID_COL__ / __SLO_COL__ (this workflow's lookup).
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -33,7 +33,7 @@ const configArg = process.argv.indexOf("--config");
 let sreConfig = core.defaultConfig();
 if (configArg > 0) {
   const stored = JSON.parse(readFileSync(process.argv[configArg + 1], "utf8"));
-  const field = typeof stored.appCiField === "string" && stored.appCiField.trim() ? stored.appCiField.trim() : core.DEFAULT_APPCI_FIELD;
+  const field = typeof stored.appCiField === "string" && stored.appCiField.trim() ? stored.appCiField.trim() : core.DEFAULT_APP_ID_FIELD;
   sreConfig = core.resolveConfig(field, core.normalizeLookupSettings(stored.lookups), core.normalizeCatalogSettings(stored.catalog), typeof stored.cloudTagKey === "string" ? stored.cloudTagKey : "", core.normalizeIdMaxLength(stored.appCiMaxLength));
 }
 globalThis[core.CONFIG_GLOBAL_KEY] = sreConfig;
@@ -45,7 +45,7 @@ const toTemplateLiteral = (s) => "`" + s.replace(/\\/g, "\\\\").replace(/`/g, "\
 const settingsOf = (key) => {
   const stored = configArg > 0 ? JSON.parse(readFileSync(process.argv[configArg + 1], "utf8")).lookups?.[key] : undefined;
   const merged = core.normalizeLookupSettings(stored ? { [key]: stored } : {})[key];
-  const resolve = (c) => (c === core.APPCI_TOKEN ? sreConfig.appciField : c);
+  const resolve = (c) => (c === core.APP_ID_TOKEN ? sreConfig.appIdField : c);
   return { path: merged.path, col: (f) => resolve(merged.columns[f]) };
 };
 
@@ -75,22 +75,22 @@ const TARGETS = [
         .join("\n") +
       "\n};",
     vars: () => {
-      // Used as a bare JS property name (`r.utan`, `utan: appci`) in the snapshot script.
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(sreConfig.appciField)) throw new Error(`daily snapshot: identifier field "${sreConfig.appciField}" must be a plain identifier`);
-      return { __APPCI__: sreConfig.appciField };
+      // Used as a bare JS property name (`r.utan`, `utan: appId`) in the snapshot script.
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(sreConfig.appIdField)) throw new Error(`daily snapshot: identifier field "${sreConfig.appIdField}" must be a plain identifier`);
+      return { __APP_ID__: sreConfig.appIdField };
     },
   },
   {
     name: "critical services refresh",
     yaml: "workflows/refresh-lookups-critical-services-entity-severity-resolved-to-entity-ids.workflow-template.yaml",
     template: "scripts/workflow-scripts/refresh-lookups-critical-services.script.template.js",
-    placeholder: "__APPCI_RESOLVER__",
-    // The three places this workflow turns tags into an AppCI. Same logic as the app's queries.
+    placeholder: "__APP_ID_RESOLVER__",
+    // The three places this workflow turns tags into an application ID. Same logic as the app's queries.
     fill: () =>
       [
-        ["APPCI_FROM_SPAN_SERVICE_TAGS", q.appciFromEntityTags({ tagsField: "id_tags", outField: "id_appcis", prefix: "idAppci" })],
-        ["APPCI_FROM_SERVICE_TAGS", q.appciFromEntityTags()],
-        ["APPCI_FROM_TAG_MAP", q.appciMappedFromTagValue("coalesce(tags[Application], tags[application])", "smapName", "smapMapped")],
+        ["APP_ID_FROM_SPAN_SERVICE_TAGS", q.appIdFromEntityTags({ tagsField: "id_tags", outField: "id_appIds", prefix: "idAppId" })],
+        ["APP_ID_FROM_SERVICE_TAGS", q.appIdFromEntityTags()],
+        ["APP_ID_FROM_TAG_MAP", q.appIdMappedFromTagValue("coalesce(tags[Application], tags[application])", "smapName", "smapMapped")],
       ]
         .map(([name, dql]) => `const ${name} = ${toTemplateLiteral(dql)};`)
         .join("\n\n"),
@@ -100,30 +100,30 @@ const TARGETS = [
       // "entitySeverity" block of the settings JSON, defaulting to the app's own table.
       const seed = (configArg > 0 ? JSON.parse(readFileSync(process.argv[configArg + 1], "utf8")).entitySeverity : undefined) ?? {};
       return {
-        __APPCI__: sreConfig.appciField,
+        __APP_ID__: sreConfig.appIdField,
         __CLOUD_TAG__: sreConfig.cloudTagKey,
         __PATH__: s.path,
         __ID_COL__: s.col("appId"),
         __SEED_PATH__: typeof seed.path === "string" && seed.path ? seed.path : core.DEFAULT_ENTITY_SEVERITY_PATH,
-        __SEED_ID_COL__: typeof seed.idColumn === "string" && seed.idColumn ? seed.idColumn : sreConfig.appciField,
+        __SEED_ID_COL__: typeof seed.idColumn === "string" && seed.idColumn ? seed.idColumn : sreConfig.appIdField,
       };
     },
   },
   {
     name: "guardians refresh",
-    yaml: "workflows/refresh-lookups-guardians-srg-by-appci.workflow-template.yaml",
+    yaml: "workflows/refresh-lookups-guardians-srg-by-app-id.workflow-template.yaml",
     template: "scripts/workflow-scripts/refresh-lookups-guardians.script.template.js",
     vars: () => {
       const s = settingsOf("guardians");
       // Tag keys that identify the application on a guardian: the customer's own (identifier and cloud tag key)
       // plus the original "appci" shorthand. Compared lower-cased.
-      const keys = [...new Set([sreConfig.appciField, sreConfig.cloudTagKey, "appci"].map((k) => k.toLowerCase()))];
+      const keys = [...new Set([sreConfig.appIdField, sreConfig.cloudTagKey, "appci"].map((k) => k.toLowerCase()))];
       return { __TAG_KEY_TEST__: keys.map((k) => `k === '${k}'`).join(" || "), __PATH__: s.path, __ID_COL__: s.col("appId") };
     },
   },
   {
     name: "SLO dashboards refresh",
-    yaml: "workflows/refresh-lookups-slo-dashboards-slo-dashboards-by-appci.workflow-template.yaml",
+    yaml: "workflows/refresh-lookups-slo-dashboards-slo-dashboards-by-app-id.workflow-template.yaml",
     template: "scripts/workflow-scripts/refresh-lookups-slo-dashboards.script.template.js",
     vars: () => {
       const s = settingsOf("sloDashboards");
@@ -132,11 +132,11 @@ const TARGETS = [
   },
   {
     name: "SLO refresh",
-    yaml: "workflows/refresh-lookups-slo-slos-by-appci.workflow-template.yaml",
+    yaml: "workflows/refresh-lookups-slo-slos-by-app-id.workflow-template.yaml",
     template: "scripts/workflow-scripts/refresh-lookups-slo.script.template.js",
     vars: () => {
       const s = settingsOf("slo");
-      return { __PATH__: s.path, __SLO_COL__: s.col("slo"), __SLO_ID_COL__: s.col("appId") ?? "", __APPCI__: sreConfig.appciField, __ID_MAX__: String(sreConfig.idMaxLength) };
+      return { __PATH__: s.path, __SLO_COL__: s.col("slo"), __SLO_ID_COL__: s.col("appId") ?? "", __APP_ID__: sreConfig.appIdField, __ID_MAX__: String(sreConfig.idMaxLength) };
     },
   },
 ];

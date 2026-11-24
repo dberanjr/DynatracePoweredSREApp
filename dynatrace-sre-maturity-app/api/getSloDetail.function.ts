@@ -21,9 +21,9 @@ export interface SloDetail {
 export default async function (input: unknown = undefined) {
   const raw = (input && typeof input === 'object' && 'payload' in (input as Record<string, unknown>)
     ? (input as { payload?: unknown }).payload
-    : input) as { appCI?: string; appCiField?: string; sloIdFromTag?: boolean } | undefined;
-  const appCI = String(raw?.appCI || '').trim().toLowerCase();
-  if (!appCI) return { slos: [] };
+    : input) as { appId?: string; appCiField?: string; sloIdFromTag?: boolean } | undefined;
+  const appId = String(raw?.appId || '').trim().toLowerCase();
+  if (!appId) return { slos: [] };
 
   const slos: PlatformSlo[] = [];
   let pageKey: string | null = null;
@@ -43,8 +43,8 @@ export default async function (input: unknown = undefined) {
   const byTag = raw?.sloIdFromTag === true && tagKey !== '';
   const matches = slos.filter((s) =>
     byTag
-      ? (s.tags || []).some((t) => t.toLowerCase() === `${tagKey}:${appCI}`)
-      : (s.name || '').slice(0, 3).toLowerCase() === appCI,
+      ? (s.tags || []).some((t) => t.toLowerCase() === `${tagKey}:${appId}`)
+      : (s.name || '').slice(0, 3).toLowerCase() === appId,
   );
 
   const details: SloDetail[] = matches.map((s) => {

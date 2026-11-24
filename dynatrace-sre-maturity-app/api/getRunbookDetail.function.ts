@@ -41,9 +41,9 @@ export default async function (input: unknown = undefined) {
   // function` wraps it as { payload, environmentId, ... }. Accept either.
   const raw = (input && typeof input === 'object' && 'payload' in (input as Record<string, unknown>)
     ? (input as { payload?: unknown }).payload
-    : input) as { appCI?: string } | undefined;
-  const appCI = String(raw?.appCI || '').trim().toLowerCase();
-  if (!appCI) return { runbooks: [], otherNotebooks: [] };
+    : input) as { appId?: string } | undefined;
+  const appId = String(raw?.appId || '').trim().toLowerCase();
+  if (!appId) return { runbooks: [], otherNotebooks: [] };
 
   const docs: DocumentEntry[] = [];
   let pageKey: string | null = null;
@@ -58,18 +58,18 @@ export default async function (input: unknown = undefined) {
   } while (pageKey);
 
   // Naming convention, same as the lookup workflow: the name starts with a
-  // 3-letter AppCI token and contains the word "Runbook" (any case).
+  // 3-letter application ID token and contains the word "Runbook" (any case).
   const tokenRe = /^[A-Za-z]{3}([^A-Za-z]|$)/;
   const runbookRe = /runbook/i;
 
-  const startsWithAppCI = (name: string) =>
-    tokenRe.test(name) && name.slice(0, 3).toLowerCase() === appCI;
+  const startsWithAppId = (name: string) =>
+    tokenRe.test(name) && name.slice(0, 3).toLowerCase() === appId;
 
   const matches: DocumentEntry[] = [];
   const others: OtherNotebookEntry[] = [];
   for (const d of docs) {
     const name = d.name || '';
-    const hasPrefix = startsWithAppCI(name);
+    const hasPrefix = startsWithAppId(name);
     const hasRunbook = runbookRe.test(name);
     if (hasPrefix && hasRunbook) {
       matches.push(d);
@@ -77,8 +77,8 @@ export default async function (input: unknown = undefined) {
       // Belongs to this app but isn't named as a runbook — the most useful
       // thing to show a team whose check is failing.
       others.push({ notebookName: name, reason: 'Missing the word "Runbook" in the name' });
-    } else if (hasRunbook && name.toLowerCase().includes(appCI)) {
-      // Mentions the AppCI and is a runbook, but not as the leading 3-letter token.
+    } else if (hasRunbook && name.toLowerCase().includes(appId)) {
+      // Mentions the application ID and is a runbook, but not as the leading 3-letter token.
       others.push({ notebookName: name, reason: 'The application ID is not the leading 3-letter token' });
     }
   }

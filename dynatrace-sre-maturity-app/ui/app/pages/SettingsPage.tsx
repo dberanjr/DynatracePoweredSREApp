@@ -2,19 +2,19 @@ import React, { useMemo, useState } from "react";
 import { useDql } from "../hooks/useDql";
 import { useDemoMode } from "../demo/demoMode";
 import {
-  APP_CI_FIELD,
-  APP_CI_LABEL,
+  APP_ID_FIELD,
+  APP_ID_LABEL,
   COMPANY_LOGO_URL,
   COMPANY_NAME,
-  DEFAULT_APP_CI_FIELD,
+  DEFAULT_APP_ID_FIELD,
   DEFAULT_COMPANY_LOGO_URL,
   DEFAULT_COMPANY_NAME,
-  DEFAULT_APP_CI_LABEL,
+  DEFAULT_APP_ID_LABEL,
   LOOKUP_SETTINGS,
   CATALOG_SETTINGS,
   CLOUD_TAG_OVERRIDE,
-  APP_CI_MAX_LENGTH,
-  APP_CI_CLOUD_TAG,
+  APP_ID_MAX_LENGTH,
+  APP_ID_CLOUD_TAG,
   defaultLookupSettings,
   resetSettings,
   saveSettings,
@@ -22,7 +22,7 @@ import {
   validateCompanyLogoUrl,
 } from "../settings/appSettings";
 import {
-  APPCI_TOKEN,
+  APP_ID_TOKEN,
   LOOKUP_DEFS,
   LOOKUP_KEYS,
   validateColumn,
@@ -343,7 +343,7 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
                   label={`${def.label}: ${f.label} column`}
                   columns={columns}
                   value={colValue}
-                  placeholder={f.optional ? "(none)" : f.default === APPCI_TOKEN ? "(same as identifier field)" : f.default}
+                  placeholder={f.optional ? "(none)" : f.default === APP_ID_TOKEN ? "(same as identifier field)" : f.default}
                   onChange={(v) => onChange({ ...value, columns: { ...value.columns, [fieldKey]: v } })}
                 />
                 <ErrorText msg={err} />
@@ -371,10 +371,10 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
 };
 
 export const SettingsPage = () => {
-  const [field, setField] = useState(APP_CI_FIELD);
-  const [label, setLabel] = useState(APP_CI_LABEL);
+  const [field, setField] = useState(APP_ID_FIELD);
+  const [label, setLabel] = useState(APP_ID_LABEL);
   const [cloudTag, setCloudTag] = useState(CLOUD_TAG_OVERRIDE);
-  const [idMax, setIdMax] = useState(String(APP_CI_MAX_LENGTH));
+  const [idMax, setIdMax] = useState(String(APP_ID_MAX_LENGTH));
   const [companyName, setCompanyName] = useState(COMPANY_NAME);
   const [logoUrl, setLogoUrl] = useState(COMPANY_LOGO_URL);
   const [lookups, setLookups] = useState<LookupSettings>(() => structuredClone(LOOKUP_SETTINGS));
@@ -395,12 +395,12 @@ export const SettingsPage = () => {
   const idMaxError = normalizeIdMaxLength(idMax) === Number(idMax.trim()) && idMax.trim() !== "" ? null : "Enter a whole number from 1 to 64.";
   const valid = !fieldError && !cloudTagError && !idMaxError && !logoError && lookupsValid && catalogValid;
   const dirty =
-    field.trim() !== APP_CI_FIELD ||
+    field.trim() !== APP_ID_FIELD ||
     cloudTag.trim() !== CLOUD_TAG_OVERRIDE ||
-    normalizeIdMaxLength(idMax) !== APP_CI_MAX_LENGTH ||
+    normalizeIdMaxLength(idMax) !== APP_ID_MAX_LENGTH ||
     (companyName.trim() || DEFAULT_COMPANY_NAME) !== COMPANY_NAME ||
     logoUrl.trim() !== COMPANY_LOGO_URL ||
-    (label.trim() || DEFAULT_APP_CI_LABEL) !== APP_CI_LABEL ||
+    (label.trim() || DEFAULT_APP_ID_LABEL) !== APP_ID_LABEL ||
     JSON.stringify(lookups) !== JSON.stringify(LOOKUP_SETTINGS) ||
     JSON.stringify(catalog) !== JSON.stringify(CATALOG_SETTINGS);
 
@@ -466,11 +466,11 @@ export const SettingsPage = () => {
 
       <h3 style={{ margin: "24px 0 8px" }}>Application identifier</h3>
       <div style={cardStyle}>
-        <label htmlFor="appci-field" style={{ display: "block", fontWeight: 700, marginBottom: 4 }}>
+        <label htmlFor="appId-field" style={{ display: "block", fontWeight: 700, marginBottom: 4 }}>
           Field on your Grail records / entity tags
         </label>
         <input
-          id="appci-field"
+          id="appId-field"
           style={{ ...inputStyle, maxWidth: 420 }}
           value={field}
           onChange={(e) => setField(e.target.value)}
@@ -479,34 +479,34 @@ export const SettingsPage = () => {
         />
         <div style={{ fontSize: 12, marginTop: 4, color: fieldError ? "#C4233B" : muted }}>
           {fieldError ??
-            `The key your records and entity tags use, e.g. an entity tag "${field.trim()}:abc" or a log attribute named ${field.trim()}. Default: ${DEFAULT_APP_CI_FIELD}.`}
+            `The key your records and entity tags use, e.g. an entity tag "${field.trim()}:abc" or a log attribute named ${field.trim()}. Default: ${DEFAULT_APP_ID_FIELD}.`}
         </div>
 
-        <label htmlFor="appci-cloud-tag" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
+        <label htmlFor="appId-cloud-tag" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
           Cloud resource tag key (optional)
         </label>
         <input
-          id="appci-cloud-tag"
+          id="appId-cloud-tag"
           style={{ ...inputStyle, maxWidth: 420 }}
           value={cloudTag}
           onChange={(e) => setCloudTag(e.target.value)}
           spellCheck={false}
           autoComplete="off"
-          placeholder={`(auto: ${APP_CI_CLOUD_TAG})`}
+          placeholder={`(auto: ${APP_ID_CLOUD_TAG})`}
         />
         <ErrorText msg={cloudTagError} />
         {!cloudTagError && (
           <div style={{ fontSize: 12, marginTop: 4, color: muted }}>
             The tag key on your AWS / Azure / GCP resources and Site Reliability Guardians. Unlike entity tags it is case-sensitive, so use it exactly as
-            it appears (e.g. <code>UTAN</code>). Leave blank to use {APP_CI_CLOUD_TAG}.
+            it appears (e.g. <code>UTAN</code>). Leave blank to use {APP_ID_CLOUD_TAG}.
           </div>
         )}
 
-        <label htmlFor="appci-max-length" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
-          Longest {label.trim() || APP_CI_LABEL} (characters)
+        <label htmlFor="appId-max-length" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
+          Longest {label.trim() || APP_ID_LABEL} (characters)
         </label>
         <input
-          id="appci-max-length"
+          id="appId-max-length"
           style={{ ...inputStyle, maxWidth: 120 }}
           value={idMax}
           onChange={(e) => setIdMax(e.target.value)}
@@ -521,17 +521,17 @@ export const SettingsPage = () => {
           </div>
         )}
 
-        <label htmlFor="appci-label" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
+        <label htmlFor="appId-label" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
           Display label
         </label>
         <input
-          id="appci-label"
+          id="appId-label"
           style={{ ...inputStyle, maxWidth: 420, fontFamily: "inherit" }}
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           autoComplete="off"
         />
-        <div style={{ fontSize: 12, marginTop: 4, color: muted }}>Name shown for the identifier in the header selector. Default: {DEFAULT_APP_CI_LABEL}.</div>
+        <div style={{ fontSize: 12, marginTop: 4, color: muted }}>Name shown for the identifier in the header selector. Default: {DEFAULT_APP_ID_LABEL}.</div>
       </div>
 
       <h3 style={{ margin: "24px 0 4px" }}>Lookup tables</h3>
@@ -557,8 +557,8 @@ export const SettingsPage = () => {
         <button
           style={buttonStyle(false)}
           onClick={() => {
-            setField(DEFAULT_APP_CI_FIELD);
-            setLabel(DEFAULT_APP_CI_LABEL);
+            setField(DEFAULT_APP_ID_FIELD);
+            setLabel(DEFAULT_APP_ID_LABEL);
             setCloudTag("");
             setCompanyName(DEFAULT_COMPANY_NAME);
             setLogoUrl(DEFAULT_COMPANY_LOGO_URL);
@@ -572,7 +572,7 @@ export const SettingsPage = () => {
           style={buttonStyle(false)}
           title="Download these settings as JSON for: npm run generate:workflows -- --config settings.json"
           onClick={() => {
-            const blob = new Blob([JSON.stringify({ appCiField: APP_CI_FIELD, cloudTagKey: CLOUD_TAG_OVERRIDE, appCiMaxLength: APP_CI_MAX_LENGTH, lookups: LOOKUP_SETTINGS, catalog: CATALOG_SETTINGS }, null, 2)], { type: "application/json" });
+            const blob = new Blob([JSON.stringify({ appCiField: APP_ID_FIELD, cloudTagKey: CLOUD_TAG_OVERRIDE, appCiMaxLength: APP_ID_MAX_LENGTH, lookups: LOOKUP_SETTINGS, catalog: CATALOG_SETTINGS }, null, 2)], { type: "application/json" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
             a.download = "sre-maturity-settings.json";

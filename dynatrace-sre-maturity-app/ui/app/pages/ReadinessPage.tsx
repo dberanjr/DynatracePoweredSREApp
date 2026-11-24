@@ -39,7 +39,7 @@ import {
   tableRowBorder,
 } from "../components/redesignStyles";
 
-import { APP_CI_LABEL } from "../settings/appSettings";
+import { APP_ID_LABEL } from "../settings/appSettings";
 // Data readiness. Two views of the same question, "does this environment provide what the checks read?":
 //   - This environment: each input, measured across everything. Which checks does each one hold up?
 //   - One application: why does THIS application's scorecard complain? Each gap is either an environment
@@ -102,9 +102,9 @@ function ProbeRunner({
 }
 
 // A runner for the per-application version of a probe.
-function AppRunner({ probe, appCI, runId, onState }: { probe: ProbeDef; appCI: string; runId: number; onState: (key: string, s: ProbeState) => void }) {
-  const query = useMemo(() => appQueryFor(probe.key, appCI), [probe.key, appCI]);
-  const interpret = useCallback((rec: Records) => APP_INTERPRETERS[probe.key](rec, appCI), [probe.key, appCI]);
+function AppRunner({ probe, appId, runId, onState }: { probe: ProbeDef; appId: string; runId: number; onState: (key: string, s: ProbeState) => void }) {
+  const query = useMemo(() => appQueryFor(probe.key, appId), [probe.key, appId]);
+  const interpret = useCallback((rec: Records) => APP_INTERPRETERS[probe.key](rec, appId), [probe.key, appId]);
   return <ProbeRunner stateKey={`app:${probe.key}`} probe={probe} query={query} interpret={interpret} runId={runId} onState={onState} />;
 }
 
@@ -195,10 +195,10 @@ const sumBytes = (states: Record<string, ProbeState>): number => Object.values(s
 
 interface Props {
   /** The application chosen in the header. Empty until the picker has loaded. */
-  appCI: string;
+  appId: string;
 }
 
-export const ReadinessPage = ({ appCI }: Props) => {
+export const ReadinessPage = ({ appId }: Props) => {
   const [scope, setScope] = useState<Scope>("environment");
   const [estateRun, setEstateRun] = useState(0);
   const [estateStates, setEstateStates] = useState<Record<string, ProbeState>>({});
@@ -209,12 +209,12 @@ export const ReadinessPage = ({ appCI }: Props) => {
   const onEstateState = useCallback((key: string, s: ProbeState) => setEstateStates((prev) => ({ ...prev, [key]: s })), []);
   const onAppState = useCallback((key: string, s: ProbeState) => setAppStates((prev) => ({ ...prev, [key]: s })), []);
 
-  const appRun = appRunState.app === appCI ? appRunState.n : 0;
+  const appRun = appRunState.app === appId ? appRunState.n : 0;
 
   // A different application means different results: forget the old ones and wait to be asked again.
   useEffect(() => {
     setAppStates({});
-  }, [appCI]);
+  }, [appId]);
 
   const runEstate = () => {
     setEstateStates({});
@@ -223,7 +223,7 @@ export const ReadinessPage = ({ appCI }: Props) => {
   // The application view needs the environment results to tell the two kinds of gap apart.
   const runApp = () => {
     setAppStates({});
-    setAppRunState((prev) => ({ n: prev.n + 1, app: appCI }));
+    setAppRunState((prev) => ({ n: prev.n + 1, app: appId }));
     if (estateRun === 0) setEstateRun(1);
   };
 
@@ -233,15 +233,15 @@ export const ReadinessPage = ({ appCI }: Props) => {
   const estateFinished = estateRun > 0 && !estateRunning;
   const appRunning = appRun > 0 && (APP_PROBES.some((p) => appStates[`app:${p.key}`]?.phase !== "done") || estateRunning);
   const appFinished = appRun > 0 && !appRunning;
-  const code = appCI.toUpperCase();
+  const code = appId.toUpperCase();
 
   return (
     <Flex flexDirection="column" gap={20} padding={16}>
       {PROBES.map((p) => (
         <ProbeRunner key={`env:${p.key}`} stateKey={p.key} probe={p} query={p.query} interpret={p.interpret} runId={estateRun} onState={onEstateState} />
       ))}
-      {appCI &&
-        APP_PROBES.map((p) => <AppRunner key={`app:${p.key}:${appCI}`} probe={p} appCI={appCI} runId={appRun} onState={onAppState} />)}
+      {appId &&
+        APP_PROBES.map((p) => <AppRunner key={`app:${p.key}:${appId}`} probe={p} appId={appId} runId={appRun} onState={onAppState} />)}
 
       <div>
         <Heading level={3} style={{ margin: "0 0 4px" }}>Data Readiness</Heading>
@@ -257,7 +257,7 @@ export const ReadinessPage = ({ appCI }: Props) => {
           This environment
         </button>
         <button type="button" style={subTabStyle(scope === "app")} onClick={() => setScope("app")}>
-          {appCI ? `Application ${code}` : "Selected application"}
+          {appId ? `Application ${code}` : "Selected application"}
         </button>
       </div>
 
@@ -275,7 +275,7 @@ export const ReadinessPage = ({ appCI }: Props) => {
         />
       ) : (
         <ApplicationView
-          appCI={appCI}
+          appId={appId}
           code={code}
           estate={estate}
           appOut={appOut}
@@ -481,7 +481,7 @@ function EnvironmentView({
 // ───────────────────────────── One application ─────────────────────────────
 
 function ApplicationView({
-  appCI,
+  appId,
   code,
   estate,
   appOut,
@@ -491,7 +491,7 @@ function ApplicationView({
   totalBytes,
   onRun,
 }: {
-  appCI: string;
+  appId: string;
   code: string;
   estate: Record<string, Outcome | undefined>;
   appOut: Record<string, Outcome | undefined>;
@@ -501,11 +501,11 @@ function ApplicationView({
   totalBytes: number;
   onRun: () => void;
 }) {
-  const findings = useMemo(() => (finished ? explainApp(appCI, estate, appOut) : []), [finished, appCI, estate, appOut]);
+  const findings = useMemo(() => (finished ? explainApp(appId, estate, appOut) : []), [finished, appId, estate, appOut]);
   const count = (v: Verdict) => findings.filter((f) => f.verdict === v).length;
 
-  if (!appCI) {
-    return <div style={noticeBox}>Pick an {APP_CI_LABEL} in the header to see why its scorecard complains.</div>;
+  if (!appId) {
+    return <div style={noticeBox}>Pick an {APP_ID_LABEL} in the header to see why its scorecard complains.</div>;
   }
 
   return (

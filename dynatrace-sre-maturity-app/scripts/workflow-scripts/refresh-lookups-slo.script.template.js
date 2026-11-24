@@ -1,11 +1,11 @@
 // Refreshes /lookups/slo (one row per SLO name) from the Gen3 SLO platform API.
-// The scorecard derives AppCI from the first 3 characters of the name, unless the settings map an Application ID
-// column for this table (ID_COL below is then non-empty): the ID is the SLO's `<APPCI>:<id>` tag, falling back to the
+// The scorecard derives application ID from the first 3 characters of the name, unless the settings map an Application ID
+// column for this table (ID_COL below is then non-empty): the ID is the SLO's `<APP_ID>:<id>` tag, falling back to the
 // name up to its first separator when the SLO has no such tag.
 // NOTE: the platform SLO API rejects page-size when page-key is set — first
 // page uses page-size, subsequent pages use page-key only (confirmed in getSloDetail.function.ts).
 const ID_COL = '__SLO_ID_COL__';
-const TAG_KEY = '__APPCI__'.toLowerCase();
+const TAG_KEY = '__APP_ID__'.toLowerCase();
 const ID_MAX = __ID_MAX__;
 
 function sloAppId(s) {

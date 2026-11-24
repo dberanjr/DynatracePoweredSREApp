@@ -55,7 +55,7 @@ export const dependenciesFixtures: DemoFixture[] = [
           depId: svc.id,
           depName: svc.name,
           parentId,
-          appciList: [svc.appCI],
+          appIdList: [svc.appId],
           critSeverity: svc.severity,
           critImpact: svc.businessImpact,
           reqCount: svc.reqCount,
@@ -75,7 +75,7 @@ export const dependenciesFixtures: DemoFixture[] = [
 
   // UpstreamDownstreamPage STATUS_QUERY
   {
-    id: "dependency-appci-status",
+    id: "dependency-appId-status",
     match: /lower\(applicationci\) == lower\("[^"]*"\)\s*\| fields operational_status/,
     respond: (q) => {
       const code = quoted(q, /lower\("([^"]*)"\)/).toUpperCase();

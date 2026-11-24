@@ -1,7 +1,7 @@
 import { settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 
-// Refreshes the /lookups/guardians table (appci -> guardianCount) from the
-// Site Reliability Guardian settings objects, matching on the applicationCI/appci tag.
+// Refreshes the /lookups/guardians table (appId -> guardianCount) from the
+// Site Reliability Guardian settings objects, matching on the applicationCI/appId tag.
 export default async function () {
   // 1. Read all guardian settings objects
   const res = await settingsObjectsClient.getSettingsObjects({
@@ -11,28 +11,28 @@ export default async function () {
   });
   const items = res.items || [];
 
-  // 2. Aggregate appci -> distinct guardian count (case-insensitive tag key + value)
+  // 2. Aggregate appId -> distinct guardian count (case-insensitive tag key + value)
   const counts = {};
   for (const obj of items) {
     const tags = (obj.value && obj.value.tags) || [];
-    const appcis = new Set();
+    const appIds = new Set();
     for (const t of tags) {
       const i = String(t).indexOf(':');
       if (i > 0) {
         const k = String(t).slice(0, i).trim().toLowerCase();
         const v = String(t).slice(i + 1).trim().toLowerCase();
-        if ((__TAG_KEY_TEST__) && v) appcis.add(v);
+        if ((__TAG_KEY_TEST__) && v) appIds.add(v);
       }
     }
-    for (const a of appcis) counts[a] = (counts[a] || 0) + 1;
+    for (const a of appIds) counts[a] = (counts[a] || 0) + 1;
   }
 
   // 3. Build CSV (header is skipped on upload via skippedRecords:1)
-  const appcis = Object.keys(counts).sort();
-  // A 0-row lookup exposes no columns, so every consumer's `lookup`/`fieldsAdd appci` fails with
+  const appIds = Object.keys(counts).sort();
+  // A 0-row lookup exposes no columns, so every consumer's `lookup`/`fieldsAdd appId` fails with
   // FIELD_DOES_NOT_EXIST. When nothing matches, keep the schema alive with a sentinel row whose
-  // appci can never equal a real AppCI (it never joins to a scorecard row).
-  const rows = appcis.map((a) => `${a},${counts[a]}`);
+  // appId can never equal a real application ID (it never joins to a scorecard row).
+  const rows = appIds.map((a) => `${a},${counts[a]}`);
   if (rows.length === 0) rows.push('__none__,0');
   const csv = '__ID_COL__,guardianCount\n' + rows.join('\n') + '\n';
 
@@ -72,5 +72,5 @@ export default async function () {
   if (!resp.ok) {
     throw new Error(`Lookup upload failed: ${resp.status} ${text}`);
   }
-  return { guardiansRead: items.length, appciRows: appcis.length, counts };
+  return { guardiansRead: items.length, appIdRows: appIds.length, counts };
 }

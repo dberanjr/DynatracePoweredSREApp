@@ -32,7 +32,7 @@ const mapped = [...registry.matchAll(/\{ id: "(L\d-\d+)", level: "L\d", name: "(
 }));
 
 const inputIds = new Set([...registry.matchAll(/\{ id: "(IN-\d+)", name:/g)].map((m) => m[1]));
-// A text field is a "..." or `...` literal (the latter when it interpolates the configured AppCI label).
+// A text field is a "..." or `...` literal (the latter when it interpolates the configured application ID label).
 const STR = "(?:\"[^\"]*\"|`[^`]*`)";
 const inputProbes = [...registry.matchAll(new RegExp(String.raw`\{ id: "(IN-\d+)", name: ${STR}, description: ${STR}, fix: ${STR}, probe: (?:"(\w+)"|null) \}`, "g"))].map((m) => ({ id: m[1], probe: m[2] }));
 const probeKeys = new Set([...registry.matchAll(/^ {4}key: "(\w+)",$/gm)].map((m) => m[1]));
@@ -65,7 +65,7 @@ for (const i of inputProbes) {
 }
 for (const k of probeKeys) if (!queryKeys.has(k)) problems.push(`probe "${k}" has no query in READINESS_QUERIES`);
 for (const k of probeKeys) {
-  if (k === "map") continue; // the AppCI map is a prerequisite, not something one application has
+  if (k === "map") continue; // the application ID map is a prerequisite, not something one application has
   if (!appQueryKeys.has(k)) problems.push(`probe "${k}" has no per-application query in readinessAppQueries`);
   if (!appInterpKeys.has(k)) problems.push(`probe "${k}" has no per-application interpreter in APP_INTERPRETERS`);
 }

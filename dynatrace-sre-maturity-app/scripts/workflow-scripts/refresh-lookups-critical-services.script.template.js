@@ -1,23 +1,23 @@
 import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
-// GENERATED PARTS: the three APPCI_FROM_* constants below are produced by scripts/generate-snapshot-workflow.mjs
-// from ui/app/queries/maturityQueries.ts, so an AppCI is resolved here exactly as in the app (an
-// `__APPCI__:<code>` tag, or an `Application:<Name>` tag mapped through the application ID map table). Edit that
+// GENERATED PARTS: the three APP_ID_FROM_* constants below are produced by scripts/generate-snapshot-workflow.mjs
+// from ui/app/queries/maturityQueries.ts, so an application ID is resolved here exactly as in the app (an
+// `__APP_ID__:<code>` tag, or an `Application:<Name>` tag mapped through the application ID map table). Edit that
 // module and run `npm run generate:workflows`; the template for this script is
 // workflows/refresh-lookups-critical-services.script.template.js.
 //
 // Builds /lookups/critical_services: every row of the entity_severity seed table resolved to the
 // Dynatrace entity ID(s) it refers to, over a rolling 24h window.
 //
-// Covers every appci in the source list. Runs them in chunks rather than one appci at a time:
-// a per-appci loop would be ~362 queries (~40 min) and blow the 120s JS task timeout, while an
+// Covers every appId in the source list. Runs them in chunks rather than one appId at a time:
+// a per-appId loop would be ~362 queries (~40 min) and blow the 120s JS task timeout, while an
 // unchunked estate-wide query fails with JOIN_RIGHT_TABLE_SIZE. Chunks of 100 keep the
 // Smartscape subquery bounded and finish in ~6s each.
 
 const SRC    = '__SEED_PATH__';
-const SEED_ID = '__SEED_ID_COL__'; // the seed table's application ID column; renamed to `appci` below
+const SEED_ID = '__SEED_ID_COL__'; // the seed table's application ID column; renamed to `appId` below
 const DST    = '__PATH__';
-const CHUNK  = 100;        // appcis per query
+const CHUNK  = 100;        // appIds per query
 const D      = '^';        // field delimiter - verified to appear 0 times in the source data
 const WINDOW = 'now()-24h';
 
@@ -42,14 +42,14 @@ async function runDql(query, maxResultRecords) {
   throw new Error('DQL poll timed out');
 }
 
-__APPCI_RESOLVER__
+__APP_ID_RESOLVER__
 
-function buildQuery(appcis) {
-  const inFilter = 'in(appci, array(' + appcis.map(qt).join(',') + '))';
+function buildQuery(appIds) {
+  const inFilter = 'in(appId, array(' + appIds.map(qt).join(',') + '))';
   return [
     'load "' + SRC + '"',
-    '| fieldsAdd appci = ' + SEED_ID,
-    '| fieldsAdd e_join = concat(appci, "_", entity_name)',
+    '| fieldsAdd appId = ' + SEED_ID,
+    '| fieldsAdd e_join = concat(appId, "_", entity_name)',
     '| filter ' + inFilter,
     '| join [',
     '      fetch spans, from:' + WINDOW + ', to:now(), samplingRatio:1000',
@@ -59,50 +59,50 @@ function buildQuery(appcis) {
     '    kind: leftOuter,',
     '    on: { left[entity_name] == right[endpoint.name]}, fields:{id_3 = dt.smartscape.service}',
     '| fieldsAdd id_tags = entityAttr(toString(id_3),"tags",type:"dt.entity.service")',
-    APPCI_FROM_SPAN_SERVICE_TAGS,
-    '| filter arraySize(id_appcis) == 0 OR in(appci, id_appcis)',
+    APP_ID_FROM_SPAN_SERVICE_TAGS,
+    '| filter arraySize(id_appIds) == 0 OR in(appId, id_appIds)',
     '| join [',
     '      fetch dt.entity.service, from:' + WINDOW + ', to:now()',
-    APPCI_FROM_SERVICE_TAGS,
-    '      | expand __APPCI__',
-    '      | fieldsAdd appci = __APPCI__',
+    APP_ID_FROM_SERVICE_TAGS,
+    '      | expand __APP_ID__',
+    '      | fieldsAdd appId = __APP_ID__',
     '      | filter ' + inFilter,
-    '      | fieldsAdd e_join = concat(appci, "_", entity.name)',
+    '      | fieldsAdd e_join = concat(appId, "_", entity.name)',
     '    ],',
     '    kind: leftOuter,',
     '    on: { left[e_join] == right[e_join]}, fields:{id_1 = id}',
     '| join [',
     '      smartscapeNodes "*", from:' + WINDOW + ', to:now()',
-    '      | fields name, id, tags, `tags:aws`, aws.tags.__APPCI__, custom_metadata, host.custom.metadata',
-    APPCI_FROM_TAG_MAP,
-    '      | fieldsAdd appci = coalesce(tags[__APPCI__], `tags:aws`[__APPCI__], `tags:aws`[__CLOUD_TAG__], aws.tags.__APPCI__, custom_metadata[__APPCI__], custom_metadata[__CLOUD_TAG__], host.custom.metadata[__CLOUD_TAG__], host.custom.metadata[__APPCI__], lower(smapMapped))',
+    '      | fields name, id, tags, `tags:aws`, aws.tags.__APP_ID__, custom_metadata, host.custom.metadata',
+    APP_ID_FROM_TAG_MAP,
+    '      | fieldsAdd appId = coalesce(tags[__APP_ID__], `tags:aws`[__APP_ID__], `tags:aws`[__CLOUD_TAG__], aws.tags.__APP_ID__, custom_metadata[__APP_ID__], custom_metadata[__CLOUD_TAG__], host.custom.metadata[__CLOUD_TAG__], host.custom.metadata[__APP_ID__], lower(smapMapped))',
     '      | filter ' + inFilter,
-    '      | fieldsAdd e_join = concat(appci, "_", name)',
+    '      | fieldsAdd e_join = concat(appId, "_", name)',
     '    ],',
     '    kind: leftOuter,',
     '    on: { left[e_join] == right[e_join]}, fields:{id_2 = id}',
     '| fieldsAdd id = coalesce(id_1,id_2,id_3)',
-    '| fieldsRemove e_join, id_1, id_2, id_3, id_tags, id_appcis',
-    '| summarize id = collectDistinct(id), by:{appci, entity_name, severity, business_impact}',
+    '| fieldsRemove e_join, id_1, id_2, id_3, id_tags, id_appIds',
+    '| summarize id = collectDistinct(id), by:{appId, entity_name, severity, business_impact}',
   ].join('\n');
 }
 
 export default async function () {
-  // 1. every appci present in the source list
-  const appciRows = await runDql(
-    'load "' + SRC + '" | fieldsAdd appci = ' + SEED_ID + ' | summarize n = count(), by:{appci} | fields appci | sort appci asc', 5000);
-  const appcis = appciRows
-    .map((r) => r.appci)
+  // 1. every appId present in the source list
+  const appIdRows = await runDql(
+    'load "' + SRC + '" | fieldsAdd appId = ' + SEED_ID + ' | summarize n = count(), by:{appId} | fields appId | sort appId asc', 5000);
+  const appIds = appIdRows
+    .map((r) => r.appId)
     .filter((a) => a !== null && a !== undefined && String(a).trim() !== '');
-  if (!appcis.length) throw new Error('No appci values found in ' + SRC);
+  if (!appIds.length) throw new Error('No appId values found in ' + SRC);
 
   // 2. resolve, chunk by chunk, accumulating every row
   const rows = [];
   const chunkStats = [];
-  for (let i = 0; i < appcis.length; i += CHUNK) {
-    const chunk = appcis.slice(i, i + CHUNK);
+  for (let i = 0; i < appIds.length; i += CHUNK) {
+    const chunk = appIds.slice(i, i + CHUNK);
     const recs = await runDql(buildQuery(chunk), 20000);
-    chunkStats.push({ appcis: chunk.length, first: chunk[0], last: chunk[chunk.length - 1], rows: recs.length });
+    chunkStats.push({ appIds: chunk.length, first: chunk[0], last: chunk[chunk.length - 1], rows: recs.length });
     for (const r of recs) rows.push(r);
   }
 
@@ -120,7 +120,7 @@ export default async function () {
     rowId += 1;
     lines.push([
       String(rowId),
-      dash(clean(r.appci)),
+      dash(clean(r.appId)),
       dash(clean(r.entity_name)),
       dash(clean(r.severity).toLowerCase()),
       dash(ids.join(' ')),
@@ -169,7 +169,7 @@ export default async function () {
   if (!resp.ok) throw new Error('Lookup upload failed: ' + resp.status + ' ' + text);
 
   return {
-    appcis: appcis.length,
+    appIds: appIds.length,
     chunks: chunkStats.length,
     chunkStats,
     rowsWritten: lines.length,

@@ -9,7 +9,7 @@ const TIER = { 1: "1 - most critical", 2: "2 - somewhat critical", 3: "3 - less 
 export const lookupsFixtures: DemoFixture[] = [
   {
     id: "lookups-cmdb",
-    match: /^load "\/lookups\/dynatrace\/cmdb_appci_owner_mapping" \| limit \d+/,
+    match: /^load "\/lookups\/dynatrace\/cmdb_appId_owner_mapping" \| limit \d+/,
     respond: () => ({
       records: DEMO_APPS.map((a) => ({
         applicationci: a.code.toLowerCase(),
@@ -27,8 +27,8 @@ export const lookupsFixtures: DemoFixture[] = [
     }),
   },
   {
-    id: "lookups-appci-map",
-    match: /^load "\/lookups\/appci_map" \| limit \d+/,
+    id: "lookups-appId-map",
+    match: /^load "\/lookups\/app_map" \| limit \d+/,
     respond: () => ({
       records: DEMO_APPS.slice(0, 5).map((a) => ({ app_name: a.name.toLowerCase().replace(/[^a-z0-9]/g, ""), applicationci: a.code.toLowerCase() })),
     }),
@@ -38,7 +38,7 @@ export const lookupsFixtures: DemoFixture[] = [
     match: /^load "\/lookups\/entity_severity" \| limit \d+/,
     respond: () => ({
       records: DEMO_APPS.filter((a) => a.tier <= 2).map((a) => ({
-        appci: a.code.toLowerCase(),
+        appId: a.code.toLowerCase(),
         entity_name: `${a.name} API`,
         severity: a.tier === 1 ? "critical" : "high",
         business_impact: "revenue",

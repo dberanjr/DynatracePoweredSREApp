@@ -52,7 +52,7 @@ export function openProblem(problemId: string) {
 
 // Reuses the exact downstream/upstream-count shape from the "4. Smartscape
 // Discovery" check and ServiceGoldenSignalsTable, scoped to one known id
-// instead of a whole AppCI's tagged services.
+// instead of a whole application ID's tagged services.
 const DIRECT_DEP_COUNT_QUERY = (entityId: string) => `fetch dt.entity.service
 | filter id == "${entityId}"
 | fieldsFlatten calls, prefix:"calls_"

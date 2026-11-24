@@ -12,13 +12,13 @@ import { DependencySummaryPanel, ChainShapeSummary, DirectDependencyRail } from 
 import { SeverityLegend } from "../components/SeverityLegend";
 import { useDependencyChain } from "../hooks/useDependencyChain";
 import { ActiveProblemLink } from "../components/SmartscapeViewMenu";
-import { appciFromEntityTags } from "../queries/maturityQueries";
+import { appIdFromEntityTags } from "../queries/maturityQueries";
 
-import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_LABEL } from "../settings/appSettings";
 const MAX_LEVELS = 8;
 
-const STATUS_QUERY = (appCI: string) => `${LOAD.cmdb}
-| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
+const STATUS_QUERY = (appId: string) => `${LOAD.cmdb}
+| filter lower(${APP_ID_FIELD}) == lower("${appId}")
 | fields operational_status
 | limit 1`;
 
@@ -48,15 +48,15 @@ const ROOT_METRICS_QUERY = (serviceId: string) => `timeseries {
 
 // Headline counts for the header card — a cheaper, count-only variant of
 // ServiceGoldenSignalsTable's critical/problem joins (no timeseries lookups).
-const SUMMARY_QUERY = (appCI: string) => `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
-| filter ${APP_CI_FIELD} == lower("${appCI}")
+const SUMMARY_QUERY = (appId: string) => `fetch dt.entity.service
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
+| filter ${APP_ID_FIELD} == lower("${appId}")
 | dedup id
 | fields id
 | lookup [
     ${LOAD.criticalServices}
-    | filter lower(appci) == lower("${appCI}")
+    | filter lower(appId) == lower("${appId}")
     | filter entity_ids != "-"
     | fieldsAdd idList = splitString(entity_ids, " ")
     | expand idList
@@ -128,11 +128,11 @@ function SeverityFilterToggle({ active, onToggle }: { active: Set<SeverityFilter
 }
 
 interface Props {
-  appCI: string;
-  onAppCIChange: (appCI: string) => void;
+  appId: string;
+  onAppIdChange: (appId: string) => void;
 }
 
-export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
+export const UpstreamDownstreamPage = ({ appId, onAppIdChange }: Props) => {
   // Set by CheckDetailModal's "4. Smartscape Discovery" row click (see
   // dependenciesRowClick) via navigate("/upstream-downstream", {state}) — a
   // one-time handoff for the initial service, read only on first mount.
@@ -145,12 +145,12 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
   const [upstreamLevels, setUpstreamLevels] = useState(1);
   const [downstreamLevels, setDownstreamLevels] = useState(1);
   const [severityFilter, setSeverityFilter] = useState<Set<SeverityFilterValue>>(new Set());
-  // Set when an AppCI badge in "Unique AppCIs" is clicked. Keyed by which
-  // AppCI it was computed for — if the user later switches AppCI through the
+  // Set when an application ID badge in "Unique AppIds" is clicked. Keyed by which
+  // application ID it was computed for — if the user later switches application ID through the
   // ordinary dropdown, this simply stops matching (rather than needing an
   // effect to explicitly clear it, which would race with the same-render
-  // state updates below when this feature itself changes the AppCI).
-  const [problemServiceFilter, setProblemServiceFilter] = useState<{ appCI: string; ids: Set<string> } | null>(null);
+  // state updates below when this feature itself changes the application ID).
+  const [problemServiceFilter, setProblemServiceFilter] = useState<{ appId: string; ids: Set<string> } | null>(null);
 
   const toggleSeverity = (v: SeverityFilterValue) => {
     setSeverityFilter((prev) => {
@@ -161,11 +161,11 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
     });
   };
 
-  const { data: statusData, isLoading: statusLoading } = useDql({ query: STATUS_QUERY(appCI) });
+  const { data: statusData, isLoading: statusLoading } = useDql({ query: STATUS_QUERY(appId) });
   const status = String(statusData?.records?.[0]?.operational_status || "");
   const isInProduction = !statusLoading && status === "In Production";
 
-  const { data: summaryData } = useDql({ query: isInProduction ? SUMMARY_QUERY(appCI) : "data record(skip = true) | limit 0" });
+  const { data: summaryData } = useDql({ query: isInProduction ? SUMMARY_QUERY(appId) : "data record(skip = true) | limit 0" });
   const summary = summaryData?.records?.[0] as Record<string, unknown> | undefined;
 
   const upstreamChain = useDependencyChain(selectedServiceId, "backward", upstreamLevels);
@@ -213,13 +213,13 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
     setDownstreamLevels(1);
   };
 
-  // From an AppCI badge click in "Unique AppCIs": switch the global AppCI
+  // From an application ID badge click in "Unique AppIds": switch the global application ID
   // filter, restrict the service table to just the flagged services, and
   // either auto-select the one service or leave it to the user to pick
   // among several.
-  const handleSelectAppCI = (targetAppCI: string, problematicServices: { id: string; name: string }[]) => {
-    onAppCIChange(targetAppCI);
-    setProblemServiceFilter({ appCI: targetAppCI, ids: new Set(problematicServices.map((s) => s.id)) });
+  const handleSelectAppId = (targetAppId: string, problematicServices: { id: string; name: string }[]) => {
+    onAppIdChange(targetAppId);
+    setProblemServiceFilter({ appId: targetAppId, ids: new Set(problematicServices.map((s) => s.id)) });
     if (problematicServices.length === 1) {
       handleSelect(problematicServices[0].id, problematicServices[0].name);
     } else {
@@ -228,14 +228,14 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
     }
   };
 
-  const activeProblemFilterIds = problemServiceFilter?.appCI === appCI ? problemServiceFilter.ids : null;
+  const activeProblemFilterIds = problemServiceFilter?.appId === appId ? problemServiceFilter.ids : null;
 
   return (
     <Flex flexDirection="column" gap={20} padding={16}>
       <Heading level={3}>Dependencies — Upstream / Downstream</Heading>
 
       <div style={{ background: SPINE_BACKGROUND, borderRadius: 16, padding: "16px 24px 20px", boxShadow: "0 4px 24px rgba(0,0,0,0.12)" }}>
-        <AppIdentityBar appCI={appCI} />
+        <AppIdentityBar appId={appId} />
         <div style={{ borderTop: "1px solid rgba(255,255,255,.12)", marginTop: 14, paddingTop: 14 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.5)", letterSpacing: 2, marginBottom: 10 }}>
             SERVICE OVERVIEW
@@ -250,7 +250,7 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
             </div>
           ) : (
             <Paragraph style={{ color: "rgba(255,255,255,.5)", fontSize: 12 }}>
-              {isInProduction ? "Loading service overview…" : `Not available until an In-Production ${APP_CI_LABEL} is selected.`}
+              {isInProduction ? "Loading service overview…" : `Not available until an In-Production ${APP_ID_LABEL} is selected.`}
             </Paragraph>
           )}
         </div>
@@ -262,7 +262,7 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
         </Flex>
       ) : !isInProduction ? (
         <Paragraph style={{ color: "var(--sre-text-secondary)" }}>
-          Call chain analysis requires an In-Production application — <strong>{appCI}</strong> is currently{" "}
+          Call chain analysis requires an In-Production application — <strong>{appId}</strong> is currently{" "}
           <strong>{status || "unknown"}</strong>.
         </Paragraph>
       ) : (
@@ -282,7 +282,7 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
                 style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 6, background: "rgba(220,53,69,0.08)", border: "1px solid rgba(220,53,69,0.3)" }}
               >
                 <Paragraph style={{ fontSize: 12, color: "var(--sre-text-primary)", margin: 0 }}>
-                  Showing {activeProblemFilterIds.size} problematic service{activeProblemFilterIds.size === 1 ? "" : "s"} for <strong>{appCI}</strong>
+                  Showing {activeProblemFilterIds.size} problematic service{activeProblemFilterIds.size === 1 ? "" : "s"} for <strong>{appId}</strong>
                 </Paragraph>
                 <button
                   type="button"
@@ -294,7 +294,7 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
               </Flex>
             )}
             <ServiceGoldenSignalsTable
-              appCI={appCI}
+              appId={appId}
               selectedServiceId={selectedServiceId}
               onSelect={handleSelect}
               severityFilter={severityFilter}
@@ -323,7 +323,7 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
                       direction="backward"
                       originId={selectedServiceId}
                       originName={selectedServiceName}
-                      originAppCI={appCI}
+                      originAppId={appId}
                       chain={upstreamChain}
                       levels={upstreamLevels}
                       maxLevels={MAX_LEVELS}
@@ -337,7 +337,7 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
                         chain={upstreamChain}
                         levels={upstreamLevels}
                         onSelectService={handleSelect}
-                        onSelectAppCI={handleSelectAppCI}
+                        onSelectAppId={handleSelectAppId}
                         hideLevel1
                       />
                     </div>
@@ -356,7 +356,7 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
                       direction="forward"
                       originId={selectedServiceId}
                       originName={selectedServiceName}
-                      originAppCI={appCI}
+                      originAppId={appId}
                       chain={downstreamChain}
                       levels={downstreamLevels}
                       maxLevels={MAX_LEVELS}
@@ -370,7 +370,7 @@ export const UpstreamDownstreamPage = ({ appCI, onAppCIChange }: Props) => {
                         chain={downstreamChain}
                         levels={downstreamLevels}
                         onSelectService={handleSelect}
-                        onSelectAppCI={handleSelectAppCI}
+                        onSelectAppId={handleSelectAppId}
                         hideLevel1
                       />
                     </div>

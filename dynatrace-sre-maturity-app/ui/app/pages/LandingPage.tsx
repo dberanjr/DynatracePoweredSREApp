@@ -3,7 +3,7 @@ import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { APP_VERSION } from "../version";
 import { getAppName } from "@dynatrace-sdk/app-environment";
-import { COMPANY_NAME, COMPANY_LOGO_URL, APP_CI_LABEL } from "../settings/appSettings";
+import { COMPANY_NAME, COMPANY_LOGO_URL, APP_ID_LABEL } from "../settings/appSettings";
 
 // Dynatrace brand palette from POTX template
 const brand = {
@@ -46,7 +46,7 @@ const pillars = [
       "Golden signal SLIs defined (latency, errors, traffic, saturation)",
       "Service-level SLOs created with targets",
       "Error budget and burn rate tracking enabled",
-      `SLO dashboards published by ${APP_CI_LABEL} / business capability`,
+      `SLO dashboards published by ${APP_ID_LABEL} / business capability`,
       "SRE assessment scores available in ARD",
     ],
     dynatrace: "SLO Management, Error Budget Tracking, Dashboards, Service Metrics",

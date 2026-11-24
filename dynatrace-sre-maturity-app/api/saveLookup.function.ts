@@ -13,8 +13,8 @@ const MAX_VALUE_LENGTH = 200;
 // unreliable with several empty fields in a row on wide tables), so empty values are stored as a
 // single space and trimmed away again on read.
 const EMPTY = ' ';
-// Letters, digits, underscore, dash: the app compares AppCIs case-insensitively.
-const APPCI_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+// Letters, digits, underscore, dash: the app compares AppIds case-insensitively.
+const APP_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 type Row = Record<string, string>;
 
@@ -26,7 +26,7 @@ interface TableDef {
   lookupField: string;
   columns: string[]; // file column order
   required: string[];
-  appciColumn: string;
+  appIdColumn: string;
   lowercase: string[]; // columns normalised to lower case (consumers compare them lower-cased)
   keyColumns: string[]; // together unique within the table
   // Optional extra rule for a free-text column, e.g. text the matching queries can never match.
@@ -55,7 +55,7 @@ const TABLES: Record<string, TableDef> = {
       'managed_by.u_director',
     ],
     required: ['appId', 'name'],
-    appciColumn: 'appId',
+    appIdColumn: 'appId',
     lowercase: [],
     keyColumns: ['appId'],
   },
@@ -68,12 +68,12 @@ const TABLES: Record<string, TableDef> = {
     lookupField: 'appId',
     columns: ['appId', 'entity_name', 'severity', 'business_impact'],
     required: ['appId', 'entity_name', 'severity'],
-    appciColumn: 'appId',
+    appIdColumn: 'appId',
     lowercase: ['appId', 'severity'],
     keyColumns: ['appId', 'entity_name'],
   },
-  appci_map: {
-    // Read by the shared AppCI resolver in ui/app/queries/maturityQueries.ts (APPCI_MAP_PATH) -
+  app_map: {
+    // Read by the shared application ID resolver in ui/app/queries/maturityQueries.ts (APP_ID_MAP_PATH) -
     // keep this path in sync with that constant. Backend code cannot import from the UI.
     path: '/lookups/sre/app_map',
     backupPath: '/lookups/sre/app_map_backup',
@@ -82,7 +82,7 @@ const TABLES: Record<string, TableDef> = {
     lookupField: 'app_name',
     columns: ['app_name', 'appId'],
     required: ['app_name', 'appId'],
-    appciColumn: 'appId',
+    appIdColumn: 'appId',
     lowercase: ['app_name', 'appId'],
     keyColumns: ['app_name'],
     // The queries strip backslashes and cut the tag at "::" (the environment suffix) before matching,
@@ -113,8 +113,8 @@ function validate(t: TableDef, input: unknown): Row[] {
     }
     const line = i + 1;
     for (const c of t.required) if (!row[c]) errors.push(`Row ${line}: ${c} is required`);
-    if (row[t.appciColumn] && !APPCI_PATTERN.test(row[t.appciColumn])) {
-      errors.push(`Row ${line}: ${t.appciColumn} "${row[t.appciColumn]}" may only contain letters, digits, _ and -`);
+    if (row[t.appIdColumn] && !APP_ID_PATTERN.test(row[t.appIdColumn])) {
+      errors.push(`Row ${line}: ${t.appIdColumn} "${row[t.appIdColumn]}" may only contain letters, digits, _ and -`);
     }
     if (t.reject && row[t.reject.column] && t.reject.pattern.test(row[t.reject.column])) {
       errors.push(`Row ${line}: ${t.reject.column} "${row[t.reject.column]}" ${t.reject.message}`);
@@ -184,7 +184,7 @@ function withField(t: TableDef, field: string): TableDef {
     lookupField: sub(t.lookupField),
     columns: t.columns.map(sub),
     required: t.required.map(sub),
-    appciColumn: sub(t.appciColumn),
+    appIdColumn: sub(t.appIdColumn),
     lowercase: t.lowercase.map(sub),
     keyColumns: t.keyColumns.map(sub),
     reject: t.reject && { ...t.reject, column: sub(t.reject.column) },
@@ -237,7 +237,7 @@ export default async function (input: unknown = undefined) {
   // App-invoked calls pass the payload directly; `dtctl exec function` wraps it as { payload }.
   const raw = (input && typeof input === 'object' && 'payload' in (input as Record<string, unknown>)
     ? (input as { payload?: unknown }).payload
-    : input) as { table?: string; rows?: unknown; appciField?: string } | undefined;
+    : input) as { table?: string; rows?: unknown; appIdField?: string } | undefined;
 
   // Only known tables: the path is never taken from the caller, so this function can't be
   // used to overwrite arbitrary lookups.
@@ -246,7 +246,7 @@ export default async function (input: unknown = undefined) {
 
   // The application identifier field is a user setting (Settings page): the ID column of the app-managed
   // tables is named after it. Validated as a plain DQL identifier because it becomes a column name.
-  const field = String(raw?.appciField || DEFAULT_FIELD).trim();
+  const field = String(raw?.appIdField || DEFAULT_FIELD).trim();
   if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(field)) throw new Error(`Invalid application identifier field "${field}".`);
   const t = withField(base, field);
 

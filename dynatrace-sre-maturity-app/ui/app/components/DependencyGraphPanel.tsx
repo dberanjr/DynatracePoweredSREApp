@@ -27,7 +27,7 @@ import { SmartscapeViewMenu, ActiveProblemLink, openProblem } from "./Smartscape
 import { severityColor, severityRank } from "./dependencyUtils";
 import { ErrorBoundary } from "./ErrorBoundary";
 
-import { APP_CI_LABEL } from "../settings/appSettings";
+import { APP_ID_LABEL } from "../settings/appSettings";
 type LayoutMode = "horizontal" | "vertical" | "force";
 type RenderStyle = "tiles" | "nodes";
 type ViewMode = "standard" | "perf" | "critical";
@@ -39,7 +39,7 @@ export interface NodeMetrics {
 
 interface NodeData {
   name: string;
-  appCIs: string[];
+  appIds: string[];
   severity: string | null;
   isRoot?: boolean;
   smartscapeId: string;
@@ -130,8 +130,8 @@ function DependencyNodeCard({ data }: NodeProps<NodeData>) {
         </span>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-        {data.appCIs.length > 0 ? (
-          data.appCIs.map((a) => (
+        {data.appIds.length > 0 ? (
+          data.appIds.map((a) => (
             <span
               key={a}
               style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, background: "rgba(25,102,255,0.1)", color: ROOT_BLUE }}
@@ -140,7 +140,7 @@ function DependencyNodeCard({ data }: NodeProps<NodeData>) {
             </span>
           ))
         ) : (
-          <span style={{ fontSize: 10, color: "var(--sre-text-secondary)", fontStyle: "italic" }}>Unresolved {APP_CI_LABEL}</span>
+          <span style={{ fontSize: 10, color: "var(--sre-text-secondary)", fontStyle: "italic" }}>Unresolved {APP_ID_LABEL}</span>
         )}
       </div>
       {data.problemRole && data.problemId && (
@@ -162,22 +162,22 @@ function DependencyNodeCard({ data }: NodeProps<NodeData>) {
 }
 
 // "Nodes" (compact circle) view — always-visible label chip below the circle
-// (per user preference), AppCI shown inside the circle itself. Same
+// (per user preference), application ID shown inside the circle itself. Same
 // problem/selection color priority as the tile card. Circle diameter scales
 // with data.sizeScale in Perf mode; the outer bounding box stays a fixed
 // size (large enough for the biggest circle) so layout spacing never varies.
 function DependencyNodeCircle({ data }: NodeProps<NodeData>) {
   const sevColor = severityColor(data.severity);
   const ringColor = data.problemRole ? PROBLEM_RED : sevColor || "var(--sre-border, rgba(0,0,0,0.25))";
-  const primaryAppCI = data.appCIs[0] ? data.appCIs[0].toUpperCase() : "?";
-  const extraAppCIs = data.appCIs.length > 1 ? `+${data.appCIs.length - 1}` : "";
+  const primaryAppId = data.appIds[0] ? data.appIds[0].toUpperCase() : "?";
+  const extraAppIds = data.appIds.length > 1 ? `+${data.appIds.length - 1}` : "";
   const diameter = Math.round(BASE_CIRCLE_DIAMETER * data.sizeScale);
 
   const circle = (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: BASE_CIRCLE_BOX, cursor: "pointer" }}>
       <DirectionalHandles />
       <div
-        title={`${data.name}${data.appCIs.length ? ` — ${data.appCIs.join(", ")}` : ""}${data.problemRole ? ` — ${data.problemRole}` : ""}`}
+        title={`${data.name}${data.appIds.length ? ` — ${data.appIds.join(", ")}` : ""}${data.problemRole ? ` — ${data.problemRole}` : ""}`}
         style={{
           width: diameter,
           height: diameter,
@@ -194,8 +194,8 @@ function DependencyNodeCircle({ data }: NodeProps<NodeData>) {
           color: "var(--sre-text-primary)",
         }}
       >
-        <span>{primaryAppCI}</span>
-        {extraAppCIs && <span style={{ fontSize: 8, opacity: 0.7 }}>{extraAppCIs}</span>}
+        <span>{primaryAppId}</span>
+        {extraAppIds && <span style={{ fontSize: 8, opacity: 0.7 }}>{extraAppIds}</span>}
       </div>
       <span
         style={{
@@ -441,11 +441,11 @@ interface Props {
   direction: ChainDirection;
   originId: string;
   originName: string;
-  /** The selected service's own AppCI, shown in the center node instead of
-   * "?" — chain nodes carry their own appCIs from the traversal data, but
+  /** The selected service's own application ID, shown in the center node instead of
+   * "?" — chain nodes carry their own appIds from the traversal data, but
    * the root/origin isn't part of that data, so it has nothing to show
    * unless told explicitly. */
-  originAppCI: string;
+  originAppId: string;
   chain: DependencyChainResult;
   levels: number;
   maxLevels: number;
@@ -470,7 +470,7 @@ function filterToCritical(nodeList: Node<NodeData>[], edgeList: Edge[], originId
   };
 }
 
-export const DependencyGraphPanel = ({ direction, originId, originName, originAppCI, chain, levels, maxLevels, onLevelsChange, rootProblem, rootMetrics }: Props) => {
+export const DependencyGraphPanel = ({ direction, originId, originName, originAppId, chain, levels, maxLevels, onLevelsChange, rootProblem, rootMetrics }: Props) => {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("force");
   const [renderStyle, setRenderStyle] = useState<RenderStyle>("nodes");
   const [viewMode, setViewMode] = useState<ViewMode>("standard");
@@ -478,13 +478,13 @@ export const DependencyGraphPanel = ({ direction, originId, originName, originAp
   const nodeType = renderStyle === "tiles" ? "dep-tile" : "dep-circle";
 
   const { nodes, edges } = useMemo(() => {
-    type RawNode = { id: string; isRoot?: boolean; name: string; appCIs: string[]; severity: string | null; problemRole: string | null; problemId: string | null; problemDisplayId: string | null; requestCount: number | null; p95Us: number | null };
+    type RawNode = { id: string; isRoot?: boolean; name: string; appIds: string[]; severity: string | null; problemRole: string | null; problemId: string | null; problemDisplayId: string | null; requestCount: number | null; p95Us: number | null };
     const rawNodes: RawNode[] = [
       {
         id: originId,
         isRoot: true,
         name: originName,
-        appCIs: originAppCI ? [originAppCI.toLowerCase()] : [],
+        appIds: originAppId ? [originAppId.toLowerCase()] : [],
         severity: null,
         problemRole: rootProblem?.role || null,
         problemId: rootProblem?.problemId || null,
@@ -500,7 +500,7 @@ export const DependencyGraphPanel = ({ direction, originId, originName, originAp
         rawNodes.push({
           id: n.id,
           name: n.name,
-          appCIs: n.appCIs,
+          appIds: n.appIds,
           severity: n.severity,
           problemRole: n.problemRole,
           problemId: n.problemId,
@@ -526,7 +526,7 @@ export const DependencyGraphPanel = ({ direction, originId, originName, originAp
       type: nodeType,
       data: {
         name: n.name,
-        appCIs: n.appCIs,
+        appIds: n.appIds,
         severity: n.severity,
         isRoot: n.isRoot,
         smartscapeId: n.id,
@@ -574,7 +574,7 @@ export const DependencyGraphPanel = ({ direction, originId, originName, originAp
     const laidOutNodes = computeLayout(nodeList, edgeList, layoutMode, footprint);
     const finalEdges = finalizeEdges(edgeList, viewMode, renderStyle === "nodes", footprint);
     return { nodes: laidOutNodes, edges: finalEdges };
-  }, [direction, originId, originName, originAppCI, chain, levels, layoutMode, nodeType, renderStyle, viewMode, rootProblem, rootMetrics]);
+  }, [direction, originId, originName, originAppId, chain, levels, layoutMode, nodeType, renderStyle, viewMode, rootProblem, rootMetrics]);
 
   const toolbar = (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>

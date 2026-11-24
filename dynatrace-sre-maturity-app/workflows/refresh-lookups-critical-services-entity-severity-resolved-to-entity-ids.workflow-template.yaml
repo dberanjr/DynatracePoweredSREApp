@@ -25,8 +25,8 @@ workflow:
         script: |
           import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
-          // GENERATED PARTS: the three APPCI_FROM_* constants below are produced by scripts/generate-snapshot-workflow.mjs
-          // from ui/app/queries/maturityQueries.ts, so an AppCI is resolved here exactly as in the app (an
+          // GENERATED PARTS: the three APP_ID_FROM_* constants below are produced by scripts/generate-snapshot-workflow.mjs
+          // from ui/app/queries/maturityQueries.ts, so an application ID is resolved here exactly as in the app (an
           // `utan:<code>` tag, or an `Application:<Name>` tag mapped through the application ID map table). Edit that
           // module and run `npm run generate:workflows`; the template for this script is
           // workflows/refresh-lookups-critical-services.script.template.js.
@@ -34,15 +34,15 @@ workflow:
           // Builds /lookups/critical_services: every row of the entity_severity seed table resolved to the
           // Dynatrace entity ID(s) it refers to, over a rolling 24h window.
           //
-          // Covers every appci in the source list. Runs them in chunks rather than one appci at a time:
-          // a per-appci loop would be ~362 queries (~40 min) and blow the 120s JS task timeout, while an
+          // Covers every appId in the source list. Runs them in chunks rather than one appId at a time:
+          // a per-appId loop would be ~362 queries (~40 min) and blow the 120s JS task timeout, while an
           // unchunked estate-wide query fails with JOIN_RIGHT_TABLE_SIZE. Chunks of 100 keep the
           // Smartscape subquery bounded and finish in ~6s each.
 
           const SRC    = '/lookups/entity_severity';
-          const SEED_ID = 'appci'; // the seed table's application ID column; renamed to `appci` below
+          const SEED_ID = 'appci'; // the seed table's application ID column; renamed to `appId` below
           const DST    = '/lookups/critical_services';
-          const CHUNK  = 100;        // appcis per query
+          const CHUNK  = 100;        // appIds per query
           const D      = '^';        // field delimiter - verified to appear 0 times in the source data
           const WINDOW = 'now()-24h';
 
@@ -67,7 +67,7 @@ workflow:
             throw new Error('DQL poll timed out');
           }
 
-          const APPCI_FROM_SPAN_SERVICE_TAGS = `| fieldsAdd idAppciTagged = arrayDistinct(
+          const APP_ID_FROM_SPAN_SERVICE_TAGS = `| fieldsAdd idAppIdTagged = arrayDistinct(
               iCollectArray(
                 splitString(
                   arrayRemoveNulls(
@@ -78,21 +78,21 @@ workflow:
                 )[1]
               )
             )
-          | fieldsAdd idAppciName = lower(arrayFirst(splitString(replaceString(arrayFirst(arrayRemoveNulls(iCollectArray(if(startsWith(lower(id_tags[]), "application:"), substring(id_tags[], from: 12))))), "\\\\", ""), "::")))
+          | fieldsAdd idAppIdName = lower(arrayFirst(splitString(replaceString(arrayFirst(arrayRemoveNulls(iCollectArray(if(startsWith(lower(id_tags[]), "application:"), substring(id_tags[], from: 12))))), "\\\\", ""), "::")))
           | lookup [
               load "/lookups/utan_map"
               | fields app_name, utan
-            ], sourceField:idAppciName, lookupField:app_name, fields:{idAppciMapped = utan}
-          | fieldsAdd id_appcis = arrayDistinct(
+            ], sourceField:idAppIdName, lookupField:app_name, fields:{idAppIdMapped = utan}
+          | fieldsAdd id_appIds = arrayDistinct(
               iCollectArray(
                 splitString(
-                  arrayConcat(idAppciTagged, if(isNotNull(idAppciMapped), array(lower(idAppciMapped)), else: array()))[], ","
+                  arrayConcat(idAppIdTagged, if(isNotNull(idAppIdMapped), array(lower(idAppIdMapped)), else: array()))[], ","
                 )[0]
               )
             )
-          | fieldsRemove idAppciTagged, idAppciName, idAppciMapped`;
+          | fieldsRemove idAppIdTagged, idAppIdName, idAppIdMapped`;
 
-          const APPCI_FROM_SERVICE_TAGS = `| fieldsAdd appciTagged = arrayDistinct(
+          const APP_ID_FROM_SERVICE_TAGS = `| fieldsAdd appIdTagged = arrayDistinct(
               iCollectArray(
                 splitString(
                   arrayRemoveNulls(
@@ -103,32 +103,32 @@ workflow:
                 )[1]
               )
             )
-          | fieldsAdd appciName = lower(arrayFirst(splitString(replaceString(arrayFirst(arrayRemoveNulls(iCollectArray(if(startsWith(lower(tags[]), "application:"), substring(tags[], from: 12))))), "\\\\", ""), "::")))
+          | fieldsAdd appIdName = lower(arrayFirst(splitString(replaceString(arrayFirst(arrayRemoveNulls(iCollectArray(if(startsWith(lower(tags[]), "application:"), substring(tags[], from: 12))))), "\\\\", ""), "::")))
           | lookup [
               load "/lookups/utan_map"
               | fields app_name, utan
-            ], sourceField:appciName, lookupField:app_name, fields:{appciMapped = utan}
+            ], sourceField:appIdName, lookupField:app_name, fields:{appIdMapped = utan}
           | fieldsAdd utan = arrayDistinct(
               iCollectArray(
                 splitString(
-                  arrayConcat(appciTagged, if(isNotNull(appciMapped), array(lower(appciMapped)), else: array()))[], ","
+                  arrayConcat(appIdTagged, if(isNotNull(appIdMapped), array(lower(appIdMapped)), else: array()))[], ","
                 )[0]
               )
             )
-          | fieldsRemove appciTagged, appciName, appciMapped`;
+          | fieldsRemove appIdTagged, appIdName, appIdMapped`;
 
-          const APPCI_FROM_TAG_MAP = `| fieldsAdd smapName = lower(arrayFirst(splitString(replaceString(trim(arrayFirst(splitString(replaceString(replaceString(replaceString(toString(coalesce(tags[Application], tags[application])), "[", ""), "]", ""), "\\"", ""), ","))), "\\\\", ""), "::")))
+          const APP_ID_FROM_TAG_MAP = `| fieldsAdd smapName = lower(arrayFirst(splitString(replaceString(trim(arrayFirst(splitString(replaceString(replaceString(replaceString(toString(coalesce(tags[Application], tags[application])), "[", ""), "]", ""), "\\"", ""), ","))), "\\\\", ""), "::")))
           | lookup [
               load "/lookups/utan_map"
               | fields app_name, utan
             ], sourceField:smapName, lookupField:app_name, fields:{smapMapped = utan}`;
 
-          function buildQuery(appcis) {
-            const inFilter = 'in(appci, array(' + appcis.map(qt).join(',') + '))';
+          function buildQuery(appIds) {
+            const inFilter = 'in(appId, array(' + appIds.map(qt).join(',') + '))';
             return [
               'load "' + SRC + '"',
-              '| fieldsAdd appci = ' + SEED_ID,
-              '| fieldsAdd e_join = concat(appci, "_", entity_name)',
+              '| fieldsAdd appId = ' + SEED_ID,
+              '| fieldsAdd e_join = concat(appId, "_", entity_name)',
               '| filter ' + inFilter,
               '| join [',
               '      fetch spans, from:' + WINDOW + ', to:now(), samplingRatio:1000',
@@ -138,50 +138,50 @@ workflow:
               '    kind: leftOuter,',
               '    on: { left[entity_name] == right[endpoint.name]}, fields:{id_3 = dt.smartscape.service}',
               '| fieldsAdd id_tags = entityAttr(toString(id_3),"tags",type:"dt.entity.service")',
-              APPCI_FROM_SPAN_SERVICE_TAGS,
-              '| filter arraySize(id_appcis) == 0 OR in(appci, id_appcis)',
+              APP_ID_FROM_SPAN_SERVICE_TAGS,
+              '| filter arraySize(id_appIds) == 0 OR in(appId, id_appIds)',
               '| join [',
               '      fetch dt.entity.service, from:' + WINDOW + ', to:now()',
-              APPCI_FROM_SERVICE_TAGS,
+              APP_ID_FROM_SERVICE_TAGS,
               '      | expand utan',
-              '      | fieldsAdd appci = utan',
+              '      | fieldsAdd appId = utan',
               '      | filter ' + inFilter,
-              '      | fieldsAdd e_join = concat(appci, "_", entity.name)',
+              '      | fieldsAdd e_join = concat(appId, "_", entity.name)',
               '    ],',
               '    kind: leftOuter,',
               '    on: { left[e_join] == right[e_join]}, fields:{id_1 = id}',
               '| join [',
               '      smartscapeNodes "*", from:' + WINDOW + ', to:now()',
               '      | fields name, id, tags, `tags:aws`, aws.tags.utan, custom_metadata, host.custom.metadata',
-              APPCI_FROM_TAG_MAP,
-              '      | fieldsAdd appci = coalesce(tags[utan], `tags:aws`[utan], `tags:aws`[utan], aws.tags.utan, custom_metadata[utan], custom_metadata[utan], host.custom.metadata[utan], host.custom.metadata[utan], lower(smapMapped))',
+              APP_ID_FROM_TAG_MAP,
+              '      | fieldsAdd appId = coalesce(tags[utan], `tags:aws`[utan], `tags:aws`[utan], aws.tags.utan, custom_metadata[utan], custom_metadata[utan], host.custom.metadata[utan], host.custom.metadata[utan], lower(smapMapped))',
               '      | filter ' + inFilter,
-              '      | fieldsAdd e_join = concat(appci, "_", name)',
+              '      | fieldsAdd e_join = concat(appId, "_", name)',
               '    ],',
               '    kind: leftOuter,',
               '    on: { left[e_join] == right[e_join]}, fields:{id_2 = id}',
               '| fieldsAdd id = coalesce(id_1,id_2,id_3)',
-              '| fieldsRemove e_join, id_1, id_2, id_3, id_tags, id_appcis',
-              '| summarize id = collectDistinct(id), by:{appci, entity_name, severity, business_impact}',
+              '| fieldsRemove e_join, id_1, id_2, id_3, id_tags, id_appIds',
+              '| summarize id = collectDistinct(id), by:{appId, entity_name, severity, business_impact}',
             ].join('\n');
           }
 
           export default async function () {
-            // 1. every appci present in the source list
-            const appciRows = await runDql(
-              'load "' + SRC + '" | fieldsAdd appci = ' + SEED_ID + ' | summarize n = count(), by:{appci} | fields appci | sort appci asc', 5000);
-            const appcis = appciRows
-              .map((r) => r.appci)
+            // 1. every appId present in the source list
+            const appIdRows = await runDql(
+              'load "' + SRC + '" | fieldsAdd appId = ' + SEED_ID + ' | summarize n = count(), by:{appId} | fields appId | sort appId asc', 5000);
+            const appIds = appIdRows
+              .map((r) => r.appId)
               .filter((a) => a !== null && a !== undefined && String(a).trim() !== '');
-            if (!appcis.length) throw new Error('No appci values found in ' + SRC);
+            if (!appIds.length) throw new Error('No appId values found in ' + SRC);
 
             // 2. resolve, chunk by chunk, accumulating every row
             const rows = [];
             const chunkStats = [];
-            for (let i = 0; i < appcis.length; i += CHUNK) {
-              const chunk = appcis.slice(i, i + CHUNK);
+            for (let i = 0; i < appIds.length; i += CHUNK) {
+              const chunk = appIds.slice(i, i + CHUNK);
               const recs = await runDql(buildQuery(chunk), 20000);
-              chunkStats.push({ appcis: chunk.length, first: chunk[0], last: chunk[chunk.length - 1], rows: recs.length });
+              chunkStats.push({ appIds: chunk.length, first: chunk[0], last: chunk[chunk.length - 1], rows: recs.length });
               for (const r of recs) rows.push(r);
             }
 
@@ -199,7 +199,7 @@ workflow:
               rowId += 1;
               lines.push([
                 String(rowId),
-                dash(clean(r.appci)),
+                dash(clean(r.appId)),
                 dash(clean(r.entity_name)),
                 dash(clean(r.severity).toLowerCase()),
                 dash(ids.join(' ')),
@@ -248,7 +248,7 @@ workflow:
             if (!resp.ok) throw new Error('Lookup upload failed: ' + resp.status + ' ' + text);
 
             return {
-              appcis: appcis.length,
+              appIds: appIds.length,
               chunks: chunkStats.length,
               chunkStats,
               rowsWritten: lines.length,

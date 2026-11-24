@@ -1,4 +1,4 @@
-// Shared DQL for resolving an application's AppCI, plus the bulk maturity queries built on it.
+// Shared DQL for resolving an application's application ID, plus the bulk maturity queries built on it.
 //
 // WHY ONE FILE WITH NO IMPORTS: the daily snapshot workflow embeds these exact queries. The
 // workflow cannot import app code, so scripts/generate-snapshot-workflow.mjs loads this module
@@ -6,9 +6,9 @@
 // has no imports and uses erasable TypeScript only. Keeping the app and the workflow on one source
 // removes the drift that previously left the deployed workflow on stale scoring logic.
 //
-// HOW AN APPCI IS RESOLVED. The scorecards key everything on a 3-letter AppCI. Two sources are
-// combined (a union, so a tenant that already tags `${APPCI}:<code>` keeps working):
-//   1. An `${APPCI}:<code>` entity tag, as the app has always read it.
+// HOW AN APP_ID IS RESOLVED. The scorecards key everything on a 3-letter application ID. Two sources are
+// combined (a union, so a tenant that already tags `${APP_ID}:<code>` keeps working):
+//   1. An `${APP_ID}:<code>` entity tag, as the app has always read it.
 //   2. An `Application:<Name>` entity tag, translated to a code through the app-managed lookup
 //      /lookups/sre/app_map (columns app_name, applicationci; edited on the Lookups tab).
 // The environment suffix is dropped before matching, so `Application:BillingPortal\:\:CRT`,
@@ -16,22 +16,22 @@
 
 
 // ── Settings (published by ui/app/settings/appSettings.ts, or by the workflow generator) ──
-// APPCI is the customer's application identifier field (entity tag key, DQL alias, ID column of app-managed
+// APP_ID is the customer's application identifier field (entity tag key, DQL alias, ID column of app-managed
 // lookups). LOAD.<table> is `load "<their path>"` plus a rename of their columns to the names used below.
 // Defaults reproduce the original queries exactly: applicationci and the /lookups/* paths.
-type SreConfigShape = { appciField: string; cloudTagKey: string; idMaxLength: number; sloIdFromColumn: boolean; loads: Record<string, string>; paths: Record<string, string> };
+type SreConfigShape = { appIdField: string; cloudTagKey: string; idMaxLength: number; sloIdFromColumn: boolean; loads: Record<string, string>; paths: Record<string, string> };
 const SRE_CONFIG = (globalThis as unknown as Record<string, SreConfigShape | undefined>)["__SRE_CONFIG__"];
 if (!SRE_CONFIG) throw new Error("maturityQueries: settings were not published before this module loaded (import settings/appSettings first).");
-export const APPCI = SRE_CONFIG.appciField;
+export const APP_ID = SRE_CONFIG.appIdField;
 export const LOAD = SRE_CONFIG.loads;
 export const CLOUD_TAG = SRE_CONFIG.cloudTagKey;
 export const ID_MAX = SRE_CONFIG.idMaxLength;
 /** DQL expression giving each /lookups/sre/slo row's application ID: its ID column when mapped, else the first 3 characters of the name. */
-export const SLO_APPCI_EXPR = SRE_CONFIG.sloIdFromColumn ? "lower(appci)" : "lower(substring(slo, from:0, to:3))";
+export const SLO_APP_ID_EXPR = SRE_CONFIG.sloIdFromColumn ? "lower(appId)" : "lower(substring(slo, from:0, to:3))";
 export const SLO_ID_FROM_COLUMN = SRE_CONFIG.sloIdFromColumn;
 export const LOOKUP_PATHS = SRE_CONFIG.paths;
 
-export const APPCI_MAP_PATH = LOOKUP_PATHS["appciMap"];
+export const APP_ID_MAP_PATH = LOOKUP_PATHS["appciMap"];
 
 // DQL expression: the application name in the first `Application:<Name>[::<ENV>]` tag of an array
 // field (`tags[]` on entities, `entity_tags[]` on problems), lower-cased, backslashes and the
@@ -47,53 +47,53 @@ export const applicationNameExpr = (tagsArray: string): string =>
     `arrayFirst(arrayRemoveNulls(iCollectArray(if(startsWith(lower(${tagsArray}[]), "application:"), substring(${tagsArray}[], from: 12)))))`
   );
 
-// Looks up the AppCI for an application name held in `nameField`, exposing it as `mappedField`.
-const appciMapLookup = (nameField = "appciName", mappedField = "appciMapped") => `| lookup [
+// Looks up the application ID for an application name held in `nameField`, exposing it as `mappedField`.
+const appIdMapLookup = (nameField = "appIdName", mappedField = "appIdMapped") => `| lookup [
     ${LOAD.appciMap}
-    | fields app_name, ${APPCI}
-  ], sourceField:${nameField}, lookupField:app_name, fields:{${mappedField} = ${APPCI}}`;
+    | fields app_name, ${APP_ID}
+  ], sourceField:${nameField}, lookupField:app_name, fields:{${mappedField} = ${APP_ID}}`;
 
-// Application names found in Application tags on `entityFetch` that resolve to NO AppCI: they have no
-// `${APPCI}:` tag and no row in the map. These are the names to add on Lookups > AppCI map.
+// Application names found in Application tags on `entityFetch` that resolve to NO application ID: they have no
+// `${APP_ID}:` tag and no row in the map. These are the names to add on Lookups > application ID map.
 // Uses the same name expression and map lookup as the resolver, so "unmapped" here means exactly
 // "the scorecards cannot see this entity".
 export const unmappedApplicationsQuery = (entityFetch: string): string => `${entityFetch}
-| fieldsAdd appciName = ${applicationNameExpr("tags")}
-| fieldsAdd hasAppciTag = arraySize(arrayRemoveNulls(iCollectArray(if(matchesPhrase(tags[], "*${APPCI}*"), tags[])))) > 0
-| filter isNotNull(appciName) and not hasAppciTag
-${appciMapLookup()}
-| filter isNull(appciMapped)
-| summarize entities = count(), by:{appciName}
+| fieldsAdd appIdName = ${applicationNameExpr("tags")}
+| fieldsAdd hasAppIdTag = arraySize(arrayRemoveNulls(iCollectArray(if(matchesPhrase(tags[], "*${APP_ID}*"), tags[])))) > 0
+| filter isNotNull(appIdName) and not hasAppIdTag
+${appIdMapLookup()}
+| filter isNull(appIdMapped)
+| summarize entities = count(), by:{appIdName}
 | sort entities desc
 | limit 500`;
 
-// Every row of the map, for checking that each AppCI it points at exists in the CMDB table.
-export const APPCI_MAP_ROWS_QUERY = `${LOAD.appciMap}
-| fields app_name, ${APPCI}
+// Every row of the map, for checking that each application ID it points at exists in the CMDB table.
+export const APP_ID_MAP_ROWS_QUERY = `${LOAD.appciMap}
+| fields app_name, ${APP_ID}
 | limit 10000`;
 
-// Drop-in replacement for the two `fieldsAdd ${APPCI} = ...` statements that precede `| expand
-// ${APPCI}` on any entity fetch (dt.entity.*). Leaves `${APPCI}` as an array of codes.
-// Options rename the input array and the output so the macro can run where `tags` / `${APPCI}` are
+// Drop-in replacement for the two `fieldsAdd ${APP_ID} = ...` statements that precede `| expand
+// ${APP_ID}` on any entity fetch (dt.entity.*). Leaves `${APP_ID}` as an array of codes.
+// Options rename the input array and the output so the macro can run where `tags` / `${APP_ID}` are
 // already taken, for example on `entityAttr(...)` output inside a join. `prefix` names the temporary fields.
-export interface AppciFromTagsOptions {
+export interface AppIdFromTagsOptions {
   tagsField?: string;
   outField?: string;
   prefix?: string;
 }
-export const appciFromEntityTags = ({ tagsField = "tags", outField = `${APPCI}`, prefix = "appci" }: AppciFromTagsOptions = {}): string => `| fieldsAdd ${prefix}Tagged = arrayDistinct(
+export const appIdFromEntityTags = ({ tagsField = "tags", outField = `${APP_ID}`, prefix = "appId" }: AppIdFromTagsOptions = {}): string => `| fieldsAdd ${prefix}Tagged = arrayDistinct(
     iCollectArray(
       splitString(
         arrayRemoveNulls(
           iCollectArray(
-            if(matchesPhrase(${tagsField}[], "*${APPCI}*"), lower(${tagsField}[]))
+            if(matchesPhrase(${tagsField}[], "*${APP_ID}*"), lower(${tagsField}[]))
           )
         )[], ":"
       )[1]
     )
   )
 | fieldsAdd ${prefix}Name = ${applicationNameExpr(tagsField)}
-${appciMapLookup(`${prefix}Name`, `${prefix}Mapped`)}
+${appIdMapLookup(`${prefix}Name`, `${prefix}Mapped`)}
 | fieldsAdd ${outField} = arrayDistinct(
     iCollectArray(
       splitString(
@@ -104,53 +104,53 @@ ${appciMapLookup(`${prefix}Name`, `${prefix}Mapped`)}
 | fieldsRemove ${prefix}Tagged, ${prefix}Name, ${prefix}Mapped`;
 
 // For a tag MAP value (Smartscape nodes: `tags[Application]`) instead of an array of "key:value" strings.
-// Adds `${nameField}` (normalized application name) and `${mappedField}` (the map's AppCI, or null).
+// Adds `${nameField}` (normalized application name) and `${mappedField}` (the map's application ID, or null).
 // A node tagged with several values returns a list ( ["Care Manager", "Care Manager::PRD"] ) whose text form
 // broke the name, so brackets and quotes are stripped and the first value is used.
-export const appciMappedFromTagValue = (valueExpr: string, nameField = "appciName", mappedField = "appciMapped"): string =>
+export const appIdMappedFromTagValue = (valueExpr: string, nameField = "appIdName", mappedField = "appIdMapped"): string =>
   `| fieldsAdd ${nameField} = ${applicationNameFromValue(
     `trim(arrayFirst(splitString(replaceString(replaceString(replaceString(toString(${valueExpr}), "[", ""), "]", ""), "\\"", ""), ",")))`
   )}
-${appciMapLookup(nameField, mappedField)}`;
+${appIdMapLookup(nameField, mappedField)}`;
 
-// Drop-in replacement for `| fieldsAdd appci = splitString(splitString(toString(entity_tags), ...))`
-// on dt.davis.problems. Leaves a single lower-case `appci`: the `${APPCI}:` tag if present,
+// Drop-in replacement for `| fieldsAdd appId = splitString(splitString(toString(entity_tags), ...))`
+// on dt.davis.problems. Leaves a single lower-case `appId`: the `${APP_ID}:` tag if present,
 // otherwise the code mapped from the problem's first `Application:` tag.
-export const appciFromProblemTags = (): string => `| fieldsAdd appci = splitString(splitString(toString(entity_tags), "${APPCI}:")[1], "\\"")[0]
-| fieldsAdd appciName = ${applicationNameExpr("entity_tags")}
-${appciMapLookup()}
-| fieldsAdd appci = coalesce(appci, lower(appciMapped))
-| fieldsRemove appciName, appciMapped`;
+export const appIdFromProblemTags = (): string => `| fieldsAdd appId = splitString(splitString(toString(entity_tags), "${APP_ID}:")[1], "\\"")[0]
+| fieldsAdd appIdName = ${applicationNameExpr("entity_tags")}
+${appIdMapLookup()}
+| fieldsAdd appId = coalesce(appId, lower(appIdMapped))
+| fieldsRemove appIdName, appIdMapped`;
 
 export const CMDB_PATH = LOOKUP_PATHS["cmdb"];
 
 // L2 "SRE Assessment": does this application have a tier? Yes if its CMDB row (the table maintained on the
 // Lookups tab, the same one the identity bar and picker read) has a business criticality, OR a ServiceNow
 // import event carried a tier in the last 24 hours (the original source, kept so tenants that run that
-// import are unaffected). Leaves a numeric `hasTier` (0 = none). Needs `${APPCI}` on the row.
+// import are unaffected). Leaves a numeric `hasTier` (0 = none). Needs `${APP_ID}` on the row.
 export const hasTierLookup = (): string => `| lookup [
     ${LOAD.cmdb}
-    | fieldsAdd ${APPCI} = lower(${APPCI})
+    | fieldsAdd ${APP_ID} = lower(${APP_ID})
     | filter isNotNull(business_criticality) and trim(business_criticality) != ""
-    | summarize hasTierCmdb = count(), by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{hasTierCmdb}
+    | summarize hasTierCmdb = count(), by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{hasTierCmdb}
 | lookup [
     fetch bizevents, from:now()-24h
     | filter event.type == "workflow.import.servicenow.appci"
-    | fieldsAdd ${APPCI} = lower(${APPCI})
+    | fieldsAdd ${APP_ID} = lower(${APP_ID})
     | filter isNotNull(tier)
-    | summarize hasTierImport = count(), by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{hasTierImport}
+    | summarize hasTierImport = count(), by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{hasTierImport}
 | fieldsAdd hasTier = coalesce(hasTierCmdb, 0) + coalesce(hasTierImport, 0)
 | fieldsRemove hasTierCmdb, hasTierImport`;
 
-// L5 workflow checks: which AppCI does an Automation workflow belong to? The original convention is a title
+// L5 workflow checks: which application ID does an Automation workflow belong to? The original convention is a title
 // whose first word IS the 3-letter code. Titles that start with an application name instead ("MemberHub
-// Validation", "CrmSuite_PRD open problems alert") resolve through the AppCI map, with a `_PRD` style
+// Validation", "CrmSuite_PRD open problems alert") resolve through the application ID map, with a `_PRD` style
 // suffix removed. Run on dt.system.events; leaves `${outField}` (null when the title resolves to nothing).
-export const appciFromWorkflowTitle = (outField = `${APPCI}`): string => `| fieldsAdd wfWord = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+export const appIdFromWorkflowTitle = (outField = `${APP_ID}`): string => `| fieldsAdd wfWord = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
 | fieldsAdd wfName = lower(arrayFirst(splitString(wfWord, "_")))
-${appciMapLookup("wfName", "wfMapped")}
+${appIdMapLookup("wfName", "wfMapped")}
 | fieldsAdd ${outField} = if(stringLength(wfWord) == 3, wfWord, else: lower(wfMapped))
 | fieldsRemove wfWord, wfName, wfMapped`;
 
@@ -161,34 +161,34 @@ ${appciMapLookup("wfName", "wfMapped")}
 // query simply never fetched, so the leaderboard undercounted L1 for every app.
 // Mirrors l1Query in ScorecardsPage.tsx; keep the two in sync.
 export const BULK_L1_QUERY = `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APPCI}
-| filter stringLength(${APPCI}) <= ${ID_MAX}
-| summarize serviceCount = count(), by:{${APPCI}}
+${appIdFromEntityTags()}
+| expand ${APP_ID}
+| filter stringLength(${APP_ID}) <= ${ID_MAX}
+| summarize serviceCount = count(), by:{${APP_ID}}
 | lookup [
     fetch dt.entity.host
     | limit 100000
     | filter lifetime[end] > asTimestamp(now()-2h)
-    ${appciFromEntityTags()}
-    | expand ${APPCI}
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID}
     // PaaS-injected hosts (ECS Fargate, EKS Fargate, etc.) never get a
     // monitoringMode value — PaaS OneAgent has no partial mode, it's always
     // full-stack or not present at all — so a null mode here still counts.
     | summarize
         hostCount = count(),
         fullStackCount = countIf(monitoringMode == "FULL_STACK" or isNull(monitoringMode)),
-        by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{hostCount, fullStackCount}
+        by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{hostCount, fullStackCount}
 | lookup [
     fetch dt.entity.cloud_application
-    ${appciFromEntityTags()}
-    | expand ${APPCI}
-    | summarize k8sCount = count(), by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{k8sCount}
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID}
+    | summarize k8sCount = count(), by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{k8sCount}
 | lookup [
     smartscapeNodes K8S_DAEMONSET
     | filter matchesPhrase(k8s.workload.name, "oneagent") and not matchesPhrase(k8s.workload.name, "csi-driver")
-    | fieldsAdd ${APPCI} = lower(splitString(k8s.cluster.name, "-")[0])
+    | fieldsAdd ${APP_ID} = lower(splitString(k8s.cluster.name, "-")[0])
     | parse k8s.object, "JSON:config"
     | fieldsAdd
         component = \`tags:k8s.labels\`[\`app.kubernetes.io/component\`],
@@ -196,25 +196,25 @@ ${appciFromEntityTags()}
         ready = toLong(config[status][numberReady])
     | summarize
         cloudNativeOperatorHealthy = countIf(component == "cloudnativefullstack" and desired > 0 and ready == desired),
-        by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{cloudNativeOperatorHealthy}
+        by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{cloudNativeOperatorHealthy}
 | lookup [
     timeseries reqs = sum(dt.service.request.count), by:{k8s.cluster.name}, from:now()-2h
-    | fieldsAdd ${APPCI} = lower(splitString(k8s.cluster.name, "-")[0]),
+    | fieldsAdd ${APP_ID} = lower(splitString(k8s.cluster.name, "-")[0]),
         total = arraySum(reqs)
-    | summarize k8sScopedTracing = sum(total), by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{k8sScopedTracing}
+    | summarize k8sScopedTracing = sum(total), by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{k8sScopedTracing}
 | lookup [
     fetch logs, samplingRatio:1000, from:now()-2h
     | filter isNotNull(k8s.cluster.name)
-    | fieldsAdd ${APPCI} = lower(splitString(k8s.cluster.name, "-")[0])
-    | summarize k8sScopedLogs = count(), by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{k8sScopedLogs}
+    | fieldsAdd ${APP_ID} = lower(splitString(k8s.cluster.name, "-")[0])
+    | summarize k8sScopedLogs = count(), by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{k8sScopedLogs}
 | lookup [
     fetch logs, samplingRatio:1000
-    | filter isNotNull(${APPCI})
-    | summarize logCount = count(), by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{logCount}
+    | filter isNotNull(${APP_ID})
+    | summarize logCount = count(), by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{logCount}
 | lookup [
     smartscapeNodes "AWS*"
     | fieldsFlatten \`tags:aws\`, fields:{${CLOUD_TAG}}
@@ -227,22 +227,22 @@ ${appciFromEntityTags()}
         | fieldsFlatten \`tags:gcp_labels\`, fields:{${CLOUD_TAG}}
       ]
     | filter isNotNull(${CLOUD_TAG})
-    | fieldsAdd ${APPCI} = lower(${CLOUD_TAG})
-    | summarize cloudCount = count(), by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{cloudCount}
+    | fieldsAdd ${APP_ID} = lower(${CLOUD_TAG})
+    | summarize cloudCount = count(), by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{cloudCount}
 | lookup [
     fetch dt.entity.application, from:now()-1000d
-    ${appciFromEntityTags()}
-    | expand ${APPCI}
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID}
     | fieldsAdd rumActive = if(lifetime[end] > now()-7d, true, else: false)
-    | summarize rumCount = countIf(rumActive == true), by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{rumCount}
+    | summarize rumCount = countIf(rumActive == true), by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{rumCount}
 | lookup [
     fetch dt.entity.synthetic_test
-    ${appciFromEntityTags()}
-    | expand ${APPCI}
-    | summarize synCount = count(), by:{${APPCI}}
-  ], sourceField:${APPCI}, lookupField:${APPCI}, fields:{synCount}
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID}
+    | summarize synCount = count(), by:{${APP_ID}}
+  ], sourceField:${APP_ID}, lookupField:${APP_ID}, fields:{synCount}
 | fieldsAdd
     hostCount = if(isNull(hostCount), 0, else: hostCount),
     serviceCount = if(isNull(serviceCount), 0, else: serviceCount),
@@ -263,7 +263,7 @@ ${appciFromEntityTags()}
     + if(k8sCount == 0 or k8sHealthy, 1, else: 0)
     + 1
     + if(rumCount > 0 or synCount > 0, 1, else: 0)
-| fields ${APPCI}, l1Score, serviceCount, hostCount, k8sCount, logCount`;
+| fields ${APP_ID}, l1Score, serviceCount, hostCount, k8sCount, logCount`;
 
 // ── Bulk L2: per-app measured reliability signals ──
 // Checks: golden signals, SLOs, guardians, dashboards, SRE assessment, critical services → 6 max
@@ -272,31 +272,31 @@ ${appciFromEntityTags()}
 // Critical Services Tagged is new: see /lookups/sre/critical_services in ScorecardsPage.tsx.
 // Mirrors l2Query in ScorecardsPage.tsx; keep the two in sync.
 export const BULK_L2_QUERY = `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APPCI}
-| filter stringLength(${APPCI}) <= ${ID_MAX}
-| summarize serviceCount = count(), by:{${APPCI}}
+${appIdFromEntityTags()}
+| expand ${APP_ID}
+| filter stringLength(${APP_ID}) <= ${ID_MAX}
+| summarize serviceCount = count(), by:{${APP_ID}}
 | lookup [
     ${LOAD.sloDashboards}
-    | fieldsAdd appci = lower(appci)
-    | summarize dashboardCount = count(), by:{appci}
-  ], sourceField:${APPCI}, lookupField:appci, fields:{dashboardCount}
+    | fieldsAdd appId = lower(appId)
+    | summarize dashboardCount = count(), by:{appId}
+  ], sourceField:${APP_ID}, lookupField:appId, fields:{dashboardCount}
 ${hasTierLookup()}
 | lookup [
     ${LOAD.slo}
-    | fieldsAdd appci = ${SLO_APPCI_EXPR}
-    | summarize sloCount = count(), by:{appci}
-  ], sourceField:${APPCI}, lookupField:appci, fields:{sloCount}
+    | fieldsAdd appId = ${SLO_APP_ID_EXPR}
+    | summarize sloCount = count(), by:{appId}
+  ], sourceField:${APP_ID}, lookupField:appId, fields:{sloCount}
 | lookup [
     ${LOAD.guardians}
-    | fieldsAdd appci = lower(appci)
-    | summarize guardianCount = count(), by:{appci}
-  ], sourceField:${APPCI}, lookupField:appci, fields:{guardianCount}
+    | fieldsAdd appId = lower(appId)
+    | summarize guardianCount = count(), by:{appId}
+  ], sourceField:${APP_ID}, lookupField:appId, fields:{guardianCount}
 | lookup [
     ${LOAD.criticalServices}
-    | fieldsAdd appci = lower(appci)
-    | summarize criticalCount = count(), resolved = countIf(entity_ids != "-"), by:{appci}
-  ], sourceField:${APPCI}, lookupField:appci, fields:{criticalCount, resolved}
+    | fieldsAdd appId = lower(appId)
+    | summarize criticalCount = count(), resolved = countIf(entity_ids != "-"), by:{appId}
+  ], sourceField:${APP_ID}, lookupField:appId, fields:{criticalCount, resolved}
 | fieldsAdd
     dashboardCount = if(isNull(dashboardCount), 0, else: dashboardCount),
     hasTier = if(isNull(hasTier), 0, else: hasTier),
@@ -311,7 +311,7 @@ ${hasTierLookup()}
     + if(dashboardCount > 0, 1, else: 0)
     + if(hasTier > 0, 1, else: 0)
     + if(resolved > 0 or criticalCount == 0, 1, else: 0)
-| fields ${APPCI}, l2Score`;
+| fields ${APP_ID}, l2Score`;
 
 // ── Bulk L3: per-app AI ops signals ──
 // Checks: causal AI, CI/CD, ITSM routing, runbooks(0 — needs the Documents API,
@@ -324,18 +324,18 @@ ${hasTierLookup()}
 // Runbooks Linked is NOT computed in this DQL query — the Documents API it
 // depends on has no Grail equivalent. FIXED (2026-08-29): it's no longer a
 // permanent 0 either. getAllRunbookCounts (a bulk sibling of the modal's
-// getRunbookDetail) reads the Documents API once for every AppCI in the
+// getRunbookDetail) reads the Documents API once for every application ID in the
 // tenant, and its result is merged into l3Score client-side, below.
 export const BULK_L3_QUERY = `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APPCI}
-| filter stringLength(${APPCI}) <= ${ID_MAX}
-| summarize svcCount = count(), by:{${APPCI}}
+${appIdFromEntityTags()}
+| expand ${APP_ID}
+| filter stringLength(${APP_ID}) <= ${ID_MAX}
+| summarize svcCount = count(), by:{${APP_ID}}
 | lookup [
     fetch dt.davis.problems, from:now()-7d
     | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-    ${appciFromProblemTags()}
-    | filter isNotNull(appci)
+    ${appIdFromProblemTags()}
+    | filter isNotNull(appId)
     | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
     | fieldsAdd isCausal = matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
     | fieldsAdd isNoise = eventCount == 1 and matchesValue(event.category, array("AVAILABILITY", "RESOURCE_CONTENTION", "CUSTOM_ALERT", "MONITORING_UNAVAILABLE"))
@@ -344,22 +344,22 @@ ${appciFromEntityTags()}
         causalTotal = countIf(isCausal),
         causalWithCause = countIf(isCausal and isNotNull(root_cause_entity_id)),
         noiseTotal = countIf(isNoise),
-        by:{appci}
-  ], sourceField:${APPCI}, lookupField:appci, fields:{total7d, causalTotal, causalWithCause, noiseTotal}
+        by:{appId}
+  ], sourceField:${APP_ID}, lookupField:appId, fields:{total7d, causalTotal, causalWithCause, noiseTotal}
 | lookup [
     fetch events, from:now()-30d
     | filter event.type == "CUSTOM_DEPLOYMENT"
     | filter isNotNull(application_ci)
-    | summarize deployTotal = count(), by:{appci = lower(application_ci)}
-  ], sourceField:${APPCI}, lookupField:appci, fields:{deployTotal}
+    | summarize deployTotal = count(), by:{appId = lower(application_ci)}
+  ], sourceField:${APP_ID}, lookupField:appId, fields:{deployTotal}
 | lookup [
     fetch dt.system.events, from:now()-30d
     | filter event.provider == "AUTOMATION_ENGINE"
     | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
     | filter matchesValue(\`dt.automation_engine.workflow.title\`, "* Production Dynatrace Alerts")
-    | fieldsAdd wfAppci = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
-    | summarize itsmWorkflows = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppci}
-  ], sourceField:${APPCI}, lookupField:wfAppci, fields:{itsmWorkflows}
+    | fieldsAdd wfAppId = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+    | summarize itsmWorkflows = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppId}
+  ], sourceField:${APP_ID}, lookupField:wfAppId, fields:{itsmWorkflows}
 | fieldsAdd
     total7d = if(isNull(total7d), 0, else: total7d),
     causalTotal = if(isNull(causalTotal), 0, else: causalTotal),
@@ -377,7 +377,7 @@ ${appciFromEntityTags()}
     + if(total7d == 0 or noisePct <= 50, 1, else: 0)
     + if(causalTotal == 0 or rootCausePct >= 40, 1, else: 0)
     + if(deployTotal > 0, 1, else: 0)
-| fields ${APPCI}, l3Score`;
+| fields ${APP_ID}, l3Score`;
 
 // ── Bulk L4: per-app proactive signals ──
 // Checks: burn-rate alerting, dynamic scaling/K8s autoscaling, predictive
@@ -387,19 +387,19 @@ ${appciFromEntityTags()}
 // Deployment count is deliberately omitted here: it only distinguishes
 // warn from fail on release impact, and never contributes to the score.
 export const BULK_L4_QUERY = `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APPCI}
-| filter stringLength(${APPCI}) <= ${ID_MAX}
-| summarize svcCount = count(), by:{${APPCI}}
+${appIdFromEntityTags()}
+| expand ${APP_ID}
+| filter stringLength(${APP_ID}) <= ${ID_MAX}
+| summarize svcCount = count(), by:{${APP_ID}}
 | lookup [
     fetch dt.davis.problems, from:now()-30d
     | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
     | filter event.category == "CUSTOM_ALERT"
     | filter contains(lower(event.name), "burn rate")
-    | fieldsAdd appci = lower(trim(splitString(event.name, " - ")[0]))
-    | filter stringLength(appci) == 3
-    | summarize burnAlerts = countDistinct(event.name), by:{appci}
-  ], sourceField:${APPCI}, lookupField:appci, fields:{burnAlerts}
+    | fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
+    | filter stringLength(appId) == 3
+    | summarize burnAlerts = countDistinct(event.name), by:{appId}
+  ], sourceField:${APP_ID}, lookupField:appId, fields:{burnAlerts}
 | lookup [
     smartscapeNodes "AWS*"
     | fieldsFlatten \`tags:aws\`, fields:{${CLOUD_TAG}}
@@ -407,17 +407,17 @@ ${appciFromEntityTags()}
     | summarize
         cloudTotal = count(),
         scaleTargets = countIf(matchesValue(type, "AWS_AUTOSCALING_AUTOSCALINGGROUP", "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET", "AWS_EKS_NODEGROUP")),
-        by:{appci = lower(${CLOUD_TAG})}
-  ], sourceField:${APPCI}, lookupField:appci, fields:{cloudTotal, scaleTargets}
+        by:{appId = lower(${CLOUD_TAG})}
+  ], sourceField:${APP_ID}, lookupField:appId, fields:{cloudTotal, scaleTargets}
 | lookup [
     fetch events, from:now()-30d
     | filter event.kind == "SDLC_EVENT"
     | filter event.type == "validation" and event.status == "finished"
-    | fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"${CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
-    | filter isNotNull(appci)
+    | fieldsAdd appId = lower(splitString(splitString(dt.srg.tags, "\\"${CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
+    | filter isNotNull(appId)
     | fieldsAdd trig = coalesce(\`dt.automation_engine.workflow_execution.trigger.type\`, "Manual")
-    | summarize srgEventTriggered = countIf(trig != "Schedule" and trig != "Manual"), by:{appci}
-  ], sourceField:${APPCI}, lookupField:appci, fields:{srgEventTriggered}
+    | summarize srgEventTriggered = countIf(trig != "Schedule" and trig != "Manual"), by:{appId}
+  ], sourceField:${APP_ID}, lookupField:appId, fields:{srgEventTriggered}
 | fieldsAdd
     burnAlerts = if(isNull(burnAlerts), 0, else: burnAlerts),
     cloudTotal = if(isNull(cloudTotal), 0, else: cloudTotal),
@@ -429,7 +429,7 @@ ${appciFromEntityTags()}
     + 0
     + if(srgEventTriggered > 0, 1, else: 0)
     + 0
-| fields ${APPCI}, l4Score`;
+| fields ${APP_ID}, l4Score`;
 
 // ── Bulk L5: per-app autonomous signals ──
 // Checks: repetitive tasks, workflow automation, E2E remediation(0 — not detected),
@@ -449,29 +449,29 @@ ${appciFromEntityTags()}
 // starts from the application) gave it that credit. It now starts from problems, appends the workflow
 // counts, and merges, so every application with either signal is scored the same as on the scorecard.
 export const BULK_L5_QUERY = `fetch dt.davis.problems
-${appciFromProblemTags()}
-| filter isNotNull(appci)
+${appIdFromProblemTags()}
+| filter isNotNull(appId)
 | filter dt.davis.is_duplicate == false
 | fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"
     and isNotNull(labels.alerting_profile)
 | summarize
     totalProblems = count(),
     enrichedProblems = countIf(hasItsmProfile == true),
-    by:{${APPCI} = appci}
+    by:{${APP_ID} = appId}
 | append [
     fetch dt.system.events, from:now()-30d
     | filter event.provider == "AUTOMATION_ENGINE"
     | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-    ${appciFromWorkflowTitle()}
-    | filter stringLength(${APPCI}) == 3
-    | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{${APPCI}}
+    ${appIdFromWorkflowTitle()}
+    | filter stringLength(${APP_ID}) == 3
+    | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{${APP_ID}}
   ]
 | summarize
     totalProblems = sum(totalProblems),
     enrichedProblems = sum(enrichedProblems),
     workflowCount = sum(workflowCount),
-    by:{${APPCI}}
-| filter stringLength(${APPCI}) <= ${ID_MAX}
+    by:{${APP_ID}}
+| filter stringLength(${APP_ID}) <= ${ID_MAX}
 | fieldsAdd
     totalProblems = if(isNull(totalProblems), 0, else: totalProblems),
     enrichedProblems = if(isNull(enrichedProblems), 0, else: enrichedProblems),
@@ -485,7 +485,7 @@ ${appciFromProblemTags()}
     + 0
     + if(totalProblems > 0 and enrichPct >= 50, 1, else: 0)
     + 0
-| fields ${APPCI}, l5Score`;
+| fields ${APP_ID}, l5Score`;
 
 // ── Readiness probes ──
 // One read-only DQL query per measurable input, behind the Readiness page. Each returns a few small
@@ -493,12 +493,12 @@ ${appciFromProblemTags()}
 // sampling are chosen to bound cost; the page runs them only when asked. Interpretation (what counts as
 // ready) lives in ui/app/readiness/registry.ts; the queries stay here so they can reuse the resolver
 // above and be run from a script for testing.
-const resolvedFlag = `| fieldsAdd resolved = arraySize(${APPCI}) > 0`;
+const resolvedFlag = `| fieldsAdd resolved = arraySize(${APP_ID}) > 0`;
 
 export const READINESS_QUERIES = {
-  // IN-01: share of services and hosts that resolve to an AppCI (by tag or by the AppCI map).
+  // IN-01: share of services and hosts that resolve to an application ID (by tag or by the application ID map).
   resolution: `fetch dt.entity.service
-${appciFromEntityTags()}
+${appIdFromEntityTags()}
 ${resolvedFlag}
 | summarize total = count(), ok = countIf(resolved)
 | fieldsAdd kind = "services"
@@ -506,7 +506,7 @@ ${resolvedFlag}
     fetch dt.entity.host
     | limit 100000
     | filter lifetime[end] > asTimestamp(now()-2h)
-    ${appciFromEntityTags()}
+    ${appIdFromEntityTags()}
     ${resolvedFlag}
     | summarize total = count(), ok = countIf(resolved)
     | fieldsAdd kind = "hosts"
@@ -517,21 +517,21 @@ ${resolvedFlag}
 | filter operational_status != "Retired"
 | summarize total = count(), ok = countIf(isNotNull(business_criticality) and trim(business_criticality) != "")`,
 
-  // IN-03: rows in the AppCI map.
+  // IN-03: rows in the application ID map.
   map: `${LOAD.appciMap}
 | summarize total = count()`,
 
-  // IN-04: sampled recent logs that carry an `${APPCI}` attribute (about 1 in 1000 is read).
+  // IN-04: sampled recent logs that carry an `${APP_ID}` attribute (about 1 in 1000 is read).
   logs: `fetch logs, from:now()-2h, samplingRatio:1000
-| summarize total = count(), ok = countIf(isNotNull(${APPCI}))`,
+| summarize total = count(), ok = countIf(isNotNull(${APP_ID}))`,
 
-  // IN-05: Kubernetes clusters whose name starts with a known AppCI (the way the L1 check matches them).
+  // IN-05: Kubernetes clusters whose name starts with a known application ID (the way the L1 check matches them).
   k8s: `fetch dt.entity.kubernetes_cluster
 | fields name = entity.name
 | fieldsAdd prefix = lower(arrayFirst(splitString(name, "-")))
 | lookup [
     ${LOAD.cmdb}
-    | fieldsAdd p = lower(${APPCI})
+    | fieldsAdd p = lower(${APP_ID})
     | fields p
   ], sourceField:prefix, lookupField:p, fields:{matched = p}
 | summarize total = count(), ok = countIf(isNotNull(matched))`,
@@ -549,16 +549,16 @@ ${resolvedFlag}
   ]
 | summarize total = count(), ok = countIf(isNotNull(${CLOUD_TAG}))`,
 
-  // IN-07: active RUM applications and synthetic tests that resolve to an AppCI.
+  // IN-07: active RUM applications and synthetic tests that resolve to an application ID.
   rumSynthetic: `fetch dt.entity.application, from:now()-1000d
 | filter lifetime[end] > now()-7d
-${appciFromEntityTags()}
+${appIdFromEntityTags()}
 ${resolvedFlag}
 | summarize total = count(), ok = countIf(resolved)
 | fieldsAdd kind = "RUM apps"
 | append [
     fetch dt.entity.synthetic_test
-    ${appciFromEntityTags()}
+    ${appIdFromEntityTags()}
     ${resolvedFlag}
     | summarize total = count(), ok = countIf(resolved)
     | fieldsAdd kind = "synthetic tests"
@@ -578,12 +578,12 @@ ${resolvedFlag}
 | filter event.kind == "SDLC_EVENT" and event.type == "validation" and event.status == "finished"
 | summarize total = count()`,
 
-  // IN-16: Automation workflows (that ran) whose title resolves to an AppCI, by code or by map.
+  // IN-16: Automation workflows (that ran) whose title resolves to an application ID, by code or by map.
   workflows: `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appciFromWorkflowTitle()}
-| fieldsAdd resolvedWf = if(isNotNull(${APPCI}) and stringLength(${APPCI}) == 3, 1, else: 0)
+${appIdFromWorkflowTitle()}
+| fieldsAdd resolvedWf = if(isNotNull(${APP_ID}) and stringLength(${APP_ID}) == 3, 1, else: 0)
 | summarize resolvedWf = max(resolvedWf), by:{wfId = \`dt.automation_engine.workflow.id\`}
 | summarize total = count(), ok = sum(resolvedWf)`,
 
@@ -608,40 +608,40 @@ ${appciFromWorkflowTitle()}
 } as const;
 
 // The same probes for ONE application, so the Readiness page can tell an environment gap (the input exists
-// nowhere) from an application gap (it exists elsewhere, not for this application). The AppCI is interpolated
+// nowhere) from an application gap (it exists elsewhere, not for this application). The application ID is interpolated
 // into DQL, so it is checked first: anything but letters, digits, `_` and `-` matches nothing.
-const safeAppci = (appCI: string): string => (typeof appCI === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(appCI) ? appCI.toLowerCase() : "__invalid__");
+const safeAppId = (appId: string): string => (typeof appId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(appId) ? appId.toLowerCase() : "__invalid__");
 
-export const readinessAppQueries = (appCI: string) => {
-  const a = safeAppci(appCI);
+export const readinessAppQueries = (appId: string) => {
+  const a = safeAppId(appId);
   return {
     resolution: `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APPCI}
-| filter ${APPCI} == "${a}"
+${appIdFromEntityTags()}
+| expand ${APP_ID}
+| filter ${APP_ID} == "${a}"
 | summarize total = countDistinct(id)
 | fieldsAdd kind = "services"
 | append [
     fetch dt.entity.host
     | limit 100000
     | filter lifetime[end] > asTimestamp(now()-2h)
-    ${appciFromEntityTags()}
-    | expand ${APPCI}
-    | filter ${APPCI} == "${a}"
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID}
+    | filter ${APP_ID} == "${a}"
     | summarize total = countDistinct(id)
     | fieldsAdd kind = "hosts"
   ]`,
 
     cmdb: `${LOAD.cmdb}
-| filter lower(${APPCI}) == "${a}"
+| filter lower(${APP_ID}) == "${a}"
 | summarize total = count(), ok = countIf(isNotNull(business_criticality) and trim(business_criticality) != "")`,
 
     map: `${LOAD.appciMap}
-| filter lower(${APPCI}) == "${a}"
+| filter lower(${APP_ID}) == "${a}"
 | summarize total = count()`,
 
     logs: `fetch logs, from:now()-2h, samplingRatio:1000
-| filter lower(${APPCI}) == "${a}"
+| filter lower(${APP_ID}) == "${a}"
 | summarize total = count()`,
 
     k8s: `fetch dt.entity.kubernetes_cluster
@@ -664,22 +664,22 @@ ${appciFromEntityTags()}
 
     rumSynthetic: `fetch dt.entity.application, from:now()-1000d
 | filter lifetime[end] > now()-7d
-${appciFromEntityTags()}
-| expand ${APPCI}
-| filter ${APPCI} == "${a}"
+${appIdFromEntityTags()}
+| expand ${APP_ID}
+| filter ${APP_ID} == "${a}"
 | summarize total = countDistinct(id)
 | fieldsAdd kind = "RUM apps"
 | append [
     fetch dt.entity.synthetic_test
-    ${appciFromEntityTags()}
-    | expand ${APPCI}
-    | filter ${APPCI} == "${a}"
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID}
+    | filter ${APP_ID} == "${a}"
     | summarize total = countDistinct(id)
     | fieldsAdd kind = "synthetic tests"
   ]`,
 
     seed: `${LOAD.criticalServices}
-| filter lower(appci) == "${a}"
+| filter lower(appId) == "${a}"
 | summarize total = count(), ok = countIf(entity_ids != "-")`,
 
     deployments: `fetch events, from:now()-30d
@@ -689,14 +689,14 @@ ${appciFromEntityTags()}
 
     srgEvents: `fetch events, from:now()-30d
 | filter event.kind == "SDLC_EVENT" and event.type == "validation" and event.status == "finished"
-| fieldsAdd srgAppci = lower(splitString(splitString(dt.srg.tags, "\\"${CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
-| filter srgAppci == "${a}"
+| fieldsAdd srgAppId = lower(splitString(splitString(dt.srg.tags, "\\"${CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
+| filter srgAppId == "${a}"
 | summarize total = count()`,
 
     workflows: `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appciFromWorkflowTitle("wfCode")}
+${appIdFromWorkflowTitle("wfCode")}
 | filter wfCode == "${a}"
 | summarize total = countDistinct(\`dt.automation_engine.workflow.id\`)`,
 
@@ -708,8 +708,8 @@ ${appciFromWorkflowTitle("wfCode")}
 
     problems: `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-${appciFromProblemTags()}
-| filter appci == "${a}"
+${appIdFromProblemTags()}
+| filter appId == "${a}"
 | fieldsAdd nonDefault = isNotNull(labels.alerting_profile) and toString(labels.alerting_profile) != "[\\"Default\\"]"
 | summarize total = count(), ok = countIf(nonDefault)`,
   } satisfies Record<keyof typeof READINESS_QUERIES, string>;

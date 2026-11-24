@@ -24,9 +24,9 @@ function parseScore(scoreStr: string): { current: number; total: number } {
 //
 // Called from both ScorecardCard (the per-level card) and OverallScore (the
 // aggregate ring) so the two never disagree about a live-overridden check.
-export function useLiveCheckOverride(appCI: string, override?: LiveCheckOverride) {
+export function useLiveCheckOverride(appId: string, override?: LiveCheckOverride) {
   const fnResult = useAppFunction<unknown>(
-    { name: override?.appFunctionName ?? "__unused__", data: { appCI } },
+    { name: override?.appFunctionName ?? "__unused__", data: { appId } },
     { autoFetch: !!override, autoFetchOnUpdate: true }
   );
 

@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { useDql } from "../hooks/useDql";
-import { SLO_APPCI_EXPR, appciFromEntityTags, unmappedApplicationsQuery, APPCI_MAP_ROWS_QUERY, appciFromWorkflowTitle } from "../queries/maturityQueries";
+import { SLO_APP_ID_EXPR, appIdFromEntityTags, unmappedApplicationsQuery, APP_ID_MAP_ROWS_QUERY, appIdFromWorkflowTitle } from "../queries/maturityQueries";
 import {
   INK,
   cardStyle,
@@ -18,7 +18,7 @@ import {
   tableRowBorder,
 } from "../components/redesignStyles";
 
-import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_LABEL } from "../settings/appSettings";
 // Tagging / onboarding coverage: for every active application in the CMDB table, how much of its
 // data the scorecards can actually find. Read-only: it measures, it never changes tenant config.
 // Each signal is its own query so a missing lookup or a failing source degrades one column, not the page.
@@ -29,17 +29,17 @@ import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "../settings/appSettings";
 // eslint-disable-next-line noSecrets/no-secrets
 const CMDB_QUERY = `${LOAD.cmdb}
 | filter operational_status != "Retired"
-| fields ${APP_CI_FIELD}, name, business_criticality, operational_status
+| fields ${APP_ID_FIELD}, name, business_criticality, operational_status
 | limit 10000`;
 
-// AppCI codes found in `${APP_CI_FIELD}:<code>` tags on one entity type, with how many entities carry each.
+// application ID codes found in `${APP_ID_FIELD}:<code>` tags on one entity type, with how many entities carry each.
 const tagCodes = (entityFetch: string, countField: string) => `${entityFetch}
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
-| summarize ${countField} = count(), by:{${APP_CI_FIELD}}`;
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
+| summarize ${countField} = count(), by:{${APP_ID_FIELD}}`;
 
 const SERVICES_QUERY = tagCodes("fetch dt.entity.service", "n");
-// Application names that resolve to no AppCI, on each entity type the L1 checks count, fetched the way those
+// Application names that resolve to no application ID, on each entity type the L1 checks count, fetched the way those
 // checks fetch them. The same application is often spelled differently per type (a service says
 // "BillingPortal", a synthetic test says "Billing Portal"), so a name can be mapped for one type and missed
 // on another. Listing all four shows the spellings that still need a map row.
@@ -52,22 +52,22 @@ const UNMAPPED_KIND_ONE = ["service", "host", "RUM app", "synthetic test"] as co
 const HOSTS_QUERY = tagCodes("fetch dt.entity.host\n| limit 100000\n| filter lifetime[end] > asTimestamp(now()-2h)", "n");
 
 const SLO_QUERY = `${LOAD.slo}
-| fieldsAdd ${APP_CI_FIELD} = ${SLO_APPCI_EXPR}
-| summarize n = count(), by:{${APP_CI_FIELD}}`;
+| fieldsAdd ${APP_ID_FIELD} = ${SLO_APP_ID_EXPR}
+| summarize n = count(), by:{${APP_ID_FIELD}}`;
 const GUARDIAN_QUERY = `${LOAD.guardians}
-| fieldsAdd ${APP_CI_FIELD} = lower(appci)
-| summarize n = count(), by:{${APP_CI_FIELD}}`;
+| fieldsAdd ${APP_ID_FIELD} = lower(appId)
+| summarize n = count(), by:{${APP_ID_FIELD}}`;
 const DASHBOARD_QUERY = `${LOAD.sloDashboards}
-| fieldsAdd ${APP_CI_FIELD} = lower(appci)
-| summarize n = count(), by:{${APP_CI_FIELD}}`;
+| fieldsAdd ${APP_ID_FIELD} = lower(appId)
+| summarize n = count(), by:{${APP_ID_FIELD}}`;
 const CRITICAL_QUERY = `${LOAD.criticalServices}
-| fieldsAdd ${APP_CI_FIELD} = lower(appci)
-| summarize n = count(), resolved = countIf(entity_ids != "-"), by:{${APP_CI_FIELD}}`;
+| fieldsAdd ${APP_ID_FIELD} = lower(appId)
+| summarize n = count(), resolved = countIf(entity_ids != "-"), by:{${APP_ID_FIELD}}`;
 const WORKFLOW_QUERY = `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appciFromWorkflowTitle()}
-| summarize n = countDistinct(\`dt.automation_engine.workflow.id\`), by:{${APP_CI_FIELD}}`;
+${appIdFromWorkflowTitle()}
+| summarize n = countDistinct(\`dt.automation_engine.workflow.id\`), by:{${APP_ID_FIELD}}`;
 
 interface Signal {
   key: "services" | "hosts" | "slos" | "guardians" | "dashboards" | "critical" | "workflows";
@@ -77,13 +77,13 @@ interface Signal {
 }
 
 const SIGNALS: Signal[] = [
-  { key: "services", label: "Services", how: `Services tagged ${APP_CI_FIELD}:<code>, or tagged Application:<name> with that name mapped to the code on Lookups > ${APP_CI_LABEL} map` },
-  { key: "hosts", label: "Hosts", how: `Hosts tagged ${APP_CI_FIELD}:<code>, or tagged Application:<name> mapped to the code on Lookups > ${APP_CI_LABEL} map` },
+  { key: "services", label: "Services", how: `Services tagged ${APP_ID_FIELD}:<code>, or tagged Application:<name> with that name mapped to the code on Lookups > ${APP_ID_LABEL} map` },
+  { key: "hosts", label: "Hosts", how: `Hosts tagged ${APP_ID_FIELD}:<code>, or tagged Application:<name> mapped to the code on Lookups > ${APP_ID_LABEL} map` },
   { key: "slos", label: "SLOs", how: "SLO names that start with the code (from /lookups/sre/slo)" },
-  { key: "guardians", label: "Guardians", how: `Site Reliability Guardians tagged ${APP_CI_FIELD}:<code> (from /lookups/sre/guardians)` },
+  { key: "guardians", label: "Guardians", how: `Site Reliability Guardians tagged ${APP_ID_FIELD}:<code> (from /lookups/sre/guardians)` },
   { key: "dashboards", label: "SLO dashboards", how: "Dashboards named <code> … SLO (from /lookups/sre/slo_dashboards)" },
   { key: "critical", label: "Critical services", how: "Rows in the critical services seed; resolved = matched to a Dynatrace entity" },
-  { key: "workflows", label: "Workflows", how: `Automation workflows whose title starts with the code, or with an application name in the ${APP_CI_LABEL} map (last 30 days)` },
+  { key: "workflows", label: "Workflows", how: `Automation workflows whose title starts with the code, or with an application name in the ${APP_ID_LABEL} map (last 30 days)` },
 ];
 
 interface Counts {
@@ -98,7 +98,7 @@ function useSource(query: string) {
     const m = new Map<string, Counts>();
     for (const rec of data?.records ?? []) {
       const r = rec as Record<string, unknown>;
-      const rawCode = r[APP_CI_FIELD];
+      const rawCode = r[APP_ID_FIELD];
       const code = typeof rawCode === "string" ? rawCode.trim().toLowerCase() : "";
       if (!code) continue;
       m.set(code, { n: Number(r.n ?? 0), resolved: r.resolved === undefined ? undefined : Number(r.resolved) });
@@ -135,7 +135,7 @@ export const CoveragePage = () => {
   const unmappedHosts = useDql({ query: UNMAPPED_HOSTS_QUERY });
   const unmappedRum = useDql({ query: UNMAPPED_RUM_QUERY });
   const unmappedSynthetic = useDql({ query: UNMAPPED_SYNTHETIC_QUERY });
-  const mapRowsSrc = useDql({ query: APPCI_MAP_ROWS_QUERY });
+  const mapRowsSrc = useDql({ query: APP_ID_MAP_ROWS_QUERY });
   // Rebuilt only when a source's data or state changes, so the memos below stay stable.
   const sources = useMemo(
     () => ({ services, hosts, slos, guardians, dashboards, critical, workflows }),
@@ -145,7 +145,7 @@ export const CoveragePage = () => {
   const apps = useMemo(() => {
     const rows = (cmdb.data?.records ?? []).map((rec) => {
       const r = rec as Record<string, unknown>;
-      const code = str(r[APP_CI_FIELD]);
+      const code = str(r[APP_ID_FIELD]);
       const key = code.toLowerCase();
       const found = SIGNALS.filter((s) => (sources[s.key].map.get(key)?.n ?? 0) > 0).length;
       return { code, key, name: str(r.name), tier: str(r.business_criticality), found, tooLong: code.length > 3 };
@@ -161,14 +161,14 @@ export const CoveragePage = () => {
     [sources.services.map, cmdbKeys]
   );
 
-  // Application names on services that no AppCI covers: the to-do list for Lookups > AppCI map.
+  // Application names on services that no application ID covers: the to-do list for Lookups > application ID map.
   const unmappedSources = [unmappedServices, unmappedHosts, unmappedRum, unmappedSynthetic];
   const unmapped = useMemo(() => {
     const byName = new Map<string, { name: string; counts: number[]; total: number }>();
     [unmappedServices.data, unmappedHosts.data, unmappedRum.data, unmappedSynthetic.data].forEach((data, kind) => {
       for (const rec of data?.records ?? []) {
         const r = rec as Record<string, unknown>;
-        const name = str(r.appciName);
+        const name = str(r.appIdName);
         if (!name) continue;
         const entry = byName.get(name) ?? { name, counts: [0, 0, 0, 0], total: 0 };
         const n = Number(r.entities ?? 0);
@@ -181,13 +181,13 @@ export const CoveragePage = () => {
   }, [unmappedServices.data, unmappedHosts.data, unmappedRum.data, unmappedSynthetic.data]);
   // A source that failed (for example an entity type this tenant does not have) hides only its own column.
   const unmappedFailed = UNMAPPED_KINDS.filter((_, i) => unmappedSources[i].error);
-  // Map rows that point at an AppCI absent from the CMDB table: usually a typo in the code.
+  // Map rows that point at an application ID absent from the CMDB table: usually a typo in the code.
   const mapOrphans = useMemo(
     () =>
       (mapRowsSrc.data?.records ?? [])
         .map((rec) => {
           const r = rec as Record<string, unknown>;
-          return { name: str(r.app_name), code: str(r[APP_CI_FIELD]) };
+          return { name: str(r.app_name), code: str(r[APP_ID_FIELD]) };
         })
         .filter((m) => m.code && !cmdbKeys.has(m.code.toLowerCase())),
     [mapRowsSrc.data, cmdbKeys]
@@ -235,8 +235,8 @@ export const CoveragePage = () => {
         </div>
         {!loading && !cmdb.error && apps.length > 0 && taggedApps === 0 && (
           <div style={{ ...noticeStyle("warn"), margin: 13 }}>
-            No service resolves to a CMDB {APP_CI_LABEL}, so the leaderboard and daily snapshot will be empty. Services resolve through an{" "}
-            <code>{APP_CI_FIELD}:&lt;code&gt;</code> tag or through the {APP_CI_LABEL} map on the Lookups tab.
+            No service resolves to a CMDB {APP_ID_LABEL}, so the leaderboard and daily snapshot will be empty. Services resolve through an{" "}
+            <code>{APP_ID_FIELD}:&lt;code&gt;</code> tag or through the {APP_ID_LABEL} map on the Lookups tab.
           </div>
         )}
         {loading ? (
@@ -248,7 +248,7 @@ export const CoveragePage = () => {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={tableHeadRowStyle}>
-                  <th style={tableHeadCellStyle}>{APP_CI_LABEL}</th>
+                  <th style={tableHeadCellStyle}>{APP_ID_LABEL}</th>
                   <th style={tableHeadCellStyle}>Name</th>
                   <th style={tableHeadCellStyle}>Tier</th>
                   {SIGNALS.map((s) => (
@@ -312,7 +312,7 @@ export const CoveragePage = () => {
       {orphans.length > 0 && (
         <Section title="Tagged codes that aren't in the CMDB table" meta={`${orphans.length}`}>
           <Paragraph style={{ margin: "0 0 8px", fontSize: 12, color: INK.muted }}>
-            Services carry these <code>{APP_CI_FIELD}</code> tag values, but no CMDB row matches. They are usually typos, a
+            Services carry these <code>{APP_ID_FIELD}</code> tag values, but no CMDB row matches. They are usually typos, a
             different spelling than the CMDB code, or applications that were never registered. Fix the tag, or add the
             application on the Lookups tab.
           </Paragraph>
@@ -328,11 +328,11 @@ export const CoveragePage = () => {
       )}
 
       {unmapped.length > 0 && (
-        <Section title={`Application names with no ${APP_CI_LABEL}`} meta={`${unmapped.length}`}>
+        <Section title={`Application names with no ${APP_ID_LABEL}`} meta={`${unmapped.length}`}>
           <Paragraph style={{ margin: "0 0 8px", fontSize: 12, color: INK.muted }}>
             Services, hosts, RUM applications or synthetic tests carry these <code>Application:&lt;name&gt;</code> tags, but no{" "}
-            <code>{APP_CI_FIELD}</code> tag and no row in the {APP_CI_LABEL} map, so the scorecards cannot see them. Add each name (without its
-            environment suffix) on Lookups &gt; {APP_CI_LABEL} map. The same application is often spelled differently per type (for example
+            <code>{APP_ID_FIELD}</code> tag and no row in the {APP_ID_LABEL} map, so the scorecards cannot see them. Add each name (without its
+            environment suffix) on Lookups &gt; {APP_ID_LABEL} map. The same application is often spelled differently per type (for example
             "BillingPortal" on services and "Billing Portal" on synthetic tests): each spelling needs its own row.
             {unmappedFailed.length > 0 && <span style={{ color: INK.warn }}> Could not read: {unmappedFailed.join(", ")}.</span>}
           </Paragraph>
@@ -351,9 +351,9 @@ export const CoveragePage = () => {
       )}
 
       {mapOrphans.length > 0 && (
-        <Section title={`${APP_CI_LABEL} map rows that point outside the CMDB table`} meta={`${mapOrphans.length}`}>
+        <Section title={`${APP_ID_LABEL} map rows that point outside the CMDB table`} meta={`${mapOrphans.length}`}>
           <Paragraph style={{ margin: "0 0 8px", fontSize: 12, color: INK.muted }}>
-            These map rows name an {APP_CI_LABEL} that has no active CMDB row, which is usually a typo in the code.
+            These map rows name an {APP_ID_LABEL} that has no active CMDB row, which is usually a typo in the code.
           </Paragraph>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {mapOrphans.slice(0, 40).map((m) => (

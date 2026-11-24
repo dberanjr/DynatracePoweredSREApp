@@ -1,6 +1,6 @@
 import { READINESS_QUERIES, readinessAppQueries } from "../queries/maturityQueries";
 
-import { APP_CI_FIELD, APP_CI_LABEL, APP_CI_CLOUD_TAG, LOOKUP_SETTINGS } from "../settings/appSettings";
+import { APP_ID_FIELD, APP_ID_LABEL, APP_ID_CLOUD_TAG, LOOKUP_SETTINGS } from "../settings/appSettings";
 // The data-readiness registry: what each check needs (an "input"), how to measure it (a "probe"), and how to
 // read the result. See docs/superpowers/specs/2026-10-22-data-readiness-design.md.
 //
@@ -117,24 +117,24 @@ export const PROBES: ProbeDef[] = [
   {
     key: "map",
     query: Q.map,
-    window: `the ${APP_CI_LABEL} map lookup`,
+    window: `the ${APP_ID_LABEL} map lookup`,
     produces: ["IN-03"],
     ownLookup: LOOKUP_SETTINGS.appciMap.path,
-    interpret: (rec) => ({ "IN-03": present(num(rec[0]?.total), `rows in the ${APP_CI_LABEL} map`) }),
+    interpret: (rec) => ({ "IN-03": present(num(rec[0]?.total), `rows in the ${APP_ID_LABEL} map`) }),
   },
   {
     key: "logs",
     query: Q.logs,
     window: "a ~1-in-1000 sample of the last 2 hours of logs",
     produces: ["IN-04"],
-    interpret: (rec) => ({ "IN-04": ratio(num(rec[0]?.ok), num(rec[0]?.total), `sampled logs carry an ${APP_CI_FIELD} attribute`) }),
+    interpret: (rec) => ({ "IN-04": ratio(num(rec[0]?.ok), num(rec[0]?.total), `sampled logs carry an ${APP_ID_FIELD} attribute`) }),
   },
   {
     key: "k8s",
     query: Q.k8s,
     window: "Kubernetes clusters seen recently",
     produces: ["IN-05"],
-    interpret: (rec) => ({ "IN-05": ratio(num(rec[0]?.ok), num(rec[0]?.total), `clusters are named for a known ${APP_CI_LABEL}`) }),
+    interpret: (rec) => ({ "IN-05": ratio(num(rec[0]?.ok), num(rec[0]?.total), `clusters are named for a known ${APP_ID_LABEL}`) }),
   },
   {
     key: "cloud",
@@ -229,22 +229,22 @@ export const PROBES: ProbeDef[] = [
 ];
 
 export const INPUTS: InputDef[] = [
-  { id: "IN-01", name: `${APP_CI_LABEL} resolution`, description: `Services and hosts can be tied to an application, by an ${APP_CI_FIELD} tag or by an Application tag listed in the ${APP_CI_LABEL} map. Every score is keyed on it.`, fix: `Tag services and hosts with ${APP_CI_FIELD}:<code>, or add each application name to the ${APP_CI_LABEL} map on the Lookups tab.`, probe: "resolution" },
+  { id: "IN-01", name: `${APP_ID_LABEL} resolution`, description: `Services and hosts can be tied to an application, by an ${APP_ID_FIELD} tag or by an Application tag listed in the ${APP_ID_LABEL} map. Every score is keyed on it.`, fix: `Tag services and hosts with ${APP_ID_FIELD}:<code>, or add each application name to the ${APP_ID_LABEL} map on the Lookups tab.`, probe: "resolution" },
   { id: "IN-02", name: "CMDB table with tiers", description: "The CMDB lookup lists the active applications, each with a business criticality (its tier).", fix: "Set a business criticality for each application in the CMDB table on the Lookups tab.", probe: "cmdb" },
-  { id: "IN-03", name: `${APP_CI_LABEL} map`, description: `The lookup that translates an Application tag name into an application exists and has rows.`, fix: `Create the ${APP_CI_LABEL} map on the Lookups tab, with one row per application name.`, probe: "map" },
-  { id: "IN-04", name: "Log attribution", description: `Log records carry an ${APP_CI_FIELD} attribute, so logs can be counted per application.`, fix: `Add an ${APP_CI_FIELD} attribute to log records at ingest, for example with an OpenPipeline processor that derives it from host or Kubernetes metadata.`, probe: "logs" },
-  { id: "IN-05", name: "Kubernetes attribution", description: `Kubernetes clusters are named so that they start with an application, which is how the scorecard attributes them.`, fix: `Name Kubernetes clusters so they start with the ${APP_CI_LABEL}, or extend the app to attribute clusters through workload tags.`, probe: "k8s" },
-  { id: "IN-06", name: "Cloud attribution", description: `Cloud resources (AWS, Azure, GCP) carry an application tag or label.`, fix: `Tag or label cloud resources with ${APP_CI_LABEL}.`, probe: "cloud" },
-  { id: "IN-07", name: "RUM and synthetic tagging", description: `Active RUM applications and synthetic tests can be tied to an application.`, fix: `Tag RUM applications and synthetic tests with their application, and add each spelling to the ${APP_CI_LABEL} map.`, probe: "rumSynthetic" },
-  { id: "IN-08", name: "SLO convention", description: "SLOs follow a naming or tagging convention that identifies their application.", fix: `Name SLOs with the ${APP_CI_LABEL} as a prefix, or tag them.`, probe: null },
-  { id: "IN-09", name: "Guardians tagged", description: `Site Reliability Guardians carry an application tag.`, fix: `Tag each Site Reliability Guardian with ${APP_CI_FIELD}:<code>.`, probe: null },
-  { id: "IN-10", name: "SLO dashboards named", description: "SLO dashboards follow the naming convention that identifies their application.", fix: `Name SLO dashboards with the ${APP_CI_LABEL} as a prefix and include 'SLO'.`, probe: null },
-  { id: "IN-11", name: "Runbook notebooks", description: "Runbooks are notebooks whose names identify their application.", fix: `Name runbook notebooks with the ${APP_CI_LABEL} as a prefix and include 'Runbook'.`, probe: null },
+  { id: "IN-03", name: `${APP_ID_LABEL} map`, description: `The lookup that translates an Application tag name into an application exists and has rows.`, fix: `Create the ${APP_ID_LABEL} map on the Lookups tab, with one row per application name.`, probe: "map" },
+  { id: "IN-04", name: "Log attribution", description: `Log records carry an ${APP_ID_FIELD} attribute, so logs can be counted per application.`, fix: `Add an ${APP_ID_FIELD} attribute to log records at ingest, for example with an OpenPipeline processor that derives it from host or Kubernetes metadata.`, probe: "logs" },
+  { id: "IN-05", name: "Kubernetes attribution", description: `Kubernetes clusters are named so that they start with an application, which is how the scorecard attributes them.`, fix: `Name Kubernetes clusters so they start with the ${APP_ID_LABEL}, or extend the app to attribute clusters through workload tags.`, probe: "k8s" },
+  { id: "IN-06", name: "Cloud attribution", description: `Cloud resources (AWS, Azure, GCP) carry an application tag or label.`, fix: `Tag or label cloud resources with ${APP_ID_LABEL}.`, probe: "cloud" },
+  { id: "IN-07", name: "RUM and synthetic tagging", description: `Active RUM applications and synthetic tests can be tied to an application.`, fix: `Tag RUM applications and synthetic tests with their application, and add each spelling to the ${APP_ID_LABEL} map.`, probe: "rumSynthetic" },
+  { id: "IN-08", name: "SLO convention", description: "SLOs follow a naming or tagging convention that identifies their application.", fix: `Name SLOs with the ${APP_ID_LABEL} as a prefix, or tag them.`, probe: null },
+  { id: "IN-09", name: "Guardians tagged", description: `Site Reliability Guardians carry an application tag.`, fix: `Tag each Site Reliability Guardian with ${APP_ID_FIELD}:<code>.`, probe: null },
+  { id: "IN-10", name: "SLO dashboards named", description: "SLO dashboards follow the naming convention that identifies their application.", fix: `Name SLO dashboards with the ${APP_ID_LABEL} as a prefix and include 'SLO'.`, probe: null },
+  { id: "IN-11", name: "Runbook notebooks", description: "Runbooks are notebooks whose names identify their application.", fix: `Name runbook notebooks with the ${APP_ID_LABEL} as a prefix and include 'Runbook'.`, probe: null },
   { id: "IN-12", name: "Critical-services seed", description: "The critical-services list has rows, and they resolve to real Dynatrace entities.", fix: "List the application's critical endpoints or services on the Lookups tab, using names Dynatrace actually sees.", probe: "seed" },
-  { id: "IN-13", name: "Deployment events", description: "Deployments are reported as events that carry an application_ci field.", fix: `Send a CUSTOM_DEPLOYMENT event from the deployment pipeline, with the ${APP_CI_LABEL} in application_ci.`, probe: "deployments" },
+  { id: "IN-13", name: "Deployment events", description: "Deployments are reported as events that carry an application_ci field.", fix: `Send a CUSTOM_DEPLOYMENT event from the deployment pipeline, with the ${APP_ID_LABEL} in application_ci.`, probe: "deployments" },
   { id: "IN-14", name: "Guardian validation events", description: "Site Reliability Guardian runs are reported as SDLC validation events.", fix: "Run Site Reliability Guardian validations from pipelines so they emit SDLC validation events.", probe: "srgEvents" },
   { id: "IN-15", name: "Alert routing", description: "Alert-routing workflows follow the naming the L3 ITSM check reads.", fix: "Name alert-routing workflows '<code> Production Dynatrace Alerts', or change the check to read the naming in use.", probe: "alertRouting" },
-  { id: "IN-16", name: "Automation naming", description: "Automation workflows have titles that identify their application.", fix: `Start Automation workflow titles with the ${APP_CI_LABEL}, or with an application name listed in the ${APP_CI_LABEL} map.`, probe: "workflows" },
+  { id: "IN-16", name: "Automation naming", description: "Automation workflows have titles that identify their application.", fix: `Start Automation workflow titles with the ${APP_ID_LABEL}, or with an application name listed in the ${APP_ID_LABEL} map.`, probe: "workflows" },
   { id: "IN-17", name: "Alerting profiles", description: "Problems are routed through an alerting profile other than the default.", fix: "Route problems through an alerting profile other than the default.", probe: "problems" },
   { id: "IN-18", name: "Problems present", description: "Davis has problems to analyse, so the problem-based checks have something to score.", fix: "Nothing to fix: this reflects whether Davis has problems to analyse.", probe: "problems" },
 ];
@@ -319,10 +319,10 @@ export function checkState(check: CheckDef, outcomes: Record<string, Outcome | u
 // an application version (readinessAppQueries). Comparing the two separates an ENVIRONMENT gap (the input
 // exists nowhere, so no application can pass it) from an APPLICATION gap (it exists elsewhere, not here).
 
-/** The probes that have an application version. The AppCI map is a prerequisite, not something a check reads. */
+/** The probes that have an application version. The application ID map is a prerequisite, not something a check reads. */
 export const APP_PROBES: ProbeDef[] = PROBES.filter((p) => p.key !== "map");
 
-const appCode = (appCI: string): string => appCI.toUpperCase();
+const appCode = (appId: string): string => appId.toUpperCase();
 
 type AppInterpret = (rec: Records, a: string) => Record<string, Outcome>;
 const one = (rec: Records, key = "total"): number => num(rec[0]?.[key]);
@@ -343,7 +343,7 @@ export const APP_INTERPRETERS: Record<string, AppInterpret> = {
     return { "IN-02": ok > 0 ? { status: "ready", evidence: `${appCode(a)} has a tier in the CMDB table` } : { status: "missing", evidence: `${appCode(a)} is in the CMDB table but has no business criticality` } };
   },
   logs: (rec, a) => {
-    const evidence = `Sampled logs carrying ${APP_CI_FIELD}=${appCode(a)}: ${fmt(one(rec))}`;
+    const evidence = `Sampled logs carrying ${APP_ID_FIELD}=${appCode(a)}: ${fmt(one(rec))}`;
     return { "IN-04": one(rec) > 0 ? { status: "ready", evidence } : { status: "missing", evidence, note: "Logs are sampled about 1 in 1000, so a very low-volume application can be missed." } };
   },
   k8s: (rec, a) => {
@@ -351,7 +351,7 @@ export const APP_INTERPRETERS: Record<string, AppInterpret> = {
     return { "IN-05": one(rec) > 0 ? { status: "ready", evidence } : { status: "missing", evidence } };
   },
   cloud: (rec, a) => {
-    const evidence = `Cloud resources tagged ${APP_CI_CLOUD_TAG}=${appCode(a)}: ${fmt(one(rec))}`;
+    const evidence = `Cloud resources tagged ${APP_ID_CLOUD_TAG}=${appCode(a)}: ${fmt(one(rec))}`;
     return { "IN-06": one(rec) > 0 ? { status: "ready", evidence } : { status: "missing", evidence } };
   },
   rumSynthetic: (rec, a) => {
@@ -396,7 +396,7 @@ export const APP_INTERPRETERS: Record<string, AppInterpret> = {
   },
 };
 
-export const appQueryFor = (key: string, appCI: string): string => (readinessAppQueries(appCI) as Record<string, string>)[key] ?? "";
+export const appQueryFor = (key: string, appId: string): string => (readinessAppQueries(appId) as Record<string, string>)[key] ?? "";
 
 export type Verdict = "environment-gap" | "app-gap" | "ok" | "not-applicable" | "unknown" | "later" | "not-implemented" | "not-run";
 
@@ -425,11 +425,11 @@ const sentence = (t: string): string => tidy(/[.!?]$/.test(t) ? t : `${t}.`);
  * application is an application gap.
  */
 export function explainApp(
-  appCI: string,
+  appId: string,
   estate: Record<string, Outcome | undefined>,
   app: Record<string, Outcome | undefined>
 ): Finding[] {
-  const code = appCode(appCI);
+  const code = appCode(appId);
   return CHECKS.map((check): Finding => {
     if (check.notImplemented) return { check, verdict: "not-implemented", reasons: [] };
     const reasons: Reason[] = [];

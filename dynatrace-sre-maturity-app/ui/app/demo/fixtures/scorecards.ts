@@ -1,5 +1,5 @@
 import type { DemoFixture, DemoFunctionFixture, DemoRecord } from "../types";
-import { DEMO_APPS, DEMO_APP_BY_CODE, extractAppCI, seeded } from "../portfolio";
+import { DEMO_APPS, DEMO_APP_BY_CODE, extractAppId, seeded } from "../portfolio";
 import type { DemoApp } from "../portfolio";
 import { upstreamIds } from "../services";
 import { CHECK_DETAIL_CONFIGS } from "../../components/checkDetailConfigs";
@@ -36,7 +36,7 @@ for (const key of Object.keys(CHECK_DETAIL_CONFIGS)) {
 const levelFixtures: DemoFixture[] = ([1, 2, 3, 4, 5] as LevelNo[]).map((level) => ({
   id: `scorecard-l${level}`,
   match: new RegExp(`^// L${level} [A-Za-z\\- ]+ - Maturity Scorecard`),
-  respond: (q: string) => ({ records: [levelRecord(getFacts(extractAppCI(q)), level)] }),
+  respond: (q: string) => ({ records: [levelRecord(getFacts(extractAppId(q)), level)] }),
 }));
 
 // Trend: ~60 daily snapshots climbing to today's scores.
@@ -81,7 +81,7 @@ function trendRecords(app: DemoApp): DemoRecord[] {
 const trendFixture: DemoFixture = {
   id: "scorecard-trend",
   match: /\| fields timestamp, snapshotDate, l1Score, l2Score/,
-  respond: (q) => ({ records: trendRecords(extractAppCI(q)) }),
+  respond: (q) => ({ records: trendRecords(extractAppId(q)) }),
 };
 
 // ───────────────────────── modal helpers ─────────────────────────
@@ -90,7 +90,7 @@ const appInfoFixture: DemoFixture = {
   id: "modal-app-info",
   match: /fields appName = name, tier = business_criticality, owner = owned_by/,
   respond: (q) => {
-    const a = extractAppCI(q);
+    const a = extractAppId(q);
     const label = { 1: "1 - most critical", 2: "2 - somewhat critical", 3: "3 - less critical", 4: "4 - not critical" }[a.tier];
     return { records: [{ appName: a.name, tier: label, owner: a.owner }] };
   },
@@ -100,7 +100,7 @@ const cloudAccountFixture: DemoFixture = {
   id: "modal-cloud-account",
   match: /summarize accountIds = collectDistinct\(aws\.account\.id\)/,
   respond: (q) => {
-    const a = extractAppCI(q);
+    const a = extractAppId(q);
     const r = seeded("acct:" + a.code);
     let id = "";
     for (let i = 0; i < 12; i++) id += Math.floor(r() * 10);
@@ -130,7 +130,7 @@ const problemsDonut = (f: Facts): DemoRecord[] =>
 const facetDeploys = (f: Facts, facet?: string) => (facet ? f.deploys.filter((d) => d.environment === facet) : f.deploys);
 
 // Tenant-wide Automation Engine workflows (the L3 ITSM and L5 detail queries
-// are not scoped to one AppCI — they list every workflow that ran).
+// are not scoped to one application ID — they list every workflow that ran).
 interface Wf { workflow: string; workflowId: string; executions: number; succeeded: number; failed: number; lastRun: string; itsm: boolean }
 let tenantWfCache: Wf[] | null = null;
 function tenantWorkflows(): Wf[] {
@@ -152,7 +152,7 @@ function tenantWorkflows(): Wf[] {
   }
   out.push(
     { workflow: "Platform Nightly Cloud Inventory", workflowId: "b7a1c0de-0001-demo-wf", executions: 30, succeeded: 30, failed: 0, lastRun: iso(Date.now() - 6 * HOUR), itsm: false },
-    { workflow: "Refresh lookups - guardians by appci", workflowId: "b7a1c0de-0002-demo-wf", executions: 30, succeeded: 29, failed: 1, lastRun: iso(Date.now() - 9 * HOUR), itsm: false },
+    { workflow: "Refresh lookups - guardians by appId", workflowId: "b7a1c0de-0002-demo-wf", executions: 30, succeeded: 29, failed: 1, lastRun: iso(Date.now() - 9 * HOUR), itsm: false },
     { workflow: "SRE Maturity Daily Snapshot", workflowId: "b7a1c0de-0003-demo-wf", executions: 30, succeeded: 30, failed: 0, lastRun: iso(Date.now() - 5 * HOUR), itsm: false },
   );
   tenantWfCache = out.sort((a, b) => b.executions - a.executions);
@@ -482,12 +482,12 @@ const GENS: Record<string, CheckGen> = {
 
 // ───────────────────────── template-based query matching ─────────────────────────
 // The modal builds each query with the per-check detailQuery builder,
-// so we regenerate the same text with a sentinel AppCI and turn it into a regex.
+// so we regenerate the same text with a sentinel application ID and turn it into a regex.
 
 const SENT = "\u0001";
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function matcher(build: (appCI: string, facet?: string) => string, facets: (string | undefined)[]) {
+function matcher(build: (appId: string, facet?: string) => string, facets: (string | undefined)[]) {
   const regs = facets.map((facet) => ({
     facet,
     re: new RegExp("^" + build(SENT, facet).split(SENT).map(esc).join("([A-Za-z0-9_]{1,12})") + "$"),
@@ -495,7 +495,7 @@ function matcher(build: (appCI: string, facet?: string) => string, facets: (stri
   return (q: string): { app: DemoApp; facet?: string } | null => {
     for (const { facet, re } of regs) {
       const m = re.exec(q);
-      if (m) return { app: (m[1] && DEMO_APP_BY_CODE[m[1].toUpperCase()]) || extractAppCI(q), facet };
+      if (m) return { app: (m[1] && DEMO_APP_BY_CODE[m[1].toUpperCase()]) || extractAppId(q), facet };
     }
     return null;
   };
@@ -539,7 +539,7 @@ export const scorecardsFixtures: DemoFixture[] = [
 // ───────────────────────── app functions ─────────────────────────
 
 const appOf = (data: Record<string, unknown> | undefined) => {
-  const raw = data?.appCI;
+  const raw = data?.appId;
   const code = (typeof raw === "string" ? raw : "").toUpperCase();
   return DEMO_APP_BY_CODE[code] ?? DEMO_APP_BY_CODE["ADH"];
 };

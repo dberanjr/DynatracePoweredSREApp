@@ -3,9 +3,9 @@
 // Keep in sync with ScorecardsPage.tsx when queries change.
 
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
-import { SLO_APPCI_EXPR, appciFromEntityTags, appciFromProblemTags, appciFromWorkflowTitle, hasTierLookup } from "../queries/maturityQueries";
+import { SLO_APP_ID_EXPR, appIdFromEntityTags, appIdFromProblemTags, appIdFromWorkflowTitle, hasTierLookup } from "../queries/maturityQueries";
 
-import { APP_CI_FIELD, LOAD, APP_CI_LABEL, APP_CI_CLOUD_TAG } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG } from "../settings/appSettings";
 export interface CheckDetailConfig {
   level: "L1" | "L2" | "L3" | "L4" | "L5";
   levelColor: string;
@@ -17,18 +17,18 @@ export interface CheckDetailConfig {
    * `facet` is the currently selected facet value (undefined = All). Queries
    * that opt into faceting via facetOptions must splice it into their filters.
    */
-  detailQuery?: (appCI: string, facet?: string) => string;
+  detailQuery?: (appId: string, facet?: string) => string;
   /** Values offered by the modal's filter pills; "All" is prepended automatically. */
   facetOptions?: string[];
   /** Label shown beside the pills, e.g. "Environment". */
   facetLabel?: string;
   appFunction?: { name: string; toRecords: (result: unknown) => Record<string, unknown>[] };
-  secondaryQuery?: (appCI: string, facet?: string) => string;
+  secondaryQuery?: (appId: string, facet?: string) => string;
   secondaryAppFunction?: { name: string; toRecords: (result: unknown) => Record<string, unknown>[] };
   secondaryChartType?: "table" | "bar" | "stackedBar" | "multiPanel" | "donut";
   secondaryLabel?: string;
   /** Whole secondary chart is clickable; opens the Kubernetes app's cluster
-   *  list filtered to this AppCI's cluster-name prefix (handles AppCIs that
+   *  list filtered to this application ID's cluster-name prefix (handles AppIds that
    *  span multiple clusters without needing a per-cluster entity ID). */
   secondaryChartClusterClick?: boolean;
   /** Small caption rendered under the total in the middle of a donut. */
@@ -72,11 +72,11 @@ export interface CheckDetailConfig {
   effort?: "Low" | "Medium" | "High";
   /**
    * True only when this check's DQL assigns an unconditional literal string —
-   * the same result for every AppCI in the tenant — rather than computing a
+   * the same result for every application ID in the tenant — rather than computing a
    * real per-app result. The UI must visibly label these as not-yet-live.
    */
   hardcoded?: boolean;
-  /** Static "open in" footer links — app landing pages, not filtered to the AppCI. */
+  /** Static "open in" footer links — app landing pages, not filtered to the application ID. */
   openIn?: { label: string; path: string }[];
 }
 
@@ -136,14 +136,14 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
     passLogic:
       `Pass: at least one host is tagged with this application and was alive in the last 2 hours.`,
     guidance:
-      `Deploy OneAgent on all hosts serving this application. Tag them with the '${APP_CI_FIELD}:<code>' host metadata tag. Ensure hosts are in Full-Stack mode for the richest signal coverage. Infrastructure mode provides limited observability; Discovery mode means OneAgent is not installed, only lightweight scanning is active. PaaS/container workloads (ECS Fargate, EKS Fargate) don't expose a monitoringMode at all but are inherently full-stack once OneAgent is injected.`,
+      `Deploy OneAgent on all hosts serving this application. Tag them with the '${APP_ID_FIELD}:<code>' host metadata tag. Ensure hosts are in Full-Stack mode for the richest signal coverage. Infrastructure mode provides limited observability; Discovery mode means OneAgent is not installed, only lightweight scanning is active. PaaS/container workloads (ECS Fargate, EKS Fargate) don't expose a monitoringMode at all but are inherently full-stack once OneAgent is injected.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.entity.host
+    detailQuery: (appId: string) => `fetch dt.entity.host
 | limit 100000
 | filter lifetime[end] > asTimestamp(now()-2h)
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
-| filter ${APP_CI_FIELD} == lower("${appCI}")
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
+| filter ${APP_ID_FIELD} == lower("${appId}")
 | dedup id
 | lookup [
     fetch logs, samplingRatio:1000, from:now()-2h
@@ -173,13 +173,13 @@ ${appciFromEntityTags()}
     // real hosts (many container hosts never emit host-correlated log lines). Using
     // dt.entity.host + makeTimeseries's spread:lifetime instead counts entity
     // existence directly — cheap (~1s) and consistent with the pass/fail count above.
-    secondaryQuery: (appCI: string) => `fetch dt.entity.host, from:now()-7d, to:now()
+    secondaryQuery: (appId: string) => `fetch dt.entity.host, from:now()-7d, to:now()
 | filter id in [
     fetch dt.entity.host
     | filter lifetime[end] > asTimestamp(now()-2h)
-    ${appciFromEntityTags()}
-    | expand ${APP_CI_FIELD}
-    | filter ${APP_CI_FIELD} == lower("${appCI}")
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID_FIELD}
+    | filter ${APP_ID_FIELD} == lower("${appId}")
     | dedup id
     | fields id
   ]
@@ -195,15 +195,15 @@ ${appciFromEntityTags()}
     secondaryLabel: "Hosts active per day by monitoring mode (7d)",
     scorecardSnippet: `fetch dt.entity.host
 | filter lifetime[end] > asTimestamp(now()-2h)
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
 // PaaS-injected hosts (ECS Fargate, EKS Fargate, etc.) never get a
 // monitoringMode value — PaaS OneAgent has no partial mode, it's always
 // full-stack or not present at all — so a null mode here still counts.
 | summarize
     hostCount      = count(),
     fullStackCount = countIf(monitoringMode == "FULL_STACK" or isNull(monitoringMode)),
-  by:{${APP_CI_FIELD}}
+  by:{${APP_ID_FIELD}}
 
 // Pass:  hostCount > 0
 // Display: "pass <fullStack>/<hostCount> Full-Stack"`,
@@ -216,12 +216,12 @@ ${appciFromEntityTags()}
       `Verifies that at least one service entity tagged with this application is emitting distributed traces. Services appear in Dynatrace when OneAgent captures HTTP or RPC traffic between processes. Click any service row to open it in Distributed Tracing (last 2 hours). Note: dependency count uses the service topology 'calls' relationship, which reflects direct downstream service connections.`,
     passLogic: `Pass: at least one service (dt.entity.service) is tagged with this application.`,
     guidance:
-      `Ensure OneAgent is installed on all service hosts and processes. Confirm that HTTP/gRPC traffic is flowing through the monitored process. If a service exists but is not tagged, add the '${APP_CI_FIELD}:<code>' tag via host metadata, tag rules, or the entity API.`,
+      `Ensure OneAgent is installed on all service hosts and processes. Confirm that HTTP/gRPC traffic is flowing through the monitored process. If a service exists but is not tagged, add the '${APP_ID_FIELD}:<code>' tag via host metadata, tag rules, or the entity API.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
-| filter ${APP_CI_FIELD} == lower("${appCI}")
+    detailQuery: (appId: string) => `fetch dt.entity.service
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
+| filter ${APP_ID_FIELD} == lower("${appId}")
 | dedup id
 | lookup [
     fetch spans, from:now()-1h, scanLimitGBytes:-1
@@ -231,12 +231,12 @@ ${appciFromEntityTags()}
 | sort traces desc
 | fields service = entity.name, entityId = id, traces
 | limit 200`,
-    secondaryQuery: (appCI: string) => `fetch spans, from:now()-2h, scanLimitGBytes:-1
+    secondaryQuery: (appId: string) => `fetch spans, from:now()-2h, scanLimitGBytes:-1
 | lookup [
     fetch dt.entity.service
-    ${appciFromEntityTags()}
-    | expand ${APP_CI_FIELD}
-    | filter ${APP_CI_FIELD} == lower("${appCI}")
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID_FIELD}
+    | filter ${APP_ID_FIELD} == lower("${appId}")
     | dedup id
     | fields id
   ], sourceField:dt.entity.service, lookupField:id
@@ -248,9 +248,9 @@ ${appciFromEntityTags()}
     secondaryLabel: "Trace volume by outcome (15-min buckets, 2h)",
     serviceRowClick: true,
     scorecardSnippet: `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
-| summarize serviceCount = count(), by:{${APP_CI_FIELD}}
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
+| summarize serviceCount = count(), by:{${APP_ID_FIELD}}
 
 // Pass: serviceCount > 0
 // Display: "pass <count> services"`,
@@ -264,10 +264,10 @@ ${appciFromEntityTags()}
     passLogic:
       `Pass: at least one log record carrying this application exists in the selected timeframe (sampled at 1:1000).`,
     guidance:
-      `Configure log ingest via OneAgent log monitoring or the Dynatrace Log Ingest API. Ensure the '${APP_CI_FIELD}' field is set on log records — typically via host metadata propagation or a log enrichment rule in OpenPipeline.`,
+      `Configure log ingest via OneAgent log monitoring or the Dynatrace Log Ingest API. Ensure the '${APP_ID_FIELD}' field is set on log records — typically via host metadata propagation or a log enrichment rule in OpenPipeline.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch logs, samplingRatio:1000, from:now()-1h
-| filter isNotNull(${APP_CI_FIELD}) and lower(${APP_CI_FIELD}) == lower("${appCI}")
+    detailQuery: (appId: string) => `fetch logs, samplingRatio:1000, from:now()-1h
+| filter isNotNull(${APP_ID_FIELD}) and lower(${APP_ID_FIELD}) == lower("${appId}")
 // host.name is only populated when a node-level OneAgent tags the log (classic
 // hosts, Cloud Native Full Stack). Firehose/OpenPipeline-ingested PaaS logs
 // (ECS Fargate, etc.) never get host.name, so fall back to container_name and
@@ -283,8 +283,8 @@ ${appciFromEntityTags()}
 | sort totalLogs desc
 | fields type, source, totalLogs, errorLogs, warnLogs
 | limit 200`,
-    secondaryQuery: (appCI: string) => `fetch logs, samplingRatio:1000, from:now()-24h
-| filter isNotNull(${APP_CI_FIELD}) and lower(${APP_CI_FIELD}) == lower("${appCI}")
+    secondaryQuery: (appId: string) => `fetch logs, samplingRatio:1000, from:now()-24h
+| filter isNotNull(${APP_ID_FIELD}) and lower(${APP_ID_FIELD}) == lower("${appId}")
 | summarize logCount = sum(dt.system.sampling_ratio), by:{timestamp = bin(timestamp, 1h), status = coalesce(loglevel, "UNKNOWN")}
 | sort timestamp asc`,
     secondaryChartType: "stackedBar",
@@ -292,8 +292,8 @@ ${appciFromEntityTags()}
     logHostRowClick: true,
     samplingNote: "Sampled at 1:1000 — log counts are estimates, extrapolated to the true volume.",
     scorecardSnippet: `fetch logs, samplingRatio:1000
-| filter isNotNull(${APP_CI_FIELD})
-| summarize logCount = count(), by:{${APP_CI_FIELD}}
+| filter isNotNull(${APP_ID_FIELD})
+| summarize logCount = count(), by:{${APP_ID_FIELD}}
 
 // Pass: logCount > 0
 // Sampled at 1:1000 to keep query cost low (existence check only, not extrapolated)`,
@@ -307,12 +307,12 @@ ${appciFromEntityTags()}
     passLogic:
       `Pass: at least one service is tagged with this application (same signal as Tracing Validated).`,
     guidance:
-      `Smartscape discovery is automatic once OneAgent is installed and services are tagged. Ensure services are correctly tagged with '${APP_CI_FIELD}:<code>'. Full topology discovery may take 1–2 hours after initial instrumentation.`,
+      `Smartscape discovery is automatic once OneAgent is installed and services are tagged. Ensure services are correctly tagged with '${APP_ID_FIELD}:<code>'. Full topology discovery may take 1–2 hours after initial instrumentation.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
-| filter ${APP_CI_FIELD} == lower("${appCI}")
+    detailQuery: (appId: string) => `fetch dt.entity.service
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
+| filter ${APP_ID_FIELD} == lower("${appId}")
 | dedup id
 | fieldsFlatten calls, prefix:"calls_"
 | fieldsAdd downstreamIds = \`calls_dt.entity.service\`
@@ -335,8 +335,8 @@ ${appciFromEntityTags()}
 // If tagged services exist, Dynatrace has built the topology map.
 
 fetch dt.entity.service
-| fieldsAdd ${APP_CI_FIELD} = ... // tag extraction (same as Tracing Validated)
-| summarize serviceCount = count(), by:{${APP_CI_FIELD}}
+| fieldsAdd ${APP_ID_FIELD} = ... // tag extraction (same as Tracing Validated)
+| summarize serviceCount = count(), by:{${APP_ID_FIELD}}
 
 // Pass: serviceCount > 0 (same signal as Tracing Validated)`,
   },
@@ -345,14 +345,14 @@ fetch dt.entity.service
     level: "L1",
     levelColor: "#57C0F4",
     description:
-      `Detects Kubernetes clusters belonging to this application by matching the cluster name against the ${APP_CI_LABEL} prefix (e.g. '<code>-us-east-1-prd'), not by workload tags — a shared EKS cluster's workloads (cloud_application entities) are often tagged with a sub-application's CI, which under-detects the parent app. This check is N/A for applications that do not run on Kubernetes. The table lists every workload running on the app's cluster(s), following Kubernetes SRE best practice by surfacing the two signals that matter most for workload health: desired vs. running replica count (drift indicates a scheduling or capacity problem) and health events (24h count of restarts, OOM kills, failed scheduling, and failed health probes — a crash-loop/instability indicator). Workloads with running < desired sort to the top. Click any row to open that specific workload in the Kubernetes app, or use the View menu to jump straight into a Smartscape topology view (related nodes, direct calls, hierarchy, downstream/upstream call chain) for it. The chart breaks down the same event types over time, so you can see when and how the trouble happened, not just how much. Click the chart to open this application's clusters in the Kubernetes app.`,
+      `Detects Kubernetes clusters belonging to this application by matching the cluster name against the ${APP_ID_LABEL} prefix (e.g. '<code>-us-east-1-prd'), not by workload tags — a shared EKS cluster's workloads (cloud_application entities) are often tagged with a sub-application's CI, which under-detects the parent app. This check is N/A for applications that do not run on Kubernetes. The table lists every workload running on the app's cluster(s), following Kubernetes SRE best practice by surfacing the two signals that matter most for workload health: desired vs. running replica count (drift indicates a scheduling or capacity problem) and health events (24h count of restarts, OOM kills, failed scheduling, and failed health probes — a crash-loop/instability indicator). Workloads with running < desired sort to the top. Click any row to open that specific workload in the Kubernetes app, or use the View menu to jump straight into a Smartscape topology view (related nodes, direct calls, hierarchy, downstream/upstream call chain) for it. The chart breaks down the same event types over time, so you can see when and how the trouble happened, not just how much. Click the chart to open this application's clusters in the Kubernetes app.`,
     passLogic:
       `N/A (counted as a pass): no Kubernetes cluster matches this application — not every app runs on K8s. When a cluster does match: Pass requires the Cloud Native Full Stack OneAgent Operator DaemonSet to be present and fully ready, plus K8s-scoped tracing and logs both flowing for the cluster. Fail: a cluster matches but the operator isn't healthy or a signal is missing.`,
     guidance:
-      `Connect your Kubernetes cluster to Dynatrace via the Kubernetes Operator. Name clusters with the '<${APP_CI_FIELD}>-<region>-<env>' convention so they're attributable to the owning app. Investigate workloads where running < desired (scheduling/capacity issue) or where health events are climbing (crash loop, OOM, or scheduling instability) first.`,
+      `Connect your Kubernetes cluster to Dynatrace via the Kubernetes Operator. Name clusters with the '<${APP_ID_FIELD}>-<region>-<env>' convention so they're attributable to the owning app. Investigate workloads where running < desired (scheduling/capacity issue) or where health events are climbing (crash loop, OOM, or scheduling instability) first.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.entity.kubernetes_cluster
-| filter startsWith(lower(entity.name), concat(lower("${appCI}"), "-"))
+    detailQuery: (appId: string) => `fetch dt.entity.kubernetes_cluster
+| filter startsWith(lower(entity.name), concat(lower("${appId}"), "-"))
 | dedup id
 | lookup [
     fetch logs, samplingRatio:1000, from:now()-2h
@@ -390,7 +390,7 @@ fetch dt.entity.service
   ], sourceField:workloadIds, lookupField:dt.entity.cloud_application, fields:{oomTotal}
 | lookup [
     smartscapeNodes K8S_DEPLOYMENT, K8S_STATEFULSET, K8S_DAEMONSET, K8S_JOB, K8S_CRONJOB
-    | filter startsWith(lower(k8s.cluster.name), concat(lower("${appCI}"), "-"))
+    | filter startsWith(lower(k8s.cluster.name), concat(lower("${appId}"), "-"))
     | fields id_classic, workloadEntityId = id
   ], sourceField:workloadIds, lookupField:id_classic, fields:{workloadEntityId}
 | fieldsAdd healthEvents = (if(isNull(eventCount), 0, else: eventCount)) + (if(isNull(oomTotal), 0, else: oomTotal))
@@ -400,16 +400,16 @@ fetch dt.entity.service
 | limit 500`,
     k8sWorkloadRowClick: true,
     smartscapeMenuRowClick: true,
-    secondaryQuery: (appCI: string) => `fetch events, from:now()-24h
+    secondaryQuery: (appId: string) => `fetch events, from:now()-24h
 | filter event.provider == "KUBERNETES_EVENT"
-| filter startsWith(lower(k8s.cluster.name), concat(lower("${appCI}"), "-"))
+| filter startsWith(lower(k8s.cluster.name), concat(lower("${appId}"), "-"))
 | filter in(dt.kubernetes.event.reason, {"Killing","BackOff","FailedScheduling","Unhealthy"})
 | fieldsAdd category = if(dt.kubernetes.event.reason == "FailedScheduling", "Failed Scheduling",
     else: if(dt.kubernetes.event.reason == "Unhealthy", "Unhealthy", else: "Restarts"))
 | summarize count = toDouble(count()), by:{timestamp = bin(timestamp, 1h), category}
 | append [
     timeseries oom = sum(dt.kubernetes.container.oom_kills), by:{k8s.cluster.name}, interval:1h, from:now()-24h
-    | filter startsWith(lower(k8s.cluster.name), concat(lower("${appCI}"), "-"))
+    | filter startsWith(lower(k8s.cluster.name), concat(lower("${appId}"), "-"))
     | fieldsAdd bucket = record(timestamp = timeframe[start] + interval * iIndex(), v = oom[])
     | expand bucket
     | fieldsFlatten bucket, prefix:""
@@ -422,8 +422,8 @@ fetch dt.entity.service
     secondaryLabel: "Kubernetes events by type (24h, hourly)",
     secondaryChartClusterClick: true,
     scorecardSnippet: `fetch dt.entity.kubernetes_cluster
-| fieldsAdd ${APP_CI_FIELD} = lower(splitString(entity.name, "-")[0])
-| summarize k8sClusterCount = count(), by:{${APP_CI_FIELD}}
+| fieldsAdd ${APP_ID_FIELD} = lower(splitString(entity.name, "-")[0])
+| summarize k8sClusterCount = count(), by:{${APP_ID_FIELD}}
 
 // Pass: k8sClusterCount > 0
 // N/A:  k8sClusterCount == 0 (no K8s — not a failure for non-K8s apps)
@@ -438,43 +438,43 @@ fetch dt.entity.service
     passLogic:
       `Pass: at least one cloud resource (AWS, Azure, or GCP; any type) is tagged with this application. N/A: no cloud resources found for this app.`,
     guidance:
-      `Ensure cloud resources are tagged with '${APP_CI_LABEL}:<code>' at the cloud-provider level, and that a Cloud connection (AWS/Azure/GCP integration) is configured in Dynatrace so those resources are discovered.`,
+      `Ensure cloud resources are tagged with '${APP_ID_LABEL}:<code>' at the cloud-provider level, and that a Cloud connection (AWS/Azure/GCP integration) is configured in Dynatrace so those resources are discovered.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `smartscapeNodes "AWS*"
-| fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
+    detailQuery: (appId: string) => `smartscapeNodes "AWS*"
+| fieldsFlatten \`tags:aws\`, fields:{${APP_ID_CLOUD_TAG}}
 | fieldsAdd provider = "AWS", displayName = coalesce(aws.resource.id, name), region = aws.region
-| filter lower(${APP_CI_CLOUD_TAG}) == lower("${appCI}")
+| filter lower(${APP_ID_CLOUD_TAG}) == lower("${appId}")
 | append [
     smartscapeNodes "AZURE*"
-    | fieldsFlatten \`tags:azure\`, fields:{${APP_CI_CLOUD_TAG}}
+    | fieldsFlatten \`tags:azure\`, fields:{${APP_ID_CLOUD_TAG}}
     | fieldsAdd provider = "Azure", displayName = coalesce(azure.resource.name, azure.resource.id, name), region = azure.location
-    | filter lower(${APP_CI_CLOUD_TAG}) == lower("${appCI}")
+    | filter lower(${APP_ID_CLOUD_TAG}) == lower("${appId}")
   ]
 | append [
     smartscapeNodes "GCP*"
-    | fieldsFlatten \`tags:gcp_labels\`, fields:{${APP_CI_CLOUD_TAG}}
+    | fieldsFlatten \`tags:gcp_labels\`, fields:{${APP_ID_CLOUD_TAG}}
     | fieldsAdd provider = "GCP", displayName = coalesce(gcp.resource.name, gcp.resource.id, name), region = gcp.region
-    | filter lower(${APP_CI_CLOUD_TAG}) == lower("${appCI}")
+    | filter lower(${APP_ID_CLOUD_TAG}) == lower("${appId}")
   ]
 | sort type asc, displayName asc
 | fields type, name = displayName, region, provider, entityId = id
 | limit 500`,
     cloudResourceRowClick: true,
-    secondaryQuery: (appCI: string) => `smartscapeNodes "AWS*"
-| fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
+    secondaryQuery: (appId: string) => `smartscapeNodes "AWS*"
+| fieldsFlatten \`tags:aws\`, fields:{${APP_ID_CLOUD_TAG}}
 | fieldsAdd provider = "AWS", cloudRegion = aws.region
-| filter lower(${APP_CI_CLOUD_TAG}) == lower("${appCI}")
+| filter lower(${APP_ID_CLOUD_TAG}) == lower("${appId}")
 | append [
     smartscapeNodes "AZURE*"
-    | fieldsFlatten \`tags:azure\`, fields:{${APP_CI_CLOUD_TAG}}
+    | fieldsFlatten \`tags:azure\`, fields:{${APP_ID_CLOUD_TAG}}
     | fieldsAdd provider = "Azure", cloudRegion = azure.location
-    | filter lower(${APP_CI_CLOUD_TAG}) == lower("${appCI}")
+    | filter lower(${APP_ID_CLOUD_TAG}) == lower("${appId}")
   ]
 | append [
     smartscapeNodes "GCP*"
-    | fieldsFlatten \`tags:gcp_labels\`, fields:{${APP_CI_CLOUD_TAG}}
+    | fieldsFlatten \`tags:gcp_labels\`, fields:{${APP_ID_CLOUD_TAG}}
     | fieldsAdd provider = "GCP", cloudRegion = gcp.region
-    | filter lower(${APP_CI_CLOUD_TAG}) == lower("${appCI}")
+    | filter lower(${APP_ID_CLOUD_TAG}) == lower("${appId}")
   ]
 | summarize count = count(), regions = collectDistinct(cloudRegion), resourceType = takeFirst(aws.resource.type), by:{type, provider}
 | sort count desc
@@ -485,16 +485,16 @@ fetch dt.entity.service
     cloudTypeRowClick: true,
     showTypeWordCloud: true,
     scorecardSnippet: `smartscapeNodes "AWS*"
-| fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
+| fieldsFlatten \`tags:aws\`, fields:{${APP_ID_CLOUD_TAG}}
 | append [
     smartscapeNodes "AZURE*"
-    | fieldsFlatten \`tags:azure\`, fields:{${APP_CI_CLOUD_TAG}}
+    | fieldsFlatten \`tags:azure\`, fields:{${APP_ID_CLOUD_TAG}}
   ]
 | append [
     smartscapeNodes "GCP*"
-    | fieldsFlatten \`tags:gcp_labels\`, fields:{${APP_CI_CLOUD_TAG}}
+    | fieldsFlatten \`tags:gcp_labels\`, fields:{${APP_ID_CLOUD_TAG}}
   ]
-| summarize cloudCount = count(), by:{${APP_CI_FIELD} = lower(${APP_CI_CLOUD_TAG})}
+| summarize cloudCount = count(), by:{${APP_ID_FIELD} = lower(${APP_ID_CLOUD_TAG})}
 
 // Pass: cloudCount > 0
 // N/A:  cloudCount == 0 (no cloud resources — not a failure for non-cloud apps)
@@ -512,24 +512,24 @@ fetch dt.entity.service
     guidance:
       "For frontend applications: inject the RUM JavaScript snippet via OneAgent automatic injection or manual instrumentation, and tag the resulting Dynatrace Application entity. Create browser clickpath or HTTP monitor synthetics for critical user journeys.",
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.entity.application, from:now()-1000d
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
-| filter ${APP_CI_FIELD} == lower("${appCI}")
+    detailQuery: (appId: string) => `fetch dt.entity.application, from:now()-1000d
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
+| filter ${APP_ID_FIELD} == lower("${appId}")
 | dedup entity.name
 | fields app = entity.name, type = "RUM",
     active = if(lifetime[end] > now()-7d, "Active", else: "Inactive")
 | sort active asc, app asc`,
     scorecardSnippet: `// RUM: application entities active in last 7 days
 fetch dt.entity.application, from:now()-1000d
-| fieldsAdd ${APP_CI_FIELD} = ... // tag extraction
+| fieldsAdd ${APP_ID_FIELD} = ... // tag extraction
 | fieldsAdd rumActive = if(lifetime[end] > now()-7d, true, else: false)
-| summarize rumCount = countIf(rumActive == true), by:{${APP_CI_FIELD}}
+| summarize rumCount = countIf(rumActive == true), by:{${APP_ID_FIELD}}
 
 // Synthetics
 fetch dt.entity.synthetic_test
-| fieldsAdd ${APP_CI_FIELD} = ... // tag extraction
-| summarize synCount = count(), by:{${APP_CI_FIELD}}
+| fieldsAdd ${APP_ID_FIELD} = ... // tag extraction
+| summarize synCount = count(), by:{${APP_ID_FIELD}}
 
 // Pass: rumCount > 0 OR synCount > 0`,
   },
@@ -545,10 +545,10 @@ fetch dt.entity.synthetic_test
     guidance:
       "Golden signals are automatic with Full-Stack OneAgent. Ensure services are correctly tagged. To explicitly define SLIs, navigate to SLO Management and create SLOs referencing golden-signal metrics (request rate, error rate, latency) for this application's services.",
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
-| filter ${APP_CI_FIELD} == lower("${appCI}")
+    detailQuery: (appId: string) => `fetch dt.entity.service
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
+| filter ${APP_ID_FIELD} == lower("${appId}")
 | dedup id
 | fields id, entity.name
 | limit 500
@@ -565,15 +565,15 @@ ${appciFromEntityTags()}
 | fields service = entity.name, entityId = id, requests, errorRate, p95Ms
 | sort errorRate desc, requests desc
 | limit 200`,
-    secondaryQuery: (appCI: string) => `timeseries {
+    secondaryQuery: (appId: string) => `timeseries {
     req = sum(dt.service.request.count, rollup: sum),
     fail = sum(dt.service.request.failure_count, rollup: sum)
   }, interval:30m, from:now()-6h,
   filter: { dt.entity.service in [
       fetch dt.entity.service
-      ${appciFromEntityTags()}
-      | expand ${APP_CI_FIELD}
-      | filter ${APP_CI_FIELD} == lower("${appCI}")
+      ${appIdFromEntityTags()}
+      | expand ${APP_ID_FIELD}
+      | filter ${APP_ID_FIELD} == lower("${appId}")
       | fields id
   ] }
 | fieldsAdd k = 1
@@ -581,9 +581,9 @@ ${appciFromEntityTags()}
     timeseries p95 = percentile(dt.service.request.response_time, 95, rollup: avg), interval:30m, from:now()-6h,
       filter: { dt.entity.service in [
           fetch dt.entity.service
-          ${appciFromEntityTags()}
-          | expand ${APP_CI_FIELD}
-          | filter ${APP_CI_FIELD} == lower("${appCI}")
+          ${appIdFromEntityTags()}
+          | expand ${APP_ID_FIELD}
+          | filter ${APP_ID_FIELD} == lower("${appId}")
           | fields id
       ] }
     | fieldsAdd k = 1
@@ -594,9 +594,9 @@ ${appciFromEntityTags()}
     timeseries cpu = avg(dt.process.cpu.usage), interval:30m, from:now()-6h,
       filter: { dt.entity.process_group in [
           fetch dt.entity.process_group
-          ${appciFromEntityTags()}
-          | expand ${APP_CI_FIELD}
-          | filter ${APP_CI_FIELD} == lower("${appCI}")
+          ${appIdFromEntityTags()}
+          | expand ${APP_ID_FIELD}
+          | filter ${APP_ID_FIELD} == lower("${appId}")
           | fields id
       ] }
     | fieldsAdd k = 1
@@ -618,8 +618,8 @@ ${appciFromEntityTags()}
     },
     serviceMapRowClick: true,
     scorecardSnippet: `fetch dt.entity.service
-| fieldsAdd ${APP_CI_FIELD} = ... // tag extraction
-| summarize serviceCount = count(), by:{${APP_CI_FIELD}}
+| fieldsAdd ${APP_ID_FIELD} = ... // tag extraction
+| summarize serviceCount = count(), by:{${APP_ID_FIELD}}
 
 // Golden signals (error rate, throughput, latency) are emitted
 // automatically by Full-Stack OneAgent for every traced service.
@@ -630,11 +630,11 @@ ${appciFromEntityTags()}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Counts Service Level Objectives (SLOs) configured for this application. This check calls the Gen3 SLO platform API live (via an app function) rather than the /lookups/sre/slo table, so each row shows its real target and description, not just a name. The ${APP_CI_LABEL} is identified by the first 3 characters of each SLO name. Each SLO's own name is parsed to derive its Type (Availability, Performance, etc.) — pure string-parsing of the name itself, not a cross-reference — and the secondary panel breaks down SLO count by that type, showing whether coverage leans on one signal (e.g. all-Availability) or spans multiple. Click a row to open the SLO settings page — the native SLO table has no deep-linkable URL for an individual SLO (row names are plain text with a JS-only click handler, confirmed via DOM inspection), so this opens the full list rather than that specific row.`,
+      `Counts Service Level Objectives (SLOs) configured for this application. This check calls the Gen3 SLO platform API live (via an app function) rather than the /lookups/sre/slo table, so each row shows its real target and description, not just a name. The ${APP_ID_LABEL} is identified by the first 3 characters of each SLO name. Each SLO's own name is parsed to derive its Type (Availability, Performance, etc.) — pure string-parsing of the name itself, not a cross-reference — and the secondary panel breaks down SLO count by that type, showing whether coverage leans on one signal (e.g. all-Availability) or spans multiple. Click a row to open the SLO settings page — the native SLO table has no deep-linkable URL for an individual SLO (row names are plain text with a JS-only click handler, confirmed via DOM inspection), so this opens the full list rather than that specific row.`,
     passLogic:
       `Pass: at least one SLO exists whose name starts with this application's 3-letter code.`,
     guidance:
-      `Create SLOs in Dynatrace → SLO Management. Name each SLO starting with the 3-letter ${APP_CI_LABEL} code (e.g., 'ADH-API-AvailabilitySLO').`,
+      `Create SLOs in Dynatrace → SLO Management. Name each SLO starting with the 3-letter ${APP_ID_LABEL} code (e.g., 'ADH-API-AvailabilitySLO').`,
     chartType: "table",
     appFunction: {
       name: "getSloDetail",
@@ -663,12 +663,12 @@ ${appciFromEntityTags()}
     secondaryChartType: "table",
     secondaryLabel: "SLO count by type (parsed from SLO name)",
     sloRowClick: true,
-    scorecardSnippet: `// Source: /lookups/sre/slo  (refreshed hourly by workflow "Refresh /lookups/sre/slo (SLOs by ${APP_CI_LABEL})")
+    scorecardSnippet: `// Source: /lookups/sre/slo  (refreshed hourly by workflow "Refresh /lookups/sre/slo (SLOs by ${APP_ID_LABEL})")
 ${LOAD.slo}
-| fieldsAdd appci = ${SLO_APPCI_EXPR}
-| summarize sloCount = count(), by:{appci}
+| fieldsAdd appId = ${SLO_APP_ID_EXPR}
+| summarize sloCount = count(), by:{appId}
 
-// Naming convention: SLO name MUST start with the 3-letter ${APP_CI_LABEL} code
+// Naming convention: SLO name MUST start with the 3-letter ${APP_ID_LABEL} code
 // Pass: sloCount > 0
 // (Modal detail view uses the live getSloDetail app function instead, for linking + target/description.)`,
   },
@@ -679,9 +679,9 @@ ${LOAD.slo}
     description:
       `Counts Site Reliability Guardians (SRGs) configured for this application. SRGs automate reliability validation by evaluating SLOs, metrics, and events against defined thresholds during deployments or on a schedule. This check calls the Guardian Settings API live (via an app function) rather than a scheduled lookup table — the Automation Engine workflow that used to populate a /lookups/sre/guardians table proved unreliable to keep in sync, so guardian detail is now fetched fresh every time this modal opens. The table lists each guardian's name, objective count, and trigger kind; click a row to open that guardian's validation results. The secondary panel expands every guardian's individual objectives, showing exactly what's being validated.`,
     passLogic:
-      `Pass: at least one SRG is found tagged with this application's appci code (case-insensitive, ${APP_CI_FIELD} or appci tag key).`,
+      `Pass: at least one SRG is found tagged with this application's appId code (case-insensitive, ${APP_ID_FIELD} or appId tag key).`,
     guidance:
-      `Create an SRG in Dynatrace → Site Reliability Guardian, tag it with '${APP_CI_FIELD}:<code>', and define evaluation objectives for the app's critical SLOs. SRGs are most impactful when triggered automatically by deployment events.`,
+      `Create an SRG in Dynatrace → Site Reliability Guardian, tag it with '${APP_ID_FIELD}:<code>', and define evaluation objectives for the app's critical SLOs. SRGs are most impactful when triggered automatically by deployment events.`,
     chartType: "table",
     appFunction: {
       name: "getGuardianDetail",
@@ -711,9 +711,9 @@ ${LOAD.slo}
     scorecardSnippet: `// Scorecard pass/fail source: /lookups/sre/guardians
 // (one row per guardian, refreshed on a schedule by an Automation Engine workflow)
 ${LOAD.guardians}
-| fieldsAdd appci = lower(appci)
-| summarize guardianCount = count(), by:{appci}
-// joined via lookup(), sourceField:${APP_CI_FIELD}, lookupField:appci
+| fieldsAdd appId = lower(appId)
+| summarize guardianCount = count(), by:{appId}
+// joined via lookup(), sourceField:${APP_ID_FIELD}, lookupField:appId
 
 // Pass: guardianCount > 0
 //
@@ -727,11 +727,11 @@ ${LOAD.guardians}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Checks whether SLO dashboards have been published for this application. This check calls the Documents API live (via an app function) rather than a scheduled lookup table, for the same reliability reason as the Guardians check. Dashboards whose name starts with the 3-letter ${APP_CI_LABEL} code and contains the word 'SLO' in standalone uppercase are listed with their creation date, last-modified date, and owner. Click a row to open that dashboard directly.`,
+      `Checks whether SLO dashboards have been published for this application. This check calls the Documents API live (via an app function) rather than a scheduled lookup table, for the same reliability reason as the Guardians check. Dashboards whose name starts with the 3-letter ${APP_ID_LABEL} code and contains the word 'SLO' in standalone uppercase are listed with their creation date, last-modified date, and owner. Click a row to open that dashboard directly.`,
     passLogic:
       `Pass: at least one dashboard exists whose name starts with this application's 3-letter code and contains uppercase 'SLO'.`,
     guidance:
-      `Create a Dynatrace dashboard named '<${APP_CI_LABEL}> SLO Dashboard' (e.g., 'ADH SLO Dashboard'). Include SLO burn-rate tiles, error budget gauges, and trend charts for all application SLOs.`,
+      `Create a Dynatrace dashboard named '<${APP_ID_LABEL}> SLO Dashboard' (e.g., 'ADH SLO Dashboard'). Include SLO burn-rate tiles, error budget gauges, and trend charts for all application SLOs.`,
     chartType: "table",
     appFunction: {
       name: "getDashboardDetail",
@@ -752,16 +752,16 @@ ${LOAD.guardians}
     scorecardSnippet: `// Scorecard pass/fail source: /lookups/sre/slo_dashboards
 // (one row per dashboard, refreshed on a schedule by an Automation Engine workflow)
 ${LOAD.sloDashboards}
-| fieldsAdd appci = lower(appci)
-| summarize dashboardCount = count(), by:{appci}
-// joined via lookup(), sourceField:${APP_CI_FIELD}, lookupField:appci
+| fieldsAdd appId = lower(appId)
+| summarize dashboardCount = count(), by:{appId}
+// joined via lookup(), sourceField:${APP_ID_FIELD}, lookupField:appId
 
 // Pass: dashboardCount > 0
 //
 // NOTE: the modal's detail table does NOT use this lookup. It calls the
 // getDashboardDetail app function, which reads the Documents API live
 // (filter=type=='dashboard'), keeps dashboards whose name starts with a
-// 3-letter ${APP_CI_LABEL} token and contains standalone "SLO", and resolves the owner
+// 3-letter ${APP_ID_LABEL} token and contains standalone "SLO", and resolves the owner
 // via client-iam so each row can link straight to the dashboard.`,
   },
 
@@ -769,27 +769,27 @@ ${LOAD.sloDashboards}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Verifies that this application has a tier (business criticality) assigned. The tier (1–4) determines the SRE engagement level and which maturity checks apply. The check passes when the application's row in the CMDB table (maintained on the Lookups tab, the same table the identity bar and ${APP_CI_LABEL} picker read) has a business criticality, or when a ServiceNow import event carried a tier for it in the last 24 hours (the original source, still honored). The card shows the CMDB record: name, tier, owner, support group and managing director. The chart counts ServiceNow import events over the last 7 days; it is empty if no such import runs in this environment.`,
+      `Verifies that this application has a tier (business criticality) assigned. The tier (1–4) determines the SRE engagement level and which maturity checks apply. The check passes when the application's row in the CMDB table (maintained on the Lookups tab, the same table the identity bar and ${APP_ID_LABEL} picker read) has a business criticality, or when a ServiceNow import event carried a tier for it in the last 24 hours (the original source, still honored). The card shows the CMDB record: name, tier, owner, support group and managing director. The chart counts ServiceNow import events over the last 7 days; it is empty if no such import runs in this environment.`,
     passLogic:
       `Pass: this application's CMDB row has a non-blank business criticality, or a 'workflow.import.servicenow.appci' bizevent with a non-null tier arrived in the last 24 hours.`,
     guidance:
       "Set the application's business criticality in the CMDB table (Lookups tab → CMDB owner mapping), for example '1 - critical'. If the CMDB is the source of truth, load it from a ServiceNow export rather than typing it. The tier decides which checks apply to this application, so it should be assigned before anything else is judged.",
     chartType: "table",
     // eslint-disable-next-line noSecrets/no-secrets
-    detailQuery: (appCI: string) => `${LOAD.cmdb}
-| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
+    detailQuery: (appId: string) => `${LOAD.cmdb}
+| filter lower(${APP_ID_FIELD}) == lower("${appId}")
 | fields ciName = name, tier = business_criticality, status = operational_status, owner = owned_by, supportGroup = support_group, managingDirector = \`managed_by.u_managing_director\`
 | limit 10`,
-    secondaryQuery: (appCI: string) => `fetch bizevents, from:now()-7d
+    secondaryQuery: (appId: string) => `fetch bizevents, from:now()-7d
 | filter event.type == "workflow.import.servicenow.appci"
-| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
+| filter lower(${APP_ID_FIELD}) == lower("${appId}")
 | summarize importCount = count(), by:{timestamp = bin(timestamp, 24h)}
 | sort timestamp asc`,
     secondaryChartType: "bar",
     secondaryLabel: "ServiceNow import events (7d, daily). Empty means no such import runs here",
     scorecardSnippet: `// Scorecard pass/fail source: the CMDB row's business criticality, or a ServiceNow import tier
 // (replace "abc" with an application to run this as is)
-data record(${APP_CI_FIELD} = "abc")
+data record(${APP_ID_FIELD} = "abc")
 ${hasTierLookup()}
 
 // Pass: hasTier > 0`,
@@ -799,14 +799,14 @@ ${hasTierLookup()}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Checks whether the critical services for this application are tagged and identified in Dynatrace. Critical service tagging enables priority routing in ITSM, auto-escalation in incident management, and targeted alerting thresholds. WIRED UP (2026-08-29): sources /lookups/sre/critical_services, a table refreshed daily at 06:00 UTC carrying 9,072 service rows across 361 ${APP_CI_LABEL}s, each with a severity (high / medium / low) and a business-impact description. A pass requires at least one listed service whose entity_ids resolved to a real Dynatrace entity — being merely listed is not enough, since only ~38% of rows tenant-wide (3,462 of 9,072) have resolved. The table below lists every critical service for this app with its resolution state, sorted unresolved-first so the biggest gaps are immediately visible.`,
+      `Checks whether the critical services for this application are tagged and identified in Dynatrace. Critical service tagging enables priority routing in ITSM, auto-escalation in incident management, and targeted alerting thresholds. WIRED UP (2026-08-29): sources /lookups/sre/critical_services, a table refreshed daily at 06:00 UTC carrying 9,072 service rows across 361 ${APP_ID_LABEL}s, each with a severity (high / medium / low) and a business-impact description. A pass requires at least one listed service whose entity_ids resolved to a real Dynatrace entity — being merely listed is not enough, since only ~38% of rows tenant-wide (3,462 of 9,072) have resolved. The table below lists every critical service for this app with its resolution state, sorted unresolved-first so the biggest gaps are immediately visible.`,
     passLogic:
       `Pass: at least one critical service listed for this application has entity_ids resolved to a real Dynatrace entity (not '-'). Fail: services are listed but none have resolved. N/A: no critical services are listed for this application at all.`,
     guidance:
       "Work down the table starting with unresolved high-severity rows — those are business-critical services Dynatrace can't yet tie back to a monitored entity. Resolution happens upstream in the BigPanda/CMDB pipeline that feeds this lookup; improving the tenant-wide 38% resolution rate is a data-hygiene effort owned by the configuration-management team, tracked separately from this app.",
     chartType: "table",
-    detailQuery: (appCI: string) => `${LOAD.criticalServices}
-| filter lower(appci) == lower("${appCI}")
+    detailQuery: (appId: string) => `${LOAD.criticalServices}
+| filter lower(appId) == lower("${appId}")
 | fieldsAdd resolved = entity_ids != "-"
 | fieldsAdd severityRank = if(lower(severity) == "high", 1,
     else: if(lower(severity) == "medium", 2,
@@ -817,19 +817,19 @@ ${hasTierLookup()}
     scorecardSnippet: `// Wired to /lookups/sre/critical_services (refreshed daily at 06:00 UTC)
 // Note the table name uses an UNDERSCORE, not a hyphen.
 ${LOAD.criticalServices}
-| fieldsAdd appci = lower(appci)
+| fieldsAdd appId = lower(appId)
 | summarize criticalCount = count(),
             resolved = countIf(entity_ids != "-"),
-            by:{appci}
-// joined via lookup(), sourceField:${APP_CI_FIELD}, lookupField:appci
+            by:{appId}
+// joined via lookup(), sourceField:${APP_ID_FIELD}, lookupField:appId
 
 // Pass: resolved > 0 (at least one listed service's entity_ids resolved)
 // Fail: criticalCount > 0 but resolved == 0 (listed, none resolved)
 // N/A:  criticalCount == 0 (no critical services listed for this application)
 //
-// Columns: appci, entity_name, severity (high|medium|low),
+// Columns: appId, entity_name, severity (high|medium|low),
 //          business_impact, entity_ids, id_count, row_id
-// Scale:   9,072 rows / 361 ${APP_CI_LABEL}s; 3,462 (38%) have resolved entity_ids
+// Scale:   9,072 rows / 361 ${APP_ID_LABEL}s; 3,462 (38%) have resolved entity_ids
 // Source:  workflow "Refresh /lookups/sre/critical_services
 //          (entity_severity resolved to entity IDs)"`,
   },
@@ -846,10 +846,10 @@ ${LOAD.criticalServices}
     guidance:
       "Davis Causal AI is automatic once OneAgent is deployed and alerting is enabled. Correlation quality depends on topology completeness — Davis can only link entities it can see, so gaps in tracing or untagged services reduce multi-entity correlation. If the donut shows a large Noise slice, tune anomaly detection thresholds; if it shows a large Other slice, those problems match neither the causal nor the noise definition and are worth reviewing to decide which they belong in.",
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
+    detailQuery: (appId: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-${appciFromProblemTags()}
-| filter isNotNull(appci) and appci == lower("${appCI}")
+${appIdFromProblemTags()}
+| filter isNotNull(appId) and appId == lower("${appId}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | fieldsAdd entityCount = arraySize(affected_entity_ids)
 | filter matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
@@ -865,10 +865,10 @@ ${appciFromProblemTags()}
 | sort started desc
 | limit 200`,
     problemRowClick: true,
-    secondaryQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
+    secondaryQuery: (appId: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-${appciFromProblemTags()}
-| filter isNotNull(appci) and appci == lower("${appCI}")
+${appIdFromProblemTags()}
+| filter isNotNull(appId) and appId == lower("${appId}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | fieldsAdd classification = if(matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1,
     "Causal (investigable)",
@@ -882,8 +882,8 @@ ${appciFromProblemTags()}
     donutCenterLabel: "problems (7d)",
     scorecardSnippet: `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-${appciFromProblemTags()}
-| filter isNotNull(appci)
+${appIdFromProblemTags()}
+| filter isNotNull(appId)
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | fieldsAdd isCausal = matchesValue(event.category, array("ERROR", "SLOWDOWN"))
     and eventCount > 1
@@ -896,7 +896,7 @@ ${appciFromProblemTags()}
     causalClosed    = countIf(isCausal and lower(event.status) == "closed"),
     causalWithCause = countIf(isCausal and isNotNull(root_cause_entity_id)),
     correlated      = countIf(isCorrelated),
-  by:{appci}
+  by:{appId}
 
 // Pass: causalTotal > 0
 // All five figures now share the same 7d window (correlated previously
@@ -915,9 +915,9 @@ ${appciFromProblemTags()}
     chartType: "table",
     facetLabel: "Environment",
     facetOptions: ["prd", "stg", "qa", "dev"],
-    detailQuery: (appCI: string, facet?: string) => `fetch events, from:now()-30d
+    detailQuery: (appId: string, facet?: string) => `fetch events, from:now()-30d
 | filter event.type == "CUSTOM_DEPLOYMENT"
-| filter isNotNull(application_ci) and lower(application_ci) == lower("${appCI}")${facet ? `
+| filter isNotNull(application_ci) and lower(application_ci) == lower("${appId}")${facet ? `
 | filter environment == "${facet}"` : ""}
 | fieldsAdd durationSec = if(isNotNull(\`deployment-duration\`),
     round(toLong(\`deployment-duration\`) / 1000.0, decimals:0), else: null)
@@ -934,9 +934,9 @@ ${appciFromProblemTags()}
 | limit 300`,
     urlRowClick: true,
     urlRowClickHint: "click a row to open that pipeline run in the CI platform",
-    secondaryQuery: (appCI: string, facet?: string) => `fetch events, from:now()-30d
+    secondaryQuery: (appId: string, facet?: string) => `fetch events, from:now()-30d
 | filter event.type == "CUSTOM_DEPLOYMENT"
-| filter isNotNull(application_ci) and lower(application_ci) == lower("${appCI}")${facet ? `
+| filter isNotNull(application_ci) and lower(application_ci) == lower("${appId}")${facet ? `
 | filter environment == "${facet}"` : ""}
 | fieldsAdd outcome = upper(coalesce(\`workflow-outcome\`, "unknown"))
 | summarize deploys = count(), by:{timestamp = bin(timestamp, 1d), outcome}
@@ -951,7 +951,7 @@ fetch events, from:now()-30d
 | summarize
     deployTotal   = count(),
     deploySuccess = countIf(\`workflow-outcome\` == "success"),
-  by:{appci = lower(application_ci)}
+  by:{appId = lower(application_ci)}
 
 // Pass: deployTotal > 0`,
   },
@@ -960,17 +960,17 @@ fetch events, from:now()-30d
     level: "L3",
     levelColor: "#611CD9",
     description:
-      `Checks whether a Dynatrace Automation workflow routes this application's Davis problems out to the team. It looks for workflows titled '<${APP_CI_LABEL}> Production Dynatrace Alerts' that executed in the last 30 days, matching on the leading ${APP_CI_LABEL} token. The table lists each such workflow with its real execution count and success rate — click a row to open it in the Workflows app. WHAT THIS ACTUALLY VERIFIES: despite the check's name, the donut shows where those notifications really go. Across this entire tenant the alert-routing workflows send to Microsoft Teams and email; there are zero ServiceNow actions anywhere. So a pass here means alert routing is automated and reaching humans — it does not mean tickets are being created in a ticketing system. CORRECTED: the execution counts previously triple-counted, because the detail query omitted the 'event.type == WORKFLOW_EXECUTION' filter and so summed ACTION, TASK and WORKFLOW events together; and each execution emits both a running and a terminal record, which is now handled by counting distinct execution IDs.`,
+      `Checks whether a Dynatrace Automation workflow routes this application's Davis problems out to the team. It looks for workflows titled '<${APP_ID_LABEL}> Production Dynatrace Alerts' that executed in the last 30 days, matching on the leading ${APP_ID_LABEL} token. The table lists each such workflow with its real execution count and success rate — click a row to open it in the Workflows app. WHAT THIS ACTUALLY VERIFIES: despite the check's name, the donut shows where those notifications really go. Across this entire tenant the alert-routing workflows send to Microsoft Teams and email; there are zero ServiceNow actions anywhere. So a pass here means alert routing is automated and reaching humans — it does not mean tickets are being created in a ticketing system. CORRECTED: the execution counts previously triple-counted, because the detail query omitted the 'event.type == WORKFLOW_EXECUTION' filter and so summed ACTION, TASK and WORKFLOW events together; and each execution emits both a running and a terminal record, which is now handled by counting distinct execution IDs.`,
     passLogic:
-      `Pass: at least one Automation workflow titled '<${APP_CI_LABEL}> Production Dynatrace Alerts' has executed in the last 30 days.`,
+      `Pass: at least one Automation workflow titled '<${APP_ID_LABEL}> Production Dynatrace Alerts' has executed in the last 30 days.`,
     guidance:
-      `Create a Dynatrace Automation workflow named exactly '<${APP_CI_LABEL}> Production Dynatrace Alerts', using the 3-letter ${APP_CI_LABEL} code as the leading token — the name is what attributes it to this application. Trigger it on Davis problem events and route to the owning team's channel. To make this a genuine ITSM integration rather than a notification, add a ServiceNow action that opens an incident, and confirm the resulting ticket carries the problem ID for correlation.`,
+      `Create a Dynatrace Automation workflow named exactly '<${APP_ID_LABEL}> Production Dynatrace Alerts', using the 3-letter ${APP_ID_LABEL} code as the leading token — the name is what attributes it to this application. Trigger it on Davis problem events and route to the owning team's channel. To make this a genuine ITSM integration rather than a notification, add a ServiceNow action that opens an incident, and confirm the resulting ticket carries the problem ID for correlation.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.system.events, from:now()-30d
+    detailQuery: (appId: string) => `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
 | filter matchesValue(\`dt.automation_engine.workflow.title\`, "* Production Dynatrace Alerts")
-| filter lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " "))) == lower("${appCI}")
+| filter lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " "))) == lower("${appId}")
 | summarize
     executions = countDistinct(\`dt.automation_engine.workflow_execution.id\`),
     succeeded = countIf(\`dt.automation_engine.state\` == "SUCCESS"),
@@ -980,10 +980,10 @@ fetch events, from:now()-30d
 | sort executions desc
 | limit 50`,
     workflowRowClick: true,
-    secondaryQuery: (appCI: string) => `fetch dt.system.events, from:now()-30d
+    secondaryQuery: (appId: string) => `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE" and event.type == "ACTION_EXECUTION"
 | filter matchesValue(\`dt.automation_engine.workflow.title\`, "* Production Dynatrace Alerts")
-| filter lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " "))) == lower("${appCI}")
+| filter lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " "))) == lower("${appId}")
 | fieldsAdd channel = if(\`dt.automation_engine.action.app\` == "dynatrace.msteams", "Microsoft Teams",
     else: if(\`dt.automation_engine.action.app\` == "dynatrace.email", "Email",
       else: if(\`dt.automation_engine.action.app\` == "dynatrace.servicenow", "ServiceNow",
@@ -999,12 +999,12 @@ fetch events, from:now()-30d
 | filter event.type == "WORKFLOW_EXECUTION"
 | filter matchesValue(\`dt.automation_engine.workflow.title\`,
     "* Production Dynatrace Alerts")
-| fieldsAdd wfAppci = lower(arrayFirst(splitString(
+| fieldsAdd wfAppId = lower(arrayFirst(splitString(
     \`dt.automation_engine.workflow.title\`, " ")))
 | summarize itsmWorkflows = countDistinct(\`dt.automation_engine.workflow.id\`),
-  by:{wfAppci}
+  by:{wfAppId}
 
-// Workflow title pattern: "<${APP_CI_LABEL}> Production Dynatrace Alerts"
+// Workflow title pattern: "<${APP_ID_LABEL}> Production Dynatrace Alerts"
 // Pass: itsmWorkflows > 0
 //
 // NOTE: verified 2026-08-28 — these workflows route to Microsoft Teams and
@@ -1017,11 +1017,11 @@ fetch events, from:now()-30d
     level: "L3",
     levelColor: "#611CD9",
     description:
-      `Counts runbook notebooks linked to this application — the step-by-step remediation procedures an on-call operator follows during an incident. A notebook qualifies when its name starts with the 3-letter ${APP_CI_LABEL} code and contains the word 'Runbook'. The table lists each matching notebook with its owner and last-modified date; click a row to open it. Below it, a second table lists notebooks that belong to this app but did NOT qualify, and says exactly why — so a failing check tells you whether runbooks genuinely don't exist or simply aren't named to convention. RESOLVED (2026-08-29): the scorecard's pass/fail and the leaderboard ranking now both read the Documents API live too, the same as the modal — the /lookups/runbooks table (which held only an empty sentinel row despite its refresh workflow reporting success daily) is no longer used anywhere. The per-app scorecard calls getRunbookDetail directly; the portfolio leaderboard calls a bulk sibling, getAllRunbookCounts, which reads the same Documents API once for every app instead of filtering to one. All three views now agree by construction, not by coincidence.`,
+      `Counts runbook notebooks linked to this application — the step-by-step remediation procedures an on-call operator follows during an incident. A notebook qualifies when its name starts with the 3-letter ${APP_ID_LABEL} code and contains the word 'Runbook'. The table lists each matching notebook with its owner and last-modified date; click a row to open it. Below it, a second table lists notebooks that belong to this app but did NOT qualify, and says exactly why — so a failing check tells you whether runbooks genuinely don't exist or simply aren't named to convention. RESOLVED (2026-08-29): the scorecard's pass/fail and the leaderboard ranking now both read the Documents API live too, the same as the modal — the /lookups/runbooks table (which held only an empty sentinel row despite its refresh workflow reporting success daily) is no longer used anywhere. The per-app scorecard calls getRunbookDetail directly; the portfolio leaderboard calls a bulk sibling, getAllRunbookCounts, which reads the same Documents API once for every app instead of filtering to one. All three views now agree by construction, not by coincidence.`,
     passLogic:
       `Pass: at least one notebook exists whose name starts with this application's 3-letter code and contains the word 'Runbook' (any case).`,
     guidance:
-      `Create a Dynatrace Notebook named '<${APP_CI_LABEL}> Runbook - <Topic>', for example 'CCL Runbook - High Error Rate'. The name must start with the exact 3-letter ${APP_CI_LABEL} code and include the word 'Runbook' — both are required for attribution. Document investigation steps, the DQL queries that confirm the diagnosis, and the remediation commands. Link the runbook from the corresponding alert workflow so responders reach it from the notification. If the second table below lists notebooks, those are near-misses that only need renaming.`,
+      `Create a Dynatrace Notebook named '<${APP_ID_LABEL}> Runbook - <Topic>', for example 'CCL Runbook - High Error Rate'. The name must start with the exact 3-letter ${APP_ID_LABEL} code and include the word 'Runbook' — both are required for attribution. Document investigation steps, the DQL queries that confirm the diagnosis, and the remediation commands. Link the runbook from the corresponding alert workflow so responders reach it from the notification. If the second table below lists notebooks, those are near-misses that only need renaming.`,
     chartType: "table",
     appFunction: {
       name: "getRunbookDetail",
@@ -1063,10 +1063,10 @@ fetch events, from:now()-30d
 // this application and overwrites the check value + adjusts the "X / 7" score:
 //
 //   pass "N runbook(s)"   if getRunbookDetail returns any matching notebook
-//   fail "No ${APP_CI_LABEL} runbooks"  otherwise
+//   fail "No ${APP_ID_LABEL} runbooks"  otherwise
 //
 // Portfolio leaderboard: the same live source, via a bulk sibling function
-// (getAllRunbookCounts) that reads the Documents API once for every ${APP_CI_LABEL}
+// (getAllRunbookCounts) that reads the Documents API once for every ${APP_ID_LABEL}
 // instead of filtering to one — so the leaderboard's ranking, the per-app
 // scorecard, and this modal are now all backed by the same live data.
 //
@@ -1086,10 +1086,10 @@ fetch events, from:now()-30d
     guidance:
       "Work down the table from the top — the noisiest alert is almost always worth fixing first, and a single tuned threshold often removes most of the volume. For repeated CUSTOM_ALERT entries, raise the threshold or lengthen the evaluation window in Anomaly Detection. Suppress synthetic monitor outages during maintenance windows. Note that the percentage uses ALL problems as the denominator, so problems that are neither causal nor noise are included there — the donut on the Causal AI check shows that third bucket.",
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
+    detailQuery: (appId: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-${appciFromProblemTags()}
-| filter isNotNull(appci) and appci == lower("${appCI}")
+${appIdFromProblemTags()}
+| filter isNotNull(appId) and appId == lower("${appId}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | filter eventCount == 1 and matchesValue(event.category,
     array("AVAILABILITY", "RESOURCE_CONTENTION", "CUSTOM_ALERT", "MONITORING_UNAVAILABLE"))
@@ -1101,10 +1101,10 @@ ${appciFromProblemTags()}
 | sort occurrences desc
 | limit 200`,
     problemRowClick: true,
-    secondaryQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
+    secondaryQuery: (appId: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-${appciFromProblemTags()}
-| filter isNotNull(appci) and appci == lower("${appCI}")
+${appIdFromProblemTags()}
+| filter isNotNull(appId) and appId == lower("${appId}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | filter eventCount == 1 and matchesValue(event.category,
     array("AVAILABILITY", "RESOURCE_CONTENTION", "CUSTOM_ALERT", "MONITORING_UNAVAILABLE"))
@@ -1115,12 +1115,12 @@ ${appciFromProblemTags()}
     donutCenterLabel: "noise (7d)",
     scorecardSnippet: `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-| fieldsAdd appci = ...
+| fieldsAdd appId = ...
 | fieldsAdd isNoise = arraySize(dt.davis.event_ids) == 1
     and matchesValue(event.category, array(
       "AVAILABILITY", "RESOURCE_CONTENTION",
       "CUSTOM_ALERT",  "MONITORING_UNAVAILABLE"))
-| summarize total7d = count(), noiseTotal = countIf(isNoise), by:{appci}
+| summarize total7d = count(), noiseTotal = countIf(isNoise), by:{appId}
 | fieldsAdd noisePct = round(
     toDouble(noiseTotal) * 100.0 / toDouble(total7d), decimals:0)
 
@@ -1140,10 +1140,10 @@ ${appciFromProblemTags()}
     guidance:
       "Root cause detection improves with instrumentation completeness: full distributed tracing, discovered dependencies, and correctly tagged services. Review the problems showing 'Not identified' and check whether the entities involved are fully monitored — an unmonitored downstream dependency is the most common reason Davis cannot close the causal chain. If one entity dominates the root cause column, that component is your reliability bottleneck.",
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
+    detailQuery: (appId: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-${appciFromProblemTags()}
-| filter isNotNull(appci) and appci == lower("${appCI}")
+${appIdFromProblemTags()}
+| filter isNotNull(appId) and appId == lower("${appId}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | filter matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
 | fields
@@ -1156,10 +1156,10 @@ ${appciFromProblemTags()}
 | sort started desc
 | limit 200`,
     problemRowClick: true,
-    secondaryQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-7d
+    secondaryQuery: (appId: string) => `fetch dt.davis.problems, from:now()-7d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-${appciFromProblemTags()}
-| filter isNotNull(appci) and appci == lower("${appCI}")
+${appIdFromProblemTags()}
+| filter isNotNull(appId) and appId == lower("${appId}")
 | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
 | filter matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
 | fieldsAdd outcome = if(isNotNull(root_cause_entity_id), "Root cause identified", else: "No root cause")
@@ -1176,7 +1176,7 @@ fetch dt.davis.problems, from:now()-7d
 | summarize
     causalTotal     = countIf(isCausal),
     causalWithCause = countIf(isCausal and isNotNull(root_cause_entity_id)),
-  by:{appci}
+  by:{appId}
 | fieldsAdd rootCausePct = round(
     toDouble(causalWithCause) * 100.0 / toDouble(causalTotal), decimals:0)
 
@@ -1198,9 +1198,9 @@ fetch dt.davis.problems, from:now()-7d
     chartType: "table",
     facetLabel: "Environment",
     facetOptions: ["prd", "stg", "qa", "dev"],
-    detailQuery: (appCI: string, facet?: string) => `fetch events, from:now()-30d
+    detailQuery: (appId: string, facet?: string) => `fetch events, from:now()-30d
 | filter event.type == "CUSTOM_DEPLOYMENT"
-| filter isNotNull(application_ci) and lower(application_ci) == lower("${appCI}")${facet ? `
+| filter isNotNull(application_ci) and lower(application_ci) == lower("${appId}")${facet ? `
 | filter environment == "${facet}"` : ""}
 | fieldsAdd leadMs = if(\`new-deployment\` == "true" and isNotNull(\`avg-release-age\`),
     toLong(\`avg-release-age\`), else: null)
@@ -1220,9 +1220,9 @@ fetch dt.davis.problems, from:now()-7d
 | limit 200`,
     urlRowClick: true,
     urlRowClickHint: "click a row to open that repository",
-    secondaryQuery: (appCI: string, facet?: string) => `fetch events, from:now()-30d
+    secondaryQuery: (appId: string, facet?: string) => `fetch events, from:now()-30d
 | filter event.type == "CUSTOM_DEPLOYMENT"
-| filter isNotNull(application_ci) and lower(application_ci) == lower("${appCI}")${facet ? `
+| filter isNotNull(application_ci) and lower(application_ci) == lower("${appId}")${facet ? `
 | filter environment == "${facet}"` : ""}
 | fieldsAdd leadMs = if(\`new-deployment\` == "true" and isNotNull(\`avg-release-age\`),
     toLong(\`avg-release-age\`), else: null)
@@ -1251,7 +1251,7 @@ fetch events, from:now()-30d
     deployTotal   = count(),
     deploySuccess = countIf(\`workflow-outcome\` == "success"),
     avgLeadMs     = avg(leadMs),
-  by:{appci = lower(application_ci)}
+  by:{appId = lower(application_ci)}
 | fieldsAdd avgLeadDays = round(avgLeadMs / 86400000.0, decimals:1)
 
 // Pass: deployTotal > 0
@@ -1271,18 +1271,18 @@ fetch events, from:now()-30d
     level: "L4",
     levelColor: "#B23BE4",
     description:
-      `Detects SLO breaches and notifies teams before customer impact. Counts distinct SLO burn-rate alerts that fired for this application over the last 30 days, sourced from Davis CUSTOM_ALERT problems. Alert names follow the tenant convention '<${APP_CI_LABEL}> - SLO <name> for Availability or Performance Burn Rate is above <threshold>', so the owning app is the 3-character token before the first ' - '. The table lists one row per SLO, split by burn type (Availability vs Performance), with how many times it fired, how many of those problems are still active, and when it last fired — sorted by fire count so the noisiest SLO surfaces first. Click any row to open that SLO's most recent burn-rate problem in the Problems app. IMPORTANT CAVEAT: this measures burn-rate alerts that FIRED, not alert configurations that EXIST. A correctly configured burn-rate alert on a consistently healthy SLO produces no problems and will not appear here, so a fail can mean either 'no alert configured' or 'alert configured and never breached'. Alert definitions live in anomaly-detector settings objects, which DQL cannot read; resolving this distinction requires an app function against the settings API, the same way the Guardians and SLO Dashboards checks work.`,
+      `Detects SLO breaches and notifies teams before customer impact. Counts distinct SLO burn-rate alerts that fired for this application over the last 30 days, sourced from Davis CUSTOM_ALERT problems. Alert names follow the tenant convention '<${APP_ID_LABEL}> - SLO <name> for Availability or Performance Burn Rate is above <threshold>', so the owning app is the 3-character token before the first ' - '. The table lists one row per SLO, split by burn type (Availability vs Performance), with how many times it fired, how many of those problems are still active, and when it last fired — sorted by fire count so the noisiest SLO surfaces first. Click any row to open that SLO's most recent burn-rate problem in the Problems app. IMPORTANT CAVEAT: this measures burn-rate alerts that FIRED, not alert configurations that EXIST. A correctly configured burn-rate alert on a consistently healthy SLO produces no problems and will not appear here, so a fail can mean either 'no alert configured' or 'alert configured and never breached'. Alert definitions live in anomaly-detector settings objects, which DQL cannot read; resolving this distinction requires an app function against the settings API, the same way the Guardians and SLO Dashboards checks work.`,
     passLogic:
       `Pass: at least one distinct SLO burn-rate alert fired for this application in the last 30 days. Fail: none fired (see the caveat above — this may be a healthy app rather than an unconfigured one).`,
     guidance:
-      `Create a burn-rate alert for each critical SLO. In Dynatrace, add a metric event / anomaly detector on the SLO's error-budget burn rate and name it following the '<${APP_CI_LABEL}> - SLO <SLO name> for Availability or Performance Burn Rate is above <threshold>' convention — the leading 3-letter ${APP_CI_LABEL} token is what attributes the alert to this application. Route the resulting problem to the team via the '<${APP_CI_LABEL}> Production Dynatrace Alerts' workflow (see L3 ITSM Integration). Fast-burn (2% budget in 1h) and slow-burn (5% in 6h) thresholds are the standard pair.`,
+      `Create a burn-rate alert for each critical SLO. In Dynatrace, add a metric event / anomaly detector on the SLO's error-budget burn rate and name it following the '<${APP_ID_LABEL}> - SLO <SLO name> for Availability or Performance Burn Rate is above <threshold>' convention — the leading 3-letter ${APP_ID_LABEL} token is what attributes the alert to this application. Route the resulting problem to the team via the '<${APP_ID_LABEL}> Production Dynatrace Alerts' workflow (see L3 ITSM Integration). Fast-burn (2% budget in 1h) and slow-burn (5% in 6h) thresholds are the standard pair.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-30d
+    detailQuery: (appId: string) => `fetch dt.davis.problems, from:now()-30d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
 | filter event.category == "CUSTOM_ALERT"
 | filter contains(lower(event.name), "burn rate")
-| fieldsAdd appci = lower(trim(splitString(event.name, " - ")[0]))
-| filter appci == lower("${appCI}")
+| fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
+| filter appId == lower("${appId}")
 | fieldsAdd burnType = if(contains(event.name, "Performance Burn Rate"), "Performance", else: "Availability")
 | fieldsAdd rest = coalesce(splitString(event.name, " - SLO ")[1], event.name)
 | fieldsAdd slo = trim(splitString(splitString(rest, " for Availability Burn Rate")[0], " for Performance Burn Rate")[0])
@@ -1297,12 +1297,12 @@ fetch events, from:now()-30d
 | fields slo, burnType, fired, active, lastFired, problemId
 | limit 200`,
     problemRowClick: true,
-    secondaryQuery: (appCI: string) => `fetch dt.davis.problems, from:now()-30d
+    secondaryQuery: (appId: string) => `fetch dt.davis.problems, from:now()-30d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
 | filter event.category == "CUSTOM_ALERT"
 | filter contains(lower(event.name), "burn rate")
-| fieldsAdd appci = lower(trim(splitString(event.name, " - ")[0]))
-| filter appci == lower("${appCI}")
+| fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
+| filter appId == lower("${appId}")
 | fieldsAdd burnType = if(contains(event.name, "Performance Burn Rate"), "Performance", else: "Availability")
 | summarize alerts = count(), by:{timestamp = bin(timestamp, 1d), burnType}
 | sort timestamp asc`,
@@ -1310,17 +1310,17 @@ fetch events, from:now()-30d
     secondaryLabel: "Burn-rate alerts fired per day, by burn type (30d)",
     scorecardSnippet: `// Davis CUSTOM_ALERT problems raised by SLO burn-rate metric events.
 // Naming convention (verified across ARL/BBT/CCL/CJQ/EBI):
-//   "<${APP_CI_LABEL}> - SLO <name> for Availability or Performance Burn Rate is above <threshold>"
+//   "<${APP_ID_LABEL}> - SLO <name> for Availability or Performance Burn Rate is above <threshold>"
 fetch dt.davis.problems, from:now()-30d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
 | filter event.category == "CUSTOM_ALERT"
 | filter contains(lower(event.name), "burn rate")
-| fieldsAdd appci = lower(trim(splitString(event.name, " - ")[0]))
-| filter stringLength(appci) == 3
+| fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
+| filter stringLength(appId) == 3
 | summarize
     burnAlerts = countDistinct(event.name),
     burnFired  = count(),
-  by:{appci}
+  by:{appId}
 
 // Pass: burnAlerts > 0
 // CAVEAT: detects alerts that FIRED, not alert configs that EXIST.
@@ -1336,12 +1336,12 @@ fetch dt.davis.problems, from:now()-30d
     passLogic:
       `Pass: at least one autoscaling target (Auto Scaling Group, ECS scalable target, or EKS nodegroup) is tagged with this application. Fail: the app has cloud resources but none of them autoscale. N/A: the app has no cloud footprint at all, so autoscaling does not apply.`,
     guidance:
-      `Tag autoscaling resources with '${APP_CI_LABEL}:<code>' at the cloud-provider level so they are attributable. For workloads showing Pinned elasticity, review whether min and max capacity should differ — a pinned group provides no elasticity during demand spikes. For Kubernetes, note that HPA/KEDA/Karpenter configuration is not yet evaluated by this check; if your team relies on one of those, coordinate with the Dynatrace platform team on the Kubernetes YAML-based evaluation, and reference the existing HRD auto-scaling validation process (config + log based) rather than duplicating it.`,
+      `Tag autoscaling resources with '${APP_ID_LABEL}:<code>' at the cloud-provider level so they are attributable. For workloads showing Pinned elasticity, review whether min and max capacity should differ — a pinned group provides no elasticity during demand spikes. For Kubernetes, note that HPA/KEDA/Karpenter configuration is not yet evaluated by this check; if your team relies on one of those, coordinate with the Dynatrace platform team on the Kubernetes YAML-based evaluation, and reference the existing HRD auto-scaling validation process (config + log based) rather than duplicating it.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `smartscapeNodes "AWS*"
+    detailQuery: (appId: string) => `smartscapeNodes "AWS*"
 | filter matchesValue(type, "AWS_AUTOSCALING_AUTOSCALINGGROUP", "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET", "AWS_EKS_NODEGROUP")
-| fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
-| filter lower(${APP_CI_CLOUD_TAG}) == lower("${appCI}")
+| fieldsFlatten \`tags:aws\`, fields:{${APP_ID_CLOUD_TAG}}
+| filter lower(${APP_ID_CLOUD_TAG}) == lower("${appId}")
 | fieldsAdd mechanism = if(type == "AWS_AUTOSCALING_AUTOSCALINGGROUP", "EC2 Auto Scaling Group",
     else: if(type == "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET", "ECS Service Auto Scaling",
       else: "EKS Managed Nodegroup"))
@@ -1355,10 +1355,10 @@ fetch dt.davis.problems, from:now()-30d
 | fields name = displayName, mechanism, region = aws.region, minSize, maxSize, desired, elasticity, entityId = id
 | limit 500`,
     cloudResourceRowClick: true,
-    secondaryQuery: (appCI: string) => `smartscapeNodes "AWS*"
+    secondaryQuery: (appId: string) => `smartscapeNodes "AWS*"
 | filter matchesValue(type, "AWS_AUTOSCALING_AUTOSCALINGGROUP", "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET", "AWS_EKS_NODEGROUP")
-| fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
-| filter lower(${APP_CI_CLOUD_TAG}) == lower("${appCI}")
+| fieldsFlatten \`tags:aws\`, fields:{${APP_ID_CLOUD_TAG}}
+| filter lower(${APP_ID_CLOUD_TAG}) == lower("${appId}")
 | fieldsAdd mechanism = if(type == "AWS_AUTOSCALING_AUTOSCALINGGROUP", "EC2 Auto Scaling Group",
     else: if(type == "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET", "ECS Service Auto Scaling",
       else: "EKS Managed Nodegroup"))
@@ -1377,14 +1377,14 @@ fetch dt.davis.problems, from:now()-30d
 // cloudTotal is carried alongside so the check can distinguish
 // "no cloud at all" (n/a) from "has cloud, nothing autoscales" (fail).
 smartscapeNodes "AWS*"
-| fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
-| filter isNotNull(${APP_CI_CLOUD_TAG})
+| fieldsFlatten \`tags:aws\`, fields:{${APP_ID_CLOUD_TAG}}
+| filter isNotNull(${APP_ID_CLOUD_TAG})
 | summarize
     cloudTotal = count(),
     asgCount   = countIf(type == "AWS_AUTOSCALING_AUTOSCALINGGROUP"),
     ecsScale   = countIf(type == "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET"),
     ngCount    = countIf(type == "AWS_EKS_NODEGROUP"),
-  by:{appci = lower(${APP_CI_CLOUD_TAG})}
+  by:{appId = lower(${APP_ID_CLOUD_TAG})}
 | fieldsAdd scaleTargets = asgCount + ecsScale + ngCount
 
 // Pass: scaleTargets > 0
@@ -1403,7 +1403,7 @@ smartscapeNodes "AWS*"
     guidance:
       "Adopt the Davis forecast analyzer for the metrics that drive capacity decisions — CPU and memory saturation, request rate, disk fill rate, and queue depth. Run it from a scheduled workflow or a notebook and alert on the predicted breach rather than the actual one, which is what converts monitoring from reactive to proactive. Start with a single high-value metric on a tier-1 application to prove the pattern, then template it. Once forecast analyzer runs exist, this check can read them directly from Automation Engine action executions with no schema work.",
     chartType: "none",
-    detailQuery: (_appCI: string) => `data record(status = "not_adopted")
+    detailQuery: (_appId: string) => `data record(status = "not_adopted")
 | fieldsAdd message = "Davis predictive forecasting is not in use anywhere in this tenant. Zero forecast-analyzer actions found in 30 days of workflow executions."`,
     scorecardSnippet: `// ── NOT ADOPTED ── scored as fail for every app, by design ───────────
 // Verified 2026-08-28: 30d of Automation Engine ACTION_EXECUTION events
@@ -1418,7 +1418,7 @@ smartscapeNodes "AWS*"
 //   | filter event.provider == "AUTOMATION_ENGINE"
 //   | filter event.type == "ACTION_EXECUTION"
 //   | filter \`dt.automation_engine.action.app\` == "dynatrace.davis.analyzers"
-//   | summarize forecastRuns = count(), by:{appci}
+//   | summarize forecastRuns = count(), by:{appId}
 //
 // Pass: forecastRuns > 0`,
   },
@@ -1427,17 +1427,17 @@ smartscapeNodes "AWS*"
     level: "L4",
     levelColor: "#B23BE4",
     description:
-      `Measures the reliability impact of each release by correlating deployment events with Site Reliability Guardian validations over the last 30 days. Deployments come from CUSTOM_DEPLOYMENT events (the same source as the L3 CI/CD check); validations come from SRG SDLC_EVENT records, which carry the owning app in dt.srg.tags.${APP_CI_CLOUD_TAG} along with the overall result and a per-objective pass/warn/fail summary. The distinguishing signal is the trigger type: a guardian fired BY a deployment is genuine release impact tracking, whereas one running on a cron schedule is periodic health reporting that happens to exist. The table lists each validation with its guardian, result, objective breakdown, and trigger; click a row to open that guardian's validation results. The chart overlays deployments against guardian validations per day, which makes the correlation gap immediately visible — bars of deployments with no matching validation are releases that shipped unvalidated. Tenant status: 3 applications run guardian validations, all on schedules; none is deploy-triggered yet.`,
+      `Measures the reliability impact of each release by correlating deployment events with Site Reliability Guardian validations over the last 30 days. Deployments come from CUSTOM_DEPLOYMENT events (the same source as the L3 CI/CD check); validations come from SRG SDLC_EVENT records, which carry the owning app in dt.srg.tags.${APP_ID_CLOUD_TAG} along with the overall result and a per-objective pass/warn/fail summary. The distinguishing signal is the trigger type: a guardian fired BY a deployment is genuine release impact tracking, whereas one running on a cron schedule is periodic health reporting that happens to exist. The table lists each validation with its guardian, result, objective breakdown, and trigger; click a row to open that guardian's validation results. The chart overlays deployments against guardian validations per day, which makes the correlation gap immediately visible — bars of deployments with no matching validation are releases that shipped unvalidated. Tenant status: 3 applications run guardian validations, all on schedules; none is deploy-triggered yet.`,
     passLogic:
       "Pass: at least one guardian validation was triggered by a deployment event (trigger type is neither Schedule nor Manual). Warn: guardian validations are running but only on a schedule. Fail: deployments occur with no guardian validation at all, or neither exists. Only a genuine pass scores toward the L4 total.",
     guidance:
-      `Change the guardian's workflow trigger from a schedule to an event trigger matched on CUSTOM_DEPLOYMENT events for the application, so every release is automatically validated against its SLOs. In the workflow, set the validation timeframe to the window immediately following the deployment. Pair this with the L2 Site Reliability Guardians check — a guardian must exist and carry the ${APP_CI_FIELD} tag before it can be wired to deployments. Teams already onboarded through the Jira/Terraform SRE onboarding pipeline get the guardian created automatically; the remaining step is the deployment trigger.`,
+      `Change the guardian's workflow trigger from a schedule to an event trigger matched on CUSTOM_DEPLOYMENT events for the application, so every release is automatically validated against its SLOs. In the workflow, set the validation timeframe to the window immediately following the deployment. Pair this with the L2 Site Reliability Guardians check — a guardian must exist and carry the ${APP_ID_FIELD} tag before it can be wired to deployments. Teams already onboarded through the Jira/Terraform SRE onboarding pipeline get the guardian created automatically; the remaining step is the deployment trigger.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch events, from:now()-30d
+    detailQuery: (appId: string) => `fetch events, from:now()-30d
 | filter event.kind == "SDLC_EVENT"
 | filter event.type == "validation" and event.status == "finished"
-| fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"${APP_CI_CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
-| filter appci == lower("${appCI}")
+| fieldsAdd appId = lower(splitString(splitString(dt.srg.tags, "\\"${APP_ID_CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
+| filter appId == lower("${appId}")
 | fieldsAdd trigger = coalesce(\`dt.automation_engine.workflow_execution.trigger.type\`, "Manual")
 | fieldsAdd objectives = concat(
     splitString(splitString(dt.srg.validation.summary, "\\"pass\\":")[1], ",")[0], " pass / ",
@@ -1447,16 +1447,16 @@ smartscapeNodes "AWS*"
 | fields guardian = dt.srg.name, result = validation.result, objectives, trigger, timestamp, guardianId = dt.srg.id
 | limit 200`,
     guardianRowClick: true,
-    secondaryQuery: (appCI: string) => `fetch events, from:now()-30d
+    secondaryQuery: (appId: string) => `fetch events, from:now()-30d
 | filter event.type == "CUSTOM_DEPLOYMENT"
-| filter isNotNull(application_ci) and lower(application_ci) == lower("${appCI}")
+| filter isNotNull(application_ci) and lower(application_ci) == lower("${appId}")
 | fieldsAdd series = "Deployments"
 | append [
     fetch events, from:now()-30d
     | filter event.kind == "SDLC_EVENT"
     | filter event.type == "validation" and event.status == "finished"
-    | fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"${APP_CI_CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
-    | filter appci == lower("${appCI}")
+    | fieldsAdd appId = lower(splitString(splitString(dt.srg.tags, "\\"${APP_ID_CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
+    | filter appId == lower("${appId}")
     | fieldsAdd series = "Guardian validations"
   ]
 | summarize n = count(), by:{timestamp = bin(timestamp, 1d), series}
@@ -1467,7 +1467,7 @@ smartscapeNodes "AWS*"
 fetch events, from:now()-30d
 | filter event.type == "CUSTOM_DEPLOYMENT"
 | filter isNotNull(application_ci)
-| summarize deployCount = count(), by:{appci = lower(application_ci)}
+| summarize deployCount = count(), by:{appId = lower(application_ci)}
 
 // Site Reliability Guardian validations. SRG emits SDLC_EVENTs carrying
 // dt.srg.tags; trigger.type separates a deploy-triggered guardian (the
@@ -1475,15 +1475,15 @@ fetch events, from:now()-30d
 fetch events, from:now()-30d
 | filter event.kind == "SDLC_EVENT"
 | filter event.type == "validation" and event.status == "finished"
-| fieldsAdd appci = lower(splitString(splitString(
-    dt.srg.tags, "\\"${APP_CI_CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
-| filter isNotNull(appci)
+| fieldsAdd appId = lower(splitString(splitString(
+    dt.srg.tags, "\\"${APP_ID_CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
+| filter isNotNull(appId)
 | fieldsAdd trig = coalesce(
     \`dt.automation_engine.workflow_execution.trigger.type\`, "Manual")
 | summarize
     srgRuns           = count(),
     srgEventTriggered = countIf(trig != "Schedule" and trig != "Manual"),
-  by:{appci}
+  by:{appId}
 
 // Pass: srgEventTriggered > 0        (guardian fired by a deployment)
 // Warn: srgRuns > 0                  (scheduled only, not deploy-triggered)
@@ -1499,9 +1499,9 @@ fetch events, from:now()-30d
     passLogic:
       "Fail for all applications — no error-budget data reaches change management today. Scored as fail (not N/A) by design so the process gap stays visible. Will be wired to real data once a gate exists.",
     guidance:
-      `Implement the gate in two halves. In the pipeline: call the Site Reliability Guardian before deploying and fail the stage when the remaining error budget is below threshold (for example under 20%) — Harness supports this as a pre-deployment step, and the SRE onboarding pipeline already creates the guardian. In change management: emit a bizevent carrying the ${APP_CI_LABEL}, the SLO, remaining budget, and the gate decision, and push that into the ServiceNow change record so the approval reflects current reliability. The ServiceNow integration does not exist yet in this tenant and is the blocking dependency.`,
+      `Implement the gate in two halves. In the pipeline: call the Site Reliability Guardian before deploying and fail the stage when the remaining error budget is below threshold (for example under 20%) — Harness supports this as a pre-deployment step, and the SRE onboarding pipeline already creates the guardian. In change management: emit a bizevent carrying the ${APP_ID_LABEL}, the SLO, remaining budget, and the gate decision, and push that into the ServiceNow change record so the approval reflects current reliability. The ServiceNow integration does not exist yet in this tenant and is the blocking dependency.`,
     chartType: "none",
-    detailQuery: (_appCI: string) => `data record(status = "not_configured")
+    detailQuery: (_appId: string) => `data record(status = "not_configured")
 | fieldsAdd message = "No error budget gating detected. No ServiceNow workflow action exists tenant-wide; alert routing uses Microsoft Teams and email only."`,
     scorecardSnippet: `// ── NOT CONFIGURED ── scored as fail for every app, by design ────────
 // Verified 2026-08-28: no ServiceNow action exists tenant-wide. The only
@@ -1512,11 +1512,11 @@ fetch events, from:now()-30d
 //
 //   fetch bizevents, from:now()-30d
 //   | filter event.type == "slo.errorbudget.gate"
-//   | filter lower(${APP_CI_FIELD}) == lower("<${APP_CI_LABEL}>")
+//   | filter lower(${APP_ID_FIELD}) == lower("<${APP_ID_LABEL}>")
 //   | summarize
 //       gateChecks  = count(),
 //       gateBlocked = countIf(gate.decision == "blocked"),
-//     by:{${APP_CI_FIELD}}
+//     by:{${APP_ID_FIELD}}
 //
 // Pass: gateChecks > 0  (error budget is consulted before release)`,
   },
@@ -1531,13 +1531,13 @@ fetch events, from:now()-30d
     passLogic:
       `Pass: at least one Automation Engine workflow whose title starts with this application's 3-letter code has executed in the last 30 days.`,
     guidance:
-      `Identify repetitive manual tasks by reviewing incident post-mortems and runbooks. Build a Dynatrace Automation workflow to automate them, and name it with this app's 3-letter code as the leading token (e.g. '<${APP_CI_LABEL}> — <task name>') so it's attributed to this application here.`,
+      `Identify repetitive manual tasks by reviewing incident post-mortems and runbooks. Build a Dynatrace Automation workflow to automate them, and name it with this app's 3-letter code as the leading token (e.g. '<${APP_ID_LABEL}> — <task name>') so it's attributed to this application here.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.system.events, from:now()-30d
+    detailQuery: (appId: string) => `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appciFromWorkflowTitle("wfCode")}
-| filter wfCode == lower("${appCI}")
+${appIdFromWorkflowTitle("wfCode")}
+| filter wfCode == lower("${appId}")
 | summarize
     executions = countDistinct(\`dt.automation_engine.workflow_execution.id\`),
     succeeded = countIf(\`dt.automation_engine.state\` == "SUCCESS"),
@@ -1550,10 +1550,10 @@ ${appciFromWorkflowTitle("wfCode")}
     scorecardSnippet: `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appciFromWorkflowTitle("wfAppci")}
-| filter stringLength(wfAppci) == 3
+${appIdFromWorkflowTitle("wfAppId")}
+| filter stringLength(wfAppId) == 3
 | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`),
-  by:{wfAppci}
+  by:{wfAppId}
 
 // Pass: workflowCount > 0
 //
@@ -1573,20 +1573,20 @@ ${appciFromWorkflowTitle("wfAppci")}
     guidance:
       "Build automation workflows for: alert noise suppression, auto-scaling triggers, incident auto-remediation, and post-incident reporting. Name the workflow with this app's 3-letter code as the leading token so it's attributed here. Use the Dynatrace Automation Workflow catalog for pre-built templates that integrate with Davis problems.",
     chartType: "bar",
-    detailQuery: (appCI: string) => `fetch dt.system.events, from:now()-30d
+    detailQuery: (appId: string) => `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appciFromWorkflowTitle("wfCode")}
-| filter wfCode == lower("${appCI}")
+${appIdFromWorkflowTitle("wfCode")}
+| filter wfCode == lower("${appId}")
 | summarize count = countDistinct(\`dt.automation_engine.workflow_execution.id\`), by:{timestamp = bin(timestamp, 1d)}
 | sort timestamp asc`,
     scorecardSnippet: `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appciFromWorkflowTitle("wfAppci")}
-| filter stringLength(wfAppci) == 3
+${appIdFromWorkflowTitle("wfAppId")}
+| filter stringLength(wfAppId) == 3
 | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`),
-  by:{wfAppci}
+  by:{wfAppId}
 
 // Pass: workflowCount > 0  (same signal as Repetitive Tasks Identified)
 // FIXED 2026-08-30 — see Repetitive Tasks Identified.`,
@@ -1599,17 +1599,17 @@ ${appciFromWorkflowTitle("wfAppci")}
       "Tracks whether end-to-end automated remediation is configured — where a Davis problem triggers a workflow that automatically resolves the issue without human intervention (e.g., restarting a service, scaling up resources, rolling back a deployment). This is the highest level of autonomous operations. Not yet detected.",
     passLogic: "N/A: not yet detected.",
     guidance:
-      `Implement E2E remediation workflows that: (1) trigger on specific Davis problem types, (2) execute remediation steps (restart, scale, rollback), (3) verify resolution via SRG evaluation, and (4) create a problem task or post-mortem automatically. Tag the workflow's bizevent with the ${APP_CI_LABEL}.`,
+      `Implement E2E remediation workflows that: (1) trigger on specific Davis problem types, (2) execute remediation steps (restart, scale, rollback), (3) verify resolution via SRG evaluation, and (4) create a problem task or post-mortem automatically. Tag the workflow's bizevent with the ${APP_ID_LABEL}.`,
     chartType: "none",
-    detailQuery: (_appCI: string) => `data record(status = "not_enabled")
+    detailQuery: (_appId: string) => `data record(status = "not_enabled")
 | fieldsAdd message = "E2E remediation workflows not yet detected."`,
     scorecardSnippet: `// ── STUB ── not yet implemented ───────────────────────────────────────
 // When enabled, this will detect remediation workflows:
 //   fetch bizevents
 //   | filter event.type == "remediation.completed"
 //       or event.type == "auto.remediation.triggered"
-//   | filter lower(${APP_CI_FIELD}) == lower("<${APP_CI_LABEL}>")
-//   | summarize count = count(), by:{${APP_CI_FIELD}}`,
+//   | filter lower(${APP_ID_FIELD}) == lower("<${APP_ID_LABEL}>")
+//   | summarize count = count(), by:{${APP_ID_FIELD}}`,
   },
 
   "4. Incident Auto-Enrichment": {
@@ -1622,23 +1622,23 @@ ${appciFromWorkflowTitle("wfAppci")}
     guidance:
       `Configure alerting profiles in Dynatrace → Settings → Alerting. Assign non-default profiles to entities tagged with this application. Create automation workflows that tag problems with runbook links, owners, and severity context on creation.`,
     chartType: "table",
-    detailQuery: (appCI: string) => `fetch dt.davis.problems
+    detailQuery: (appId: string) => `fetch dt.davis.problems
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-${appciFromProblemTags()}
-| filter isNotNull(appci) and appci == lower("${appCI}")
+${appIdFromProblemTags()}
+| filter isNotNull(appId) and appId == lower("${appId}")
 | fieldsAdd isEnriched = toString(labels.alerting_profile) != "[\\"Default\\"]"
     and isNotNull(labels.alerting_profile)
 | summarize total = count(), enriched = countIf(isEnriched), by:{labels.alerting_profile}
 | sort enriched desc`,
     scorecardSnippet: `fetch dt.davis.problems
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-| fieldsAdd appci = ...
+| fieldsAdd appId = ...
 | fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"
     and isNotNull(labels.alerting_profile)
 | summarize
     totalProblems    = count(),
     enrichedProblems = countIf(hasItsmProfile == true),
-  by:{appci}
+  by:{appId}
 | fieldsAdd enrichPct = round(
     toDouble(enrichedProblems) * 100.0 / toDouble(totalProblems), decimals:0)
 
@@ -1655,15 +1655,15 @@ ${appciFromProblemTags()}
     guidance:
       "Configure AI-assisted postmortem generation using Dynatrace Davis Copilot or a custom workflow that creates structured postmortem documents in Notebooks or ARD after each P1/P2 incident resolves. Integrate with Jira or ServiceNow for problem task tracking (PTASK creation).",
     chartType: "none",
-    detailQuery: (_appCI: string) => `data record(status = "not_enabled")
+    detailQuery: (_appId: string) => `data record(status = "not_enabled")
 | fieldsAdd message = "AI Postmortem / PTASK detection not yet configured."`,
     scorecardSnippet: `// ── STUB ── not yet implemented ───────────────────────────────────────
 // When enabled, this will check for AI postmortems:
 //   fetch bizevents
 //   | filter event.type == "postmortem.created"
 //       or event.type == "ptask.created"
-//   | filter lower(${APP_CI_FIELD}) == lower("<${APP_CI_LABEL}>")
-//   | summarize count = count(), by:{${APP_CI_FIELD}}`,
+//   | filter lower(${APP_ID_FIELD}) == lower("<${APP_ID_LABEL}>")
+//   | summarize count = count(), by:{${APP_ID_FIELD}}`,
   },
 };
 

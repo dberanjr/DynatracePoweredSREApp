@@ -2,14 +2,14 @@
 // Signals (L2), AI Ops (L3), Proactive (L4), Problem Analytics, and the
 // Dependencies-tab service golden-signals table. See ../signalsModel.ts.
 import type { DemoFixture } from "../types";
-import { extractAppCI } from "../portfolio";
+import { extractAppId } from "../portfolio";
 import { servicesForApp } from "../services";
 import {
   EVENT_CATEGORIES, EVENT_POINTS, EVENT_STEP, SVC_STEP, EventCategory,
   eventModel, inventory, problemModel, svcSignals, svcTotals, tsResult,
 } from "../signalsModel";
 
-const app = extractAppCI;
+const app = extractAppId;
 const rows = (records: Record<string, unknown>[]) => ({ records });
 const one = (key: string, value: number) => rows([{ [key]: value }]);
 const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);

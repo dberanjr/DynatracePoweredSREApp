@@ -5,7 +5,7 @@ import { useDql } from "../hooks/useDql";
 import { functions } from "@dynatrace-sdk/app-utils";
 import { LOOKUP_TABLES, LookupTableConfig } from "./lookupTables";
 import { isDemoMode } from "../demo/demoMode";
-import { APP_CI_FIELD, APP_CI_LABEL } from "../settings/appSettings";
+import { APP_ID_FIELD, APP_ID_LABEL } from "../settings/appSettings";
 import { parseCsv, toCsv, unguardCell } from "./lookupCsv";
 import {
   INK,
@@ -19,7 +19,7 @@ import {
   tableRowBorder,
 } from "../components/redesignStyles";
 
-const APPCI_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const APP_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 type Row = Record<string, string>;
 type ImportMode = "merge" | "replace";
@@ -67,7 +67,7 @@ const buttonStyle = (kind: "primary" | "danger" | "plain", disabled = false): Re
 // Returns an error message, or null when the row is acceptable. `others` excludes the row being edited.
 function validateRow(cfg: LookupTableConfig, row: Row, others: Row[]): string | null {
   for (const c of cfg.columns) if (c.required && !row[c.key].trim()) return `${c.label.replace(/ \(.*\)$/, "")} is required.`;
-  if (!APPCI_PATTERN.test(row[cfg.appciKey].trim())) return `${APP_CI_LABEL} may only contain letters, digits, _ and -.`;
+  if (!APP_ID_PATTERN.test(row[cfg.appIdKey].trim())) return `${APP_ID_LABEL} may only contain letters, digits, _ and -.`;
   const key = rowKey(cfg, row);
   if (others.some((r) => rowKey(cfg, r) === key)) return `A row for ${cfg.keyLabel} "${cfg.keyColumns.map((k) => row[k].trim()).join(" / ")}" already exists.`;
   return null;
@@ -249,7 +249,7 @@ const LookupEditor = ({ cfg }: { cfg: LookupTableConfig }) => {
     setSaving(true);
     setSaveResult(null);
     try {
-      const res = await functions.call("saveLookup", { data: { table: cfg.id, rows, appciField: APP_CI_FIELD } });
+      const res = await functions.call("saveLookup", { data: { table: cfg.id, rows, appIdField: APP_ID_FIELD } });
       const body = (await res.json()) as { saved: number; backedUp: number };
       setBaseline(serialize(rows));
       setConfirmSave(false);

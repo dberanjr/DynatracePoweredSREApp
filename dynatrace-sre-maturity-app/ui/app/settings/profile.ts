@@ -1,4 +1,4 @@
-import { APP_CI_FIELD, SRE_CONFIG } from "./appSettings";
+import { APP_ID_FIELD, SRE_CONFIG } from "./appSettings";
 import { dqlColumn, type ProfileField } from "./lookupDefs";
 
 // Shared by the application profile banners (AppIdentityBar, AppContextBanner) and the leaderboard:
@@ -7,7 +7,7 @@ import { dqlColumn, type ProfileField } from "./lookupDefs";
 export const PROFILE_FIELDS: ProfileField[] = SRE_CONFIG.profileFields;
 
 /** `fields` list for the profile lookup query. */
-export const PROFILE_SELECT = ["name", dqlColumn(APP_CI_FIELD), ...PROFILE_FIELDS.map((f) => dqlColumn(f.alias))].join(", ");
+export const PROFILE_SELECT = ["name", dqlColumn(APP_ID_FIELD), ...PROFILE_FIELDS.map((f) => dqlColumn(f.alias))].join(", ");
 
 // The ServiceNow-import fallback returns raw records with their own column names.
 const FALLBACK_KEYS: Record<string, string[]> = {

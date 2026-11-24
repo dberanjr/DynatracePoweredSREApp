@@ -9,23 +9,23 @@ import { BULK_L1_QUERY, BULK_L2_QUERY, BULK_L3_QUERY, BULK_L4_QUERY, BULK_L5_QUE
 
 
 
-import { APP_CI_FIELD, LOAD, APP_CI_MAX_LENGTH } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_MAX_LENGTH } from "../settings/appSettings";
 import { CRITICAL_TIERS_NOTE, tierBarColor, tierInfo } from "../settings/profile";
 // ── CMDB info ──
 // Primary: CMDB lookup table
 const CMDB_LOOKUP_QUERY = `${LOAD.cmdb}
-| fieldsAdd appci = lower(${APP_CI_FIELD})
-| fields appci, ciname = name, tier = business_criticality, app_owner_name = owned_by`;
+| fieldsAdd appId = lower(${APP_ID_FIELD})
+| fields appId, ciname = name, tier = business_criticality, app_owner_name = owned_by`;
 
 // Fallback: bizevents ServiceNow import
 const CMDB_FALLBACK_QUERY = `fetch bizevents, from:now()-48h
 | filter event.type == "workflow.import.servicenow.appci"
-| fieldsAdd appci = lower(${APP_CI_FIELD})
-| filter isNotNull(appci)
-| filter stringLength(appci) <= ${APP_CI_MAX_LENGTH}
+| fieldsAdd appId = lower(${APP_ID_FIELD})
+| filter isNotNull(appId)
+| filter stringLength(appId) <= ${APP_ID_MAX_LENGTH}
 | sort timestamp desc
-| dedup appci
-| fields appci, ciname, tier, app_owner_name`;
+| dedup appId
+| fields appId, ciname, tier, app_owner_name`;
 
 // ── Pillar config (must match scorecard max values) ──
 const pillarDefs = [
@@ -38,7 +38,7 @@ const pillarDefs = [
 const TOTAL_MAX = pillarDefs.reduce((s, p) => s + p.max, 0); // 28
 
 interface AppScore {
-  appci: string;
+  appId: string;
   name: string;
   tier: string;
   owner: string;
@@ -163,7 +163,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
     // Build lookup maps
     const makeMap = (records: Record<string, unknown>[] | undefined, scoreKey: string) => {
       const m = new Map<string, number>();
-      (records || []).forEach((r) => m.set(String(r[APP_CI_FIELD]), Number(r[scoreKey] || 0)));
+      (records || []).forEach((r) => m.set(String(r[APP_ID_FIELD]), Number(r[scoreKey] || 0)));
       return m;
     };
     const l1Map = makeMap(l1Data.records as Record<string, unknown>[], "l1Score");
@@ -176,28 +176,28 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
     // DQL equivalent), so it's never counted in the DQL-side l3Score above —
     // merge the live bulk count in here instead of double-counting.
     const runbookCounts = runbookCountsData?.counts ?? {};
-    Array.from(l3Map.keys()).forEach((appci) => {
-      if ((runbookCounts[appci] ?? 0) > 0) {
-        l3Map.set(appci, (l3Map.get(appci) ?? 0) + 1);
+    Array.from(l3Map.keys()).forEach((appId) => {
+      if ((runbookCounts[appId] ?? 0) > 0) {
+        l3Map.set(appId, (l3Map.get(appId) ?? 0) + 1);
       }
     });
 
     const cmdbMap = new Map<string, Record<string, unknown>>();
     ((cmdbData?.records || []) as Record<string, unknown>[]).forEach((r) => {
-      cmdbMap.set(String(r.appci), r);
+      cmdbMap.set(String(r.appId), r);
     });
 
-    // All unique appCIs from L1
-    const allApps: AppScore[] = Array.from(l1Map.entries()).map(([appci, l1]) => {
-      const l2 = l2Map.get(appci) || 0;
-      const l3 = l3Map.get(appci) || 0;
-      const l4 = l4Map.get(appci) || 0;
-      const l5 = l5Map.get(appci) || 0;
+    // All unique appIds from L1
+    const allApps: AppScore[] = Array.from(l1Map.entries()).map(([appId, l1]) => {
+      const l2 = l2Map.get(appId) || 0;
+      const l3 = l3Map.get(appId) || 0;
+      const l4 = l4Map.get(appId) || 0;
+      const l5 = l5Map.get(appId) || 0;
       const total = l1 + l2 + l3 + l4 + l5;
       const pct = Math.round((total / TOTAL_MAX) * 100);
-      const cmdb = cmdbMap.get(appci);
+      const cmdb = cmdbMap.get(appId);
       return {
-        appci,
+        appId,
         name: String(cmdb?.ciname || ""),
         tier: String(cmdb?.tier || ""),
         owner: String(cmdb?.app_owner_name || ""),
@@ -335,7 +335,7 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
             const isTop3 = i < 3;
 
             return (
-              <div key={app.appci} style={{
+              <div key={app.appId} style={{
                 display: "grid",
                 gridTemplateColumns: "32px 2fr 1fr 1fr 1fr 1fr 1fr 1fr 1.2fr",
                 padding: "10px 20px",
@@ -349,13 +349,13 @@ export const MaturityLeaderboard = ({ onTierData }: { onTierData?: (data: TierMa
                   {getRankDisplay(i)}
                 </span>
 
-                {/* App info — 4 lines: name, appci, tier, owner */}
+                {/* App info — 4 lines: name, appId, tier, owner */}
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: "#1414D3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {app.name || app.appci.toUpperCase()}
+                    {app.name || app.appId.toUpperCase()}
                   </div>
                   <div style={{ fontSize: 10, color: "var(--sre-text-secondary)", lineHeight: 1.4, marginTop: 1 }}>
-                    <span style={{ fontWeight: 700 }}>{app.appci.toUpperCase()}</span>
+                    <span style={{ fontWeight: 700 }}>{app.appId.toUpperCase()}</span>
                     {app.tier ? <span> &middot; {tierInfo(app.tier).label}</span> : ""}
                     {app.owner ? <span> &middot; {app.owner}</span> : ""}
                   </div>

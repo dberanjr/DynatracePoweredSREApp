@@ -1,5 +1,5 @@
-import { APP_CI_FIELD, APP_CI_LABEL, LOOKUP_SETTINGS, CATALOG_SETTINGS } from "../settings/appSettings";
-import { APPCI_TOKEN, LOOKUP_DEFS, defaultLookupSettings, type LookupKey } from "../settings/lookupDefs";
+import { APP_ID_FIELD, APP_ID_LABEL, LOOKUP_SETTINGS, CATALOG_SETTINGS } from "../settings/appSettings";
+import { APP_ID_TOKEN, LOOKUP_DEFS, defaultLookupSettings, type LookupKey } from "../settings/lookupDefs";
 // Describes each lookup table the "Lookups" tab can maintain. Keep in sync with TABLES in
 // api/saveLookup.function.ts, which holds the authoritative validation and file layout.
 
@@ -10,15 +10,15 @@ export interface LookupColumn {
 }
 
 export interface LookupTableConfig {
-  id: "cmdb" | "entity_severity" | "appci_map";
+  id: "cmdb" | "entity_severity" | "app_map";
   tabLabel: string;
   title: string;
   description: string;
   path: string;
   backupPath: string;
   columns: LookupColumn[];
-  /** Column holding the AppCI (validated against APPCI_PATTERN). */
-  appciKey: string;
+  /** Column holding the application ID (validated against APP_ID_PATTERN). */
+  appIdKey: string;
   /** Columns normalised to lower case on save (consumers compare them lower-cased). */
   lowercase: string[];
   /** Columns that together identify a row; must be unique. */
@@ -38,11 +38,11 @@ const DEFAULT_TABLES: LookupTableConfig[] = [
     tabLabel: "CMDB owner mapping",
     title: "CMDB — Application Owner Mapping",
     description:
-      `Supplies application names, owners, criticality and status across the app (header ${APP_CI_LABEL} picker, scorecards, leaderboard, dependencies).`,
+      `Supplies application names, owners, criticality and status across the app (header ${APP_ID_LABEL} picker, scorecards, leaderboard, dependencies).`,
     path: "/lookups/sre/cmdb",
     backupPath: "/lookups/sre/cmdb_backup",
     columns: [
-      { key: `${APP_CI_FIELD}`, label: `${APP_CI_LABEL}`, required: true },
+      { key: `${APP_ID_FIELD}`, label: `${APP_ID_LABEL}`, required: true },
       { key: "name", label: "Name", required: true },
       { key: "operational_status", label: "Operational status" },
       { key: "business_criticality", label: "Business criticality" },
@@ -54,50 +54,50 @@ const DEFAULT_TABLES: LookupTableConfig[] = [
       { key: "managed_by.u_vp", label: "VP" },
       { key: "managed_by.u_director", label: "Director" },
     ],
-    appciKey: `${APP_CI_FIELD}`,
+    appIdKey: `${APP_ID_FIELD}`,
     lowercase: [],
-    keyColumns: [`${APP_CI_FIELD}`],
-    keyLabel: `${APP_CI_LABEL}`,
+    keyColumns: [`${APP_ID_FIELD}`],
+    keyLabel: `${APP_ID_LABEL}`,
   },
   {
     id: "entity_severity",
     tabLabel: "Critical services seed",
     title: "Critical Services — Entity Severity Seed",
     description:
-      `Which services or endpoints are critical for each ${APP_CI_LABEL}. The refresh-lookups-critical-services workflow reads this table and resolves each name to Dynatrace entity IDs. Entity names must match the service or endpoint name in Dynatrace exactly.`,
+      `Which services or endpoints are critical for each ${APP_ID_LABEL}. The refresh-lookups-critical-services workflow reads this table and resolves each name to Dynatrace entity IDs. Entity names must match the service or endpoint name in Dynatrace exactly.`,
     path: "/lookups/sre/entity_severity",
     backupPath: "/lookups/sre/entity_severity_backup",
     columns: [
-      { key: `${APP_CI_FIELD}`, label: `${APP_CI_LABEL}`, required: true },
+      { key: `${APP_ID_FIELD}`, label: `${APP_ID_LABEL}`, required: true },
       { key: "entity_name", label: "Entity name", required: true },
       { key: "severity", label: "Severity (critical, high, medium…)", required: true },
       { key: "business_impact", label: "Business impact" },
     ],
-    appciKey: "appci",
-    lowercase: ["appci", "severity"],
-    keyColumns: ["appci", "entity_name"],
-    keyLabel: `${APP_CI_LABEL} + entity name`,
+    appIdKey: APP_ID_FIELD,
+    lowercase: [APP_ID_FIELD, "severity"],
+    keyColumns: [APP_ID_FIELD, "entity_name"],
+    keyLabel: `${APP_ID_LABEL} + entity name`,
   },
   {
-    id: "appci_map",
-    tabLabel: `${APP_CI_LABEL} map`,
-    title: `${APP_CI_LABEL} Map — Application Tag to ${APP_CI_LABEL}`,
+    id: "app_map",
+    tabLabel: `${APP_ID_LABEL} map`,
+    title: `${APP_ID_LABEL} Map — Application Tag to ${APP_ID_LABEL}`,
     description:
-      `Translates the application name in your tenant's Application tag to its 3-letter ${APP_CI_LABEL}, so entities, hosts and problems can be scored without an ${APP_CI_FIELD} tag. Enter the name WITHOUT its environment suffix: the tag Application:BillingPortal::CRT (or ::SPT, ::PRD) is matched by the name billingportal. Names are matched case-insensitively. Several names can share one ${APP_CI_LABEL}; a name can have only one.`,
+      `Translates the application name in your tenant's Application tag to its 3-letter ${APP_ID_LABEL}, so entities, hosts and problems can be scored without an ${APP_ID_FIELD} tag. Enter the name WITHOUT its environment suffix: the tag Application:BillingPortal::CRT (or ::SPT, ::PRD) is matched by the name billingportal. Names are matched case-insensitively. Several names can share one ${APP_ID_LABEL}; a name can have only one.`,
     path: "/lookups/sre/app_map",
     backupPath: "/lookups/sre/app_map_backup",
     columns: [
       { key: "app_name", label: "Application name (no environment suffix)", required: true },
-      { key: `${APP_CI_FIELD}`, label: `${APP_CI_LABEL}`, required: true },
+      { key: `${APP_ID_FIELD}`, label: `${APP_ID_LABEL}`, required: true },
     ],
-    appciKey: `${APP_CI_FIELD}`,
-    lowercase: ["app_name", `${APP_CI_FIELD}`],
+    appIdKey: `${APP_ID_FIELD}`,
+    lowercase: ["app_name", `${APP_ID_FIELD}`],
     keyColumns: ["app_name"],
     keyLabel: "Application name",
   },
 ];
 
-const resolveCol = (c: string) => (c === APPCI_TOKEN ? APP_CI_FIELD : c);
+const resolveCol = (c: string) => (c === APP_ID_TOKEN ? APP_ID_FIELD : c);
 
 /** The app-managed table with Settings applied, or the table as the customer's own, read-only, when remapped. */
 function fromSettings(base: LookupTableConfig, key: LookupKey): LookupTableConfig {
@@ -112,7 +112,7 @@ function fromSettings(base: LookupTableConfig, key: LookupKey): LookupTableConfi
   for (const [f, d] of Object.entries(fields)) {
     const col = resolveCol(cur.columns[f] ?? "").trim();
     if (!col) continue; // not mapped
-    const label = f === "appId" ? APP_CI_LABEL : CATALOG_SETTINGS.labels[f] ?? d.label;
+    const label = f === "appId" ? APP_ID_LABEL : CATALOG_SETTINGS.labels[f] ?? d.label;
     columns.push({ key: col, label, required: f === "appId" || f === "name" || f === "appName" });
   }
   if (key === "cmdb") for (const e of CATALOG_SETTINGS.extras) columns.push({ key: e.column, label: e.label });
@@ -123,7 +123,7 @@ function fromSettings(base: LookupTableConfig, key: LookupKey): LookupTableConfi
     path: cur.path,
     backupPath: `${cur.path}_backup`,
     columns,
-    appciKey: idCol,
+    appIdKey: idCol,
     lowercase: [],
     keyColumns: [keyCol],
     readOnly: true,
@@ -132,5 +132,5 @@ function fromSettings(base: LookupTableConfig, key: LookupKey): LookupTableConfi
 }
 
 export const LOOKUP_TABLES: LookupTableConfig[] = DEFAULT_TABLES.map((t) =>
-  t.id === "cmdb" ? fromSettings(t, "cmdb") : t.id === "appci_map" ? fromSettings(t, "appciMap") : t
+  t.id === "cmdb" ? fromSettings(t, "cmdb") : t.id === "app_map" ? fromSettings(t, "appciMap") : t
 );

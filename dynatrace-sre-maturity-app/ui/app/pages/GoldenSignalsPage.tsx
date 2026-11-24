@@ -8,7 +8,7 @@ import { KpiCard } from "../components/KpiCard";
 import { ChartCard } from "../components/ChartCard";
 import { SparklineCard } from "../components/SparklineCard";
 
-import { APP_CI_FIELD } from "../settings/appSettings";
+import { APP_ID_FIELD } from "../settings/appSettings";
 // Auto-format microsecond durations into μs/ms/sec/min/hr
 const formatDurationUs = (us: number): string => {
   if (us >= 3600 * 1000000) return `${(us / (3600 * 1000000)).toFixed(1)} hr`;
@@ -151,22 +151,22 @@ function ServicePerformanceTable({ query }: { query: string }) {
 }
 
 interface Props {
-  appCI: string;
+  appId: string;
   timeframe: { from: string; to: string };
 }
 
 // ── Styled chart card with colored accent ──
 
 
-export const GoldenSignalsPage = ({ appCI, timeframe }: Props) => {
+export const GoldenSignalsPage = ({ appId, timeframe }: Props) => {
   const tf = `from:${timeframe.from}, to:${timeframe.to}`;
 
   // ── Service filter subquery ──
   // Latency keeps native microsecond unit so the chart auto-formats to ms/sec/min/hr
   const svcLookup = (metric: string, valueAlias: string = "val") => `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter lower(appId) == lower("${appId}")
 | dedup id
 | lookup [
     timeseries ${valueAlias} = ${metric}, ${tf}, interval:5m, by:{dt.entity.service}
@@ -184,8 +184,8 @@ export const GoldenSignalsPage = ({ appCI, timeframe }: Props) => {
   // ── KPI summary queries ──
   const totalRequestsQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter lower(appId) == lower("${appId}")
 | dedup id
 | lookup [
     timeseries val = sum(dt.service.request.count), ${tf}, interval:5m, by:{dt.entity.service}
@@ -196,8 +196,8 @@ export const GoldenSignalsPage = ({ appCI, timeframe }: Props) => {
 
   const totalErrorsQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter lower(appId) == lower("${appId}")
 | dedup id
 | lookup [
     timeseries val = sum(dt.service.request.failure_count), ${tf}, interval:5m, by:{dt.entity.service}
@@ -208,8 +208,8 @@ export const GoldenSignalsPage = ({ appCI, timeframe }: Props) => {
 
   const avgP90Query = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter lower(appId) == lower("${appId}")
 | dedup id
 | lookup [
     timeseries val = percentile(dt.service.request.response_time, 90), ${tf}, interval:5m, by:{dt.entity.service}
@@ -220,8 +220,8 @@ export const GoldenSignalsPage = ({ appCI, timeframe }: Props) => {
 
   const svcCountQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter lower(appId) == lower("${appId}")
 | dedup id
 | summarize \`Services\` = count()`;
 
@@ -229,8 +229,8 @@ export const GoldenSignalsPage = ({ appCI, timeframe }: Props) => {
   // ── Service summary table ──
   const serviceSummaryQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter lower(appci) == lower("${appCI}")
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter lower(appId) == lower("${appId}")
 | dedup id
 | lookup [
     timeseries req = sum(dt.service.request.count), ${tf}, interval:5m, by:{dt.entity.service}

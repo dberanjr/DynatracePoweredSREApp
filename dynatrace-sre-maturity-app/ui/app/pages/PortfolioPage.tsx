@@ -5,7 +5,7 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { MaturityLeaderboard, TierMaturityData } from "../components/MaturityLeaderboard";
 
-import { APP_CI_FIELD, APP_CI_LABEL, APP_CI_MAX_LENGTH } from "../settings/appSettings";
+import { APP_ID_FIELD, APP_ID_LABEL, APP_ID_MAX_LENGTH } from "../settings/appSettings";
 // --- Styled components ---
 
 function TierBadge({ tier }: { tier: string }) {
@@ -164,28 +164,28 @@ function PortfolioSummary({
 export const PortfolioPage = () => {
   const appInventoryQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_CI_FIELD}:' LD:appci"
-| filter isNotNull(appci)
-| fieldsAdd appci = upper(appci)
-| filter stringLength(appci) <= ${APP_CI_MAX_LENGTH}
-| dedup appci, id
+| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+| filter isNotNull(appId)
+| fieldsAdd appId = upper(appId)
+| filter stringLength(appId) <= ${APP_ID_MAX_LENGTH}
+| dedup appId, id
 | summarize serviceCount = count(),
-    by:{appci}
+    by:{appId}
 | lookup [
     fetch bizevents, from:now()-48h
     | filter event.type == "workflow.import.servicenow.appci"
-    | fieldsAdd ${APP_CI_FIELD} = upper(${APP_CI_FIELD})
+    | fieldsAdd ${APP_ID_FIELD} = upper(${APP_ID_FIELD})
     | sort timestamp desc
-    | dedup ${APP_CI_FIELD}
-    | fields ${APP_CI_FIELD}, ciname, tier, app_owner_name
-  ], sourceField:appci, lookupField:${APP_CI_FIELD}, prefix:"cmdb."
+    | dedup ${APP_ID_FIELD}
+    | fields ${APP_ID_FIELD}, ciname, tier, app_owner_name
+  ], sourceField:appId, lookupField:${APP_ID_FIELD}, prefix:"cmdb."
 | fields
-    AppCI = appci,
+    AppId = appId,
     Name = \`cmdb.ciname\`,
     Tier = \`cmdb.tier\`,
     Owner = \`cmdb.app_owner_name\`,
     Services = serviceCount
-| sort AppCI asc`;
+| sort AppId asc`;
 
 
   const { data: inventoryData, isLoading: invLoading } = useDqlWithCache({ query: appInventoryQuery });
@@ -285,7 +285,7 @@ export const PortfolioPage = () => {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr>
-                  {[APP_CI_LABEL, "Name", "Tier", "Owner", "Services"].map((col) => (
+                  {[APP_ID_LABEL, "Name", "Tier", "Owner", "Services"].map((col) => (
                     <th key={col} style={{
                       textAlign: "left",
                       padding: "10px 14px",
@@ -309,7 +309,7 @@ export const PortfolioPage = () => {
                 {invRecords.map((row, i) => (
                   <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : "var(--sre-table-stripe)" }}>
                     <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--sre-table-border)", fontWeight: 700, color: "#1414D3" }}>
-                      {String(row.AppCI || "—")}
+                      {String(row.AppId || "—")}
                     </td>
                     <td style={{ padding: "8px 14px", borderBottom: "1px solid var(--sre-table-border)", fontWeight: 600, color: "#1414D3" }}>
                       {String(row.Name || "—")}

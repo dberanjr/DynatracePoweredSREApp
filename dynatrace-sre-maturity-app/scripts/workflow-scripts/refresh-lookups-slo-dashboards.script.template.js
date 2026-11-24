@@ -1,5 +1,5 @@
-// Refreshes /lookups/slo-dashboards (appci -> dashboardCount) from dashboard
-// documents whose name starts with a 3-letter AppCI token and contains "SLO".
+// Refreshes /lookups/slo-dashboards (appId -> dashboardCount) from dashboard
+// documents whose name starts with a 3-letter application ID token and contains "SLO".
 export default async function () {
   // 1. Page through all dashboard documents
   const docs = [];
@@ -25,16 +25,16 @@ export default async function () {
     const name = d.name || '';
     if (!sloRe.test(name)) continue;
     if (!tokenRe.test(name)) continue;
-    const appci = name.slice(0, 3).toLowerCase();
-    counts[appci] = (counts[appci] || 0) + 1;
+    const appId = name.slice(0, 3).toLowerCase();
+    counts[appId] = (counts[appId] || 0) + 1;
   }
 
   // 3. Build CSV (header skipped on upload via skippedRecords:1)
-  const appcis = Object.keys(counts).sort();
-  // A 0-row lookup exposes no columns, so every consumer's `lookup`/`fieldsAdd appci` fails with
+  const appIds = Object.keys(counts).sort();
+  // A 0-row lookup exposes no columns, so every consumer's `lookup`/`fieldsAdd appId` fails with
   // FIELD_DOES_NOT_EXIST. When nothing matches, keep the schema alive with a sentinel row whose
-  // appci can never equal a real AppCI (it never joins to a scorecard row).
-  const rows = appcis.map((a) => `${a},${counts[a]}`);
+  // appId can never equal a real application ID (it never joins to a scorecard row).
+  const rows = appIds.map((a) => `${a},${counts[a]}`);
   if (rows.length === 0) rows.push('__none__,0');
   const csv = '__ID_COL__,dashboardCount\n' + rows.join('\n') + '\n';
 
@@ -73,5 +73,5 @@ export default async function () {
   if (!up.ok) {
     throw new Error(`Lookup upload failed: ${up.status} ${upText}`);
   }
-  return { dashboardsScanned: docs.length, appciRows: appcis.length, counts };
+  return { dashboardsScanned: docs.length, appIdRows: appIds.length, counts };
 }

@@ -1,9 +1,9 @@
 import type { DemoFixture } from "../types";
-import { DEMO_APPS, extractAppCI, seeded } from "../portfolio";
+import { DEMO_APPS, extractAppId, seeded } from "../portfolio";
 import type { DemoApp } from "../portfolio";
 import { timeseries } from "../helpers";
 
-// Portfolio-wide fixtures: AppCI picker, app identity/profile strips, landing
+// Portfolio-wide fixtures: application ID picker, app identity/profile strips, landing
 // page MTTR, portfolio inventory and the maturity leaderboard bulk queries.
 
 const TIER_LABEL: Record<DemoApp["tier"], string> = {
@@ -36,7 +36,7 @@ const score = (a: DemoApp, idx: 0 | 1 | 2 | 3 | 4, max: number) => Math.round(a.
 
 /** Runbooks Linked is added client-side from getAllRunbookCounts; apps with
  * decent L3 maturity have one. Exposed so the scorecards fork's function
- * fixture can stay consistent: counts keyed by lower-case AppCI. */
+ * fixture can stay consistent: counts keyed by lower-case application ID. */
 export function demoRunbookCount(a: DemoApp): number {
   return score(a, 2, MAX.l3) >= 3 ? 1 + Math.floor(seeded("rb:" + a.code)() * 3) : 0;
 }
@@ -44,9 +44,9 @@ export function demoRunbookCount(a: DemoApp): number {
 const lc = (a: DemoApp) => a.code.toLowerCase();
 
 export const portfolioFixtures: DemoFixture[] = [
-  // ── App.tsx: AppCI picker (lookup + entity-tag fallback) ──
+  // ── App.tsx: application ID picker (lookup + entity-tag fallback) ──
   {
-    id: "appci-picker-lookup",
+    id: "appId-picker-lookup",
     match: /filter operational_status != "Retired"/,
     respond: () => ({
       records: [...DEMO_APPS]
@@ -55,7 +55,7 @@ export const portfolioFixtures: DemoFixture[] = [
     }),
   },
   {
-    id: "appci-picker-fallback",
+    id: "appId-picker-fallback",
     match: /fieldsAdd appName = ""/,
     respond: () => ({
       records: [...DEMO_APPS]
@@ -67,9 +67,9 @@ export const portfolioFixtures: DemoFixture[] = [
   // ── AppIdentityBar / AppContextBanner: per-app CMDB profile ──
   {
     id: "app-profile-lookup",
-    match: (q) => /cmdb_appci_owner_mapping/.test(q) && /managed_by\.u_managing_director/.test(q) && /filter lower\(applicationci\) == lower\(/.test(q),
+    match: (q) => /cmdb_appId_owner_mapping/.test(q) && /managed_by\.u_managing_director/.test(q) && /filter lower\(applicationci\) == lower\(/.test(q),
     respond: (q) => {
-      const a = extractAppCI(q);
+      const a = extractAppId(q);
       return {
         records: [
           {
@@ -87,9 +87,9 @@ export const portfolioFixtures: DemoFixture[] = [
   },
   {
     id: "app-profile-fallback",
-    match: (q) => /workflow\.import\.servicenow\.appci/.test(q) && /\| limit 1\s*$/.test(q),
+    match: (q) => /workflow\.import\.servicenow\.appId/.test(q) && /\| limit 1\s*$/.test(q),
     respond: (q) => {
-      const a = extractAppCI(q);
+      const a = extractAppId(q);
       return {
         records: [
           {
@@ -126,7 +126,7 @@ export const portfolioFixtures: DemoFixture[] = [
       records: [...DEMO_APPS]
         .sort((a, b) => a.code.localeCompare(b.code))
         .map((a) => ({
-          AppCI: a.code,
+          AppId: a.code,
           Name: a.name,
           Tier: TIER_LABEL[a.tier],
           Owner: a.owner,
@@ -183,10 +183,10 @@ export const portfolioFixtures: DemoFixture[] = [
   // ── MaturityLeaderboard: CMDB lookup (+ bizevent fallback) ──
   {
     id: "leaderboard-cmdb-lookup",
-    match: /fields appci, ciname = name, tier = business_criticality/,
+    match: /fields appId, ciname = name, tier = business_criticality/,
     respond: () => ({
       records: DEMO_APPS.map((a) => ({
-        appci: lc(a),
+        appId: lc(a),
         ciname: a.name,
         tier: TIER_LABEL[a.tier],
         app_owner_name: a.owner,
@@ -195,10 +195,10 @@ export const portfolioFixtures: DemoFixture[] = [
   },
   {
     id: "leaderboard-cmdb-fallback",
-    match: /\| fields appci, ciname, tier, app_owner_name\s*$/,
+    match: /\| fields appId, ciname, tier, app_owner_name\s*$/,
     respond: () => ({
       records: DEMO_APPS.map((a) => ({
-        appci: lc(a),
+        appId: lc(a),
         ciname: a.name,
         tier: TIER_LABEL[a.tier],
         app_owner_name: a.owner,

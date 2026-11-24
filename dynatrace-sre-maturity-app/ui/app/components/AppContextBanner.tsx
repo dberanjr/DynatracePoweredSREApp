@@ -5,10 +5,10 @@ import { ProgressCircle } from "@dynatrace/strato-components-preview/content";
 import { useDql } from "../hooks/useDql";
 import { RefreshOverlay } from "./RefreshOverlay";
 
-import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_LABEL } from "../settings/appSettings";
 import { PROFILE_FIELDS, PROFILE_SELECT, profileValue, tierChipColor, tierInfo } from "../settings/profile";
 interface Props {
-  appCI: string;
+  appId: string;
 }
 
 function getCriticalityColor(criticality: string): string {
@@ -64,25 +64,25 @@ function Chip({ label, value, valueColor }: { label: string; value: string; valu
   );
 }
 
-const PROFILE_LOOKUP = (appCI: string) =>
+const PROFILE_LOOKUP = (appId: string) =>
   `${LOAD.cmdb}
-| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
+| filter lower(${APP_ID_FIELD}) == lower("${appId}")
 | fields ${PROFILE_SELECT}`;
 
-const PROFILE_FALLBACK = (appCI: string) =>
+const PROFILE_FALLBACK = (appId: string) =>
   `fetch bizevents, from:now()-48h
 | filter event.type == "workflow.import.servicenow.appci"
-| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
+| filter lower(${APP_ID_FIELD}) == lower("${appId}")
 | sort timestamp desc
 | limit 1`;
 
-export const AppContextBanner = ({ appCI }: Props) => {
+export const AppContextBanner = ({ appId }: Props) => {
   const { data: lookupData, isLoading: lookupLoading, error: lookupError } = useDql({
-    query: PROFILE_LOOKUP(appCI),
+    query: PROFILE_LOOKUP(appId),
   });
 
   const { data: fallbackData, isLoading: fallbackLoading } = useDql({
-    query: lookupError ? PROFILE_FALLBACK(appCI) : "data record(skip = true) | limit 0",
+    query: lookupError ? PROFILE_FALLBACK(appId) : "data record(skip = true) | limit 0",
   });
 
   const data = lookupError ? fallbackData : lookupData;
@@ -114,7 +114,7 @@ export const AppContextBanner = ({ appCI }: Props) => {
 
   const r = (currentRecord || cacheRef.current) as Record<string, unknown>;
   const name = String(r.name || r.ciname || "");
-  const appci = String(r[APP_CI_FIELD] || appCI);
+  const shownId = String(r[APP_ID_FIELD] || appId);
 
   return (
     <RefreshOverlay isRefreshing={isRefreshing}>
@@ -135,7 +135,7 @@ export const AppContextBanner = ({ appCI }: Props) => {
         }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: 0.5, textTransform: "uppercase" }}>Application</div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", lineHeight: 1.3, marginTop: 3 }}>
-            {name || appci.toUpperCase()}
+            {name || appId.toUpperCase()}
           </div>
         </div>
         <div style={{
@@ -144,9 +144,9 @@ export const AppContextBanner = ({ appCI }: Props) => {
           borderRadius: 8,
           border: "3px solid #1A2440",
         }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: 0.5, textTransform: "uppercase" }}>{APP_CI_LABEL}</div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: 0.5, textTransform: "uppercase" }}>{APP_ID_LABEL}</div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", lineHeight: 1.3, marginTop: 3 }}>
-            {appci.toUpperCase()}
+            {shownId.toUpperCase()}
           </div>
         </div>
       </div>

@@ -8,32 +8,32 @@ import { InfographicList } from "../components/InfographicList";
 import { SparklineCard } from "../components/SparklineCard";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 
-import { APP_CI_FIELD } from "../settings/appSettings";
+import { APP_ID_FIELD } from "../settings/appSettings";
 interface Props {
-  appCI: string;
+  appId: string;
   timeframe: { from: string; to: string };
 }
 
-export const ProblemAnalyticsPage = ({ appCI, timeframe }: Props) => {
+export const ProblemAnalyticsPage = ({ appId, timeframe }: Props) => {
   const tf = `from:${timeframe.from}, to:${timeframe.to}`;
 
-  // Link to the new Davis Problems app filtered to this AppCI
+  // Link to the new Davis Problems app filtered to this application ID
   const problemsAppBase = `${getEnvironmentUrl().replace(/\/+$/, "")}/ui/apps/dynatrace.davis.problems/`;
-  const tagFilter = encodeURIComponent(`"Entity tags" = "${APP_CI_FIELD}:${appCI.toLowerCase()}"`);
+  const tagFilter = encodeURIComponent(`"Entity tags" = "${APP_ID_FIELD}:${appId.toLowerCase()}"`);
   const fromParam = encodeURIComponent(timeframe.from);
   const toParam = encodeURIComponent(timeframe.to);
   const allProblemsUrl = `${problemsAppBase}?from=${fromParam}&to=${toParam}&filters=${tagFilter}`;
   const activeProblemsUrl = `${problemsAppBase}?from=${fromParam}&to=${toParam}&filters=${tagFilter}+AND+${encodeURIComponent('"Status" = "Active"')}`;
   const closedProblemsUrl = `${problemsAppBase}?from=${fromParam}&to=${toParam}&filters=${tagFilter}+AND+${encodeURIComponent('"Status" = "Closed"')}`;
-  // User-impacting link uses AppCI + Active status filter
+  // User-impacting link uses application ID + Active status filter
   // The tile count is derived from the DQL query which filters by isNotNull(dt.davis.affected_users_count)
   const userImpactingUrl = `${problemsAppBase}?from=${fromParam}&to=${toParam}&filters=${tagFilter}+AND+${encodeURIComponent('"Status" = "Active"')}`;
 
-  // Common filter — joins davis problems with the AppCI tag
+  // Common filter — joins davis problems with the application ID tag
   const problemBase = `fetch dt.davis.problems, ${tf}
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "${APP_CI_FIELD}:")[1], "\\"")[0]
+| fieldsAdd appId = splitString(splitString(toString(entity_tags), "${APP_ID_FIELD}:")[1], "\\"")[0]
 | filter event.kind == "DAVIS_PROBLEM" and dt.davis.is_duplicate == false
-| filter lower(appci) == lower("${appCI}")`;
+| filter lower(appId) == lower("${appId}")`;
 
   // ── KPI queries ──
   const totalProblemsQuery = `${problemBase}
@@ -102,8 +102,8 @@ export const ProblemAnalyticsPage = ({ appCI, timeframe }: Props) => {
 | fieldsAdd dt.entity.service = if(startsWith(affected_entity_ids[0],"SERVICE"), affected_entity_ids[0])
 | fieldsAdd Service = entityName(dt.entity.service)
 | filter isNotNull(Service)
-| fieldsAdd appci = splitString(splitString(toString(entity_tags), "${APP_CI_FIELD}:")[1], "\\"")[0]
-| filter lower(appci) == lower("${appCI}")
+| fieldsAdd appId = splitString(splitString(toString(entity_tags), "${APP_ID_FIELD}:")[1], "\\"")[0]
+| filter lower(appId) == lower("${appId}")
 | summarize Problems = count(), by:{Service}
 | sort Problems desc
 | limit 15`;

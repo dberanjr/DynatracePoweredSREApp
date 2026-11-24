@@ -5,19 +5,19 @@ import { KpiCard } from "../components/KpiCard";
 import { ChartCard } from "../components/ChartCard";
 import { TableCard } from "../components/TableCard";
 
-import { APP_CI_FIELD } from "../settings/appSettings";
+import { APP_ID_FIELD } from "../settings/appSettings";
 interface Props {
-  appCI: string;
+  appId: string;
   timeframe: { from: string; to: string };
 }
 
-export const AiOpsPage = ({ appCI, timeframe }: Props) => {
+export const AiOpsPage = ({ appId, timeframe }: Props) => {
   const tf = `from:${timeframe.from}, to:${timeframe.to}`;
 
-  // Strategy: join events with entity IDs for this AppCI
+  // Strategy: join events with entity IDs for this application ID
   // Step 1 in each query: get events
-  // Step 2: lookup against service entities tagged with this AppCI
-  // If affected_entity_ids matches a service for this AppCI, it's relevant
+  // Step 2: lookup against service entities tagged with this application ID
+  // If affected_entity_ids matches a service for this application ID, it's relevant
 
   const eventFilter = `fetch events, ${tf}
 | filter event.kind == "DAVIS_EVENT"
@@ -26,8 +26,8 @@ export const AiOpsPage = ({ appCI, timeframe }: Props) => {
 | lookup [
     fetch dt.entity.service
     | expand tags
-    | parse tags, "'${APP_CI_FIELD}:' LD:appci"
-    | filter lower(appci) == lower("${appCI}")
+    | parse tags, "'${APP_ID_FIELD}:' LD:appId"
+    | filter lower(appId) == lower("${appId}")
     | dedup id
     | fieldsAdd idStr = toString(id)
     | fields idStr

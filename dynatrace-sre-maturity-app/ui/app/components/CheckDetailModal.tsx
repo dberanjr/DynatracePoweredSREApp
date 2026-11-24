@@ -9,11 +9,11 @@ import { CHECK_DETAIL_CONFIGS, LEVEL_META, CheckDetailConfig } from "./checkDeta
 import { HardcodedBadge } from "./HardcodedBadge";
 import { SmartscapeViewMenu } from "./SmartscapeViewMenu";
 
-import { APP_CI_FIELD, LOAD, APP_CI_LABEL, APP_CI_CLOUD_TAG, SLO_ID_FROM_COLUMN } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG, SLO_ID_FROM_COLUMN } from "../settings/appSettings";
 interface Props {
   checkKey: string;
   currentValue: string;
-  appCI: string;
+  appId: string;
   accentColor: string;
   onClose: () => void;
   /** All checks in the same level, in display order, including the currently-open one. */
@@ -802,13 +802,13 @@ function formatFullTimestamp(val: unknown): string {
 
 function DataPanel({
   config,
-  appCI,
+  appId,
   accentColor,
   scrollable,
   facet,
 }: {
   config: CheckDetailConfig | undefined;
-  appCI: string;
+  appId: string;
   accentColor: string;
   scrollable?: boolean;
   facet?: string;
@@ -816,12 +816,12 @@ function DataPanel({
   // The facet is injected into the query rather than filtered client-side:
   // aggregated columns (success rate, average lead time) cannot be correctly
   // re-derived from an already-summarised result set.
-  const query = config?.detailQuery ? config.detailQuery(appCI, facet) : `data record(none = true)`;
+  const query = config?.detailQuery ? config.detailQuery(appId, facet) : `data record(none = true)`;
   const dqlResult = useDqlWithCache({ query });
 
   const appFn = config?.appFunction;
   const fnResult = useAppFunction<unknown>(
-    { name: appFn?.name ?? "__unused__", data: { appCI, appCiField: APP_CI_FIELD, sloIdFromTag: SLO_ID_FROM_COLUMN } },
+    { name: appFn?.name ?? "__unused__", data: { appId, appCiField: APP_ID_FIELD, sloIdFromTag: SLO_ID_FROM_COLUMN } },
     { autoFetch: !!appFn, autoFetchOnUpdate: true }
   );
 
@@ -924,7 +924,7 @@ function DataPanel({
                   sidebarOpen: "false",
                   detailsTab: "Info",
                 });
-                const hash = new URLSearchParams({ filtering: `Cluster = ${appCI}*` });
+                const hash = new URLSearchParams({ filtering: `Cluster = ${appId}*` });
                 const url = `${envUrl}/ui/apps/dynatrace.kubernetes/smartscape/workload/K8S_WORKLOAD?${qs.toString()}#${hash.toString()}`;
                 window.open(url, "_blank");
               }
@@ -944,7 +944,7 @@ function DataPanel({
                     tf: "now-24h;now",
                   });
                   const hash = new URLSearchParams({
-                    filtering: `tags = "${APP_CI_CLOUD_TAG}:${appCI.toLowerCase()}" `,
+                    filtering: `tags = "${APP_ID_CLOUD_TAG}:${appId.toLowerCase()}" `,
                   });
                   const url = `${envUrl}/ui/apps/dynatrace.clouds/smartscape/services?${qs.toString()}#${hash.toString()}`;
                   window.open(url, "_blank");
@@ -1072,7 +1072,7 @@ function DataPanel({
           border: "1px solid rgba(128,128,128,0.12)",
         }}
       >
-        No data found for <strong>{appCI}</strong>.
+        No data found for <strong>{appId}</strong>.
       </div>
     );
   }
@@ -1213,14 +1213,14 @@ function friendlyResourceType(type: string, resourceType?: string): string {
   return shortenResourceType(type);
 }
 
-function buildCloudTypeFilterUrl(appCI: string, rawType: string, resourceType?: string): string {
+function buildCloudTypeFilterUrl(appId: string, rawType: string, resourceType?: string): string {
   const envUrl = getEnvironmentUrl().replace(/\/$/, "");
   // Wide-ish window so infrequently-repolled resource types (SSM parameters, EBS
   // volumes, etc.) aren't missing just because they fell outside whatever
   // timeframe the Clouds app last had active — see cloudResourceRowClick above.
   const qs = new URLSearchParams({ perspective: "health", tf: "now-24h;now" });
   const hash = new URLSearchParams({
-    filtering: `tags = "${APP_CI_CLOUD_TAG}:${appCI.toLowerCase()}" type = "${friendlyResourceType(rawType, resourceType)}" `,
+    filtering: `tags = "${APP_ID_CLOUD_TAG}:${appId.toLowerCase()}" type = "${friendlyResourceType(rawType, resourceType)}" `,
   });
   return `${envUrl}/ui/apps/dynatrace.clouds/smartscape/services?${qs.toString()}#${hash.toString()}`;
 }
@@ -1290,7 +1290,7 @@ function packWordCloud<T extends { label: string; fontSize: number }>(
   });
 }
 
-function WordCloud({ records, appCI }: { records: Record<string, unknown>[]; appCI?: string }) {
+function WordCloud({ records, appId }: { records: Record<string, unknown>[]; appId?: string }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [width, setWidth] = React.useState(620);
 
@@ -1357,12 +1357,12 @@ function WordCloud({ records, appCI }: { records: Record<string, unknown>[]; app
     <div ref={containerRef} style={{ position: "relative", width: "100%", height, margin: "8px 0", overflow: "hidden" }}>
       {placed.map((it) => {
         const pct = ((it.count / total) * 100).toFixed(1);
-        const clickable = !!appCI;
+        const clickable = !!appId;
         return (
           <span
             key={it.rawType}
             title={`${it.label}: ${it.count.toLocaleString()} (${pct}%)${clickable ? " — click to open in Clouds app" : ""}`}
-            onClick={clickable ? () => window.open(buildCloudTypeFilterUrl(appCI!, it.rawType, it.resourceType), "_blank") : undefined}
+            onClick={clickable ? () => window.open(buildCloudTypeFilterUrl(appId!, it.rawType, it.resourceType), "_blank") : undefined}
             onMouseEnter={clickable ? (e) => {
               const el = e.currentTarget as HTMLElement;
               el.style.textDecoration = "underline";
@@ -1395,7 +1395,7 @@ function WordCloud({ records, appCI }: { records: Record<string, unknown>[]; app
   );
 }
 
-function WordCloudPanel({ query, appCI }: { query: string; appCI?: string }) {
+function WordCloudPanel({ query, appId }: { query: string; appId?: string }) {
   const { data, isLoading, error } = useDqlWithCache({ query });
   if (isLoading) {
     return (
@@ -1408,12 +1408,12 @@ function WordCloudPanel({ query, appCI }: { query: string; appCI?: string }) {
   if (error) return null;
   const records = (data?.records ?? []) as Record<string, unknown>[];
   if (!records.length) return null;
-  return <WordCloud records={records} appCI={appCI} />;
+  return <WordCloud records={records} appId={appId} />;
 }
 
 function SecondaryDataPanel({
   query,
-  appCI,
+  appId,
   appFunction,
   chartType,
   accentColor,
@@ -1424,7 +1424,7 @@ function SecondaryDataPanel({
   donutCenterLabel,
 }: {
   query: string;
-  appCI?: string;
+  appId?: string;
   appFunction?: { name: string; toRecords: (result: unknown) => Record<string, unknown>[] };
   chartType: "table" | "bar" | "stackedBar" | "multiPanel" | "donut";
   accentColor: string;
@@ -1436,7 +1436,7 @@ function SecondaryDataPanel({
 }) {
   const dqlResult = useDqlWithCache({ query });
   const fnResult = useAppFunction<unknown>(
-    { name: appFunction?.name ?? "__unused__", data: { appCI, appCiField: APP_CI_FIELD, sloIdFromTag: SLO_ID_FROM_COLUMN } },
+    { name: appFunction?.name ?? "__unused__", data: { appId, appCiField: APP_ID_FIELD, sloIdFromTag: SLO_ID_FROM_COLUMN } },
     { autoFetch: !!appFunction, autoFetchOnUpdate: true }
   );
   const isLoading = appFunction ? fnResult.isLoading : dqlResult.isLoading;
@@ -1470,9 +1470,9 @@ function SecondaryDataPanel({
   return <DataTable records={records} maxHeight={tableHeight} onRowClick={onRowClick} hiddenCols={hiddenCols} />;
 }
 
-function useAppInfo(appCI: string) {
+function useAppInfo(appId: string) {
   const query = `${LOAD.cmdb}
-| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
+| filter lower(${APP_ID_FIELD}) == lower("${appId}")
 | fields appName = name, tier = business_criticality, owner = owned_by
 | limit 1`;
   const { data } = useDqlWithCache({ query });
@@ -1487,10 +1487,10 @@ function useAppInfo(appCI: string) {
 // Resolves this app's tagged AWS resources back to their account name(s) +
 // ID(s) — usually one account, but shown as "+N more" if a portfolio app's
 // resources span multiple accounts.
-function useCloudAccountInfo(appCI: string) {
+function useCloudAccountInfo(appId: string) {
   const query = `smartscapeNodes "AWS*"
-| fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
-| filter lower(${APP_CI_CLOUD_TAG}) == lower("${appCI}")
+| fieldsFlatten \`tags:aws\`, fields:{${APP_ID_CLOUD_TAG}}
+| filter lower(${APP_ID_CLOUD_TAG}) == lower("${appId}")
 | summarize accountIds = collectDistinct(aws.account.id)
 | expand accountIds
 | lookup [
@@ -1511,7 +1511,7 @@ function useCloudAccountInfo(appCI: string) {
   return { label: `${base}${extra}` };
 }
 
-export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, onClose, siblings, onNavigate }: Props) {
+export function CheckDetailModal({ checkKey, currentValue, appId, accentColor, onClose, siblings, onNavigate }: Props) {
   const config = CHECK_DETAIL_CONFIGS[checkKey];
   // null = "All". Reset whenever the modal switches to a different check so a
   // filter chosen on one check doesn't silently carry over to the next.
@@ -1520,8 +1520,8 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
   const status = getStatus(currentValue);
   const displayValue = currentValue.replace(/^(pass|fail|warn|n\/a)\s*/i, "");
   const ss = STATUS_STYLES[status];
-  const appInfo = useAppInfo(appCI);
-  const cloudAccountInfo = useCloudAccountInfo(appCI);
+  const appInfo = useAppInfo(appId);
+  const cloudAccountInfo = useCloudAccountInfo(appId);
 
   const levelInfo = config ? LEVEL_META[config.level] : null;
   const levelLabel = levelInfo ? `${config!.level} — ${levelInfo.title}` : "";
@@ -1658,7 +1658,7 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                   borderRadius: 12,
                 }}
               >
-                {APP_CI_LABEL}: {appCI}
+                {APP_ID_LABEL}: {appId}
               </span>
               {appInfo.appName && (
                 <span
@@ -1878,8 +1878,8 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                       Resource Mix
                     </div>
                     <WordCloudPanel
-                      query={config.secondaryQuery(appCI)}
-                      appCI={config.cloudTypeRowClick ? appCI : undefined}
+                      query={config.secondaryQuery(appId)}
+                      appId={config.cloudTypeRowClick ? appId : undefined}
                     />
                   </>
                 )}
@@ -2014,10 +2014,10 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
             {/* Keyed by checkKey: sibling-sidebar/arrow-key navigation changes
                 checkKey without unmounting CheckDetailModal, and useAppFunction
                 (inside DataPanel) only re-invokes on a `data` change, not a
-                `name` change — its data is always {appCI}, which doesn't vary
+                `name` change — its data is always {appId}, which doesn't vary
                 between checks. Forcing a remount here re-triggers the
                 mount-time fetch for whichever appFunction the new check uses. */}
-            <DataPanel key={checkKey} config={config} appCI={appCI} accentColor={accentColor} facet={facet ?? undefined} scrollable={!!config?.secondaryQuery || !!config?.secondaryAppFunction || !!config?.serviceMapRowClick || !!config?.cloudResourceRowClick || !!config?.dependenciesRowClick} />
+            <DataPanel key={checkKey} config={config} appId={appId} accentColor={accentColor} facet={facet ?? undefined} scrollable={!!config?.secondaryQuery || !!config?.secondaryAppFunction || !!config?.serviceMapRowClick || !!config?.cloudResourceRowClick || !!config?.dependenciesRowClick} />
             {(config?.secondaryQuery || config?.secondaryAppFunction) && (
               <>
                 <div
@@ -2050,7 +2050,7 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                       ? () => {
                           const envUrl = getEnvironmentUrl().replace(/\/$/, "");
                           const qs = new URLSearchParams({ sort: "healthIndicators:descending" });
-                          const hash = new URLSearchParams({ filtering: `Cluster = ${appCI}*` });
+                          const hash = new URLSearchParams({ filtering: `Cluster = ${appId}*` });
                           window.open(`${envUrl}/ui/apps/dynatrace.kubernetes/smartscape/K8S_CLUSTER?${qs.toString()}#${hash.toString()}`, "_blank");
                         }
                       : undefined
@@ -2059,8 +2059,8 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                 >
                   <SecondaryDataPanel
                     key={checkKey}
-                    query={config.secondaryQuery ? config.secondaryQuery(appCI, facet ?? undefined) : `data record(none = true)`}
-                    appCI={appCI}
+                    query={config.secondaryQuery ? config.secondaryQuery(appId, facet ?? undefined) : `data record(none = true)`}
+                    appId={appId}
                     appFunction={config.secondaryAppFunction}
                     chartType={config.secondaryChartType ?? "bar"}
                     accentColor={accentColor}
@@ -2071,7 +2071,7 @@ export function CheckDetailModal({ checkKey, currentValue, appCI, accentColor, o
                             const rawType = String(row.type ?? "");
                             if (!rawType) return;
                             const resourceType = row.resourceType != null ? String(row.resourceType) : undefined;
-                            window.open(buildCloudTypeFilterUrl(appCI, rawType, resourceType), "_blank");
+                            window.open(buildCloudTypeFilterUrl(appId, rawType, resourceType), "_blank");
                           }
                         : undefined
                     }

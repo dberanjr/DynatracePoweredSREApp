@@ -25,11 +25,11 @@ import { LookupsPage } from "./pages/LookupsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { CoveragePage } from "./pages/CoveragePage";
 import { ReadinessPage } from "./pages/ReadinessPage";
-import { appciFromEntityTags, APPCI_MAP_PATH } from "./queries/maturityQueries";
+import { appIdFromEntityTags, APP_ID_MAP_PATH } from "./queries/maturityQueries";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 import { DemoModeToggleButton, DemoModeBanner } from "./components/DemoModeToggle";
 
-import { APP_CI_FIELD, LOAD, APP_CI_LABEL, APP_CI_MAX_LENGTH } from "./settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_MAX_LENGTH } from "./settings/appSettings";
 export interface Timeframe {
   from: string;
   to: string;
@@ -38,25 +38,25 @@ export interface Timeframe {
 // Try loading from lookup table first.
 // All non-retired applications (In Production + Implementing), one row per
 // applicationci, carrying the human-readable application name, sorted A→Z.
-const APPCI_LOOKUP_QUERY = `${LOAD.cmdb}
+const APP_ID_LOOKUP_QUERY = `${LOAD.cmdb}
 | filter operational_status != "Retired"
-| filter isNotNull(${APP_CI_FIELD})
-| summarize appName = takeFirst(name), by:{${APP_CI_FIELD}}
-| sort ${APP_CI_FIELD} asc
-| fields ${APP_CI_FIELD}, appName
+| filter isNotNull(${APP_ID_FIELD})
+| summarize appName = takeFirst(name), by:{${APP_ID_FIELD}}
+| sort ${APP_ID_FIELD} asc
+| fields ${APP_ID_FIELD}, appName
 | limit 10000`;
 
-// Fallback: derive AppCI values from entity tags (no application name available)
-const APPCI_FALLBACK_QUERY = `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
-| filter isNotNull(${APP_CI_FIELD})
-| fieldsAdd appci = upper(${APP_CI_FIELD})
-| filter stringLength(appci) <= ${APP_CI_MAX_LENGTH}
-| dedup appci
-| sort appci asc
+// Fallback: derive application ID values from entity tags (no application name available)
+const APP_ID_FALLBACK_QUERY = `fetch dt.entity.service
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
+| filter isNotNull(${APP_ID_FIELD})
+| fieldsAdd appId = upper(${APP_ID_FIELD})
+| filter stringLength(appId) <= ${APP_ID_MAX_LENGTH}
+| dedup appId
+| sort appId asc
 | fieldsAdd appName = ""
-| fields ${APP_CI_FIELD} = appci, appName
+| fields ${APP_ID_FIELD} = appId, appName
 | limit 10000`;
 
 // Timeframe isn't a meaningful concept in this app yet (every page effectively
@@ -67,55 +67,55 @@ const SHOW_TIMEFRAME_SELECTOR = false;
 
 // A missing map makes every scoring query fail with UNKNOWN_TABULAR_FILE. Probe for it once so the
 // app can say what is wrong and where to fix it, instead of showing a wall of per-card errors.
-const APPCI_MAP_PROBE_QUERY = `load "${APPCI_MAP_PATH}" | limit 1`;
+const APP_ID_MAP_PROBE_QUERY = `load "${APP_ID_MAP_PATH}" | limit 1`;
 const isMissingLookup = (err: unknown): boolean =>
   !!err && /UNKNOWN_TABULAR_FILE|doesn't exist/i.test(`${(err as { message?: string }).message ?? ""} ${JSON.stringify(err)}`);
 
 export const App = () => {
   const location = useLocation();
-  // null until the picker has loaded, then the first AppCI in the list (see the effect below). The
+  // null until the picker has loaded, then the first application ID in the list (see the effect below). The
   // app used to start on a hard-coded "ADH", which does not exist in every tenant.
-  const [selectedAppCI, setSelectedAppCI] = useState<string | null>(null);
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>({ from: "now()-24h", to: "now()" });
 
   // Try lookup table first.
   // maxResultRecords lifts the Grail query API's 1000-record default so the
-  // dropdown receives all non-retired AppCIs (~1,987 today) — the DQL `limit`
+  // dropdown receives all non-retired AppIds (~1,987 today) — the DQL `limit`
   // alone isn't enough; the API caps the response at 1000 without this. Set to
   // 5000 for headroom well above the current count.
   const { data: lookupData, error: lookupError, isLoading: lookupLoading } = useDql({
-    query: APPCI_LOOKUP_QUERY,
+    query: APP_ID_LOOKUP_QUERY,
     maxResultRecords: 5000,
   });
 
   // Fallback to entity tags if lookup fails
   const { data: fallbackData, isLoading: fallbackLoading } = useDql({
-    query: lookupError ? APPCI_FALLBACK_QUERY : "data record(skip = true) | limit 0",
+    query: lookupError ? APP_ID_FALLBACK_QUERY : "data record(skip = true) | limit 0",
     maxResultRecords: 5000,
   });
 
-  const appciData = lookupError ? fallbackData : lookupData;
-  const appciLoading = lookupError ? fallbackLoading : lookupLoading;
+  const appIdData = lookupError ? fallbackData : lookupData;
+  const appIdLoading = lookupError ? fallbackLoading : lookupLoading;
 
-  const appciOptions = useMemo(() => {
-    if (!appciData?.records) return [];
-    return appciData.records.map((r: Record<string, unknown>) => ({
-      code: String(r[APP_CI_FIELD]),
+  const appIdOptions = useMemo(() => {
+    if (!appIdData?.records) return [];
+    return appIdData.records.map((r: Record<string, unknown>) => ({
+      code: String(r[APP_ID_FIELD]),
       name: r.appName != null ? String(r.appName) : "",
     }));
-  }, [appciData]);
+  }, [appIdData]);
 
-  // Preselect the first AppCI once the list arrives so no page starts on an AppCI that isn't in it.
+  // Preselect the first application ID once the list arrives so no page starts on an application ID that isn't in it.
   useEffect(() => {
-    if (!selectedAppCI && appciOptions.length > 0) setSelectedAppCI(appciOptions[0].code);
-  }, [selectedAppCI, appciOptions]);
+    if (!selectedAppId && appIdOptions.length > 0) setSelectedAppId(appIdOptions[0].code);
+  }, [selectedAppId, appIdOptions]);
 
-  const { error: mapProbeError } = useDql({ query: APPCI_MAP_PROBE_QUERY });
+  const { error: mapProbeError } = useDql({ query: APP_ID_MAP_PROBE_QUERY });
   const mapMissing = isMissingLookup(mapProbeError);
 
-  // Empty string before the list loads: pages already tolerate an AppCI with no data, and this avoids
+  // Empty string before the list loads: pages already tolerate an application ID with no data, and this avoids
   // querying for a placeholder code that was never a real application.
-  const appCI = selectedAppCI || "";
+  const appId = selectedAppId || "";
 
   return (
     <Page>
@@ -139,16 +139,16 @@ export const App = () => {
                 }}
               />
             )}
-            <Heading level={6}>{APP_CI_LABEL}:</Heading>
+            <Heading level={6}>{APP_ID_LABEL}:</Heading>
             <Select
-              name="appci-selector"
-              value={selectedAppCI}
-              onChange={(val) => setSelectedAppCI(val as string | null)}
+              name="appId-selector"
+              value={selectedAppId}
+              onChange={(val) => setSelectedAppId(val as string | null)}
             >
-              <SelectTrigger placeholder={appciLoading ? "Loading..." : `Select ${APP_CI_LABEL}`} style={{ minWidth: 180 }} />
+              <SelectTrigger placeholder={appIdLoading ? "Loading..." : `Select ${APP_ID_LABEL}`} style={{ minWidth: 180 }} />
               <SelectContent>
                 <SelectFilter />
-                {appciOptions.map((opt) => (
+                {appIdOptions.map((opt) => (
                   <SelectOption
                     key={opt.code}
                     value={opt.code}
@@ -166,10 +166,10 @@ export const App = () => {
         <DemoModeBanner />
         {mapMissing && location.pathname !== "/lookups" && (
           <MessageContainer variant="warning" style={{ margin: "8px 16px" }}>
-            <MessageContainer.Title>{APP_CI_LABEL} map not found</MessageContainer.Title>
+            <MessageContainer.Title>{APP_ID_LABEL} map not found</MessageContainer.Title>
             <MessageContainer.Description>
-              The lookup {APPCI_MAP_PATH} does not exist in this environment, so scores cannot be resolved to an
-              {APP_CI_LABEL} and most pages will show errors. Create it on the Lookups tab (one row per application name).
+              The lookup {APP_ID_MAP_PATH} does not exist in this environment, so scores cannot be resolved to an
+              {APP_ID_LABEL} and most pages will show errors. Create it on the Lookups tab (one row per application name).
             </MessageContainer.Description>
             <MessageContainer.Actions>
               <Link to="/lookups">Open Lookups</Link>
@@ -179,16 +179,16 @@ export const App = () => {
         <ErrorBoundary>
           <Routes>
             <Route path="/" element={<ErrorBoundary><LandingPage /></ErrorBoundary>} />
-            <Route path="/overview" element={<ErrorBoundary><Home appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/golden-signals" element={<ErrorBoundary><GoldenSignalsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/ai-ops" element={<ErrorBoundary><AiOpsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/proactive" element={<ErrorBoundary><ProactivePage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/problem-analytics" element={<ErrorBoundary><ProblemAnalyticsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/scorecards" element={<ErrorBoundary><ScorecardsPage appCI={appCI} timeframe={timeframe} /></ErrorBoundary>} />
-            <Route path="/upstream-downstream" element={<ErrorBoundary><UpstreamDownstreamPage appCI={appCI} onAppCIChange={setSelectedAppCI} /></ErrorBoundary>} />
+            <Route path="/overview" element={<ErrorBoundary><Home appId={appId} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/golden-signals" element={<ErrorBoundary><GoldenSignalsPage appId={appId} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/ai-ops" element={<ErrorBoundary><AiOpsPage appId={appId} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/proactive" element={<ErrorBoundary><ProactivePage appId={appId} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/problem-analytics" element={<ErrorBoundary><ProblemAnalyticsPage appId={appId} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/scorecards" element={<ErrorBoundary><ScorecardsPage appId={appId} timeframe={timeframe} /></ErrorBoundary>} />
+            <Route path="/upstream-downstream" element={<ErrorBoundary><UpstreamDownstreamPage appId={appId} onAppIdChange={setSelectedAppId} /></ErrorBoundary>} />
             <Route path="/definitions" element={<ErrorBoundary><DefinitionsPage /></ErrorBoundary>} />
             <Route path="/coverage" element={<ErrorBoundary><CoveragePage /></ErrorBoundary>} />
-            <Route path="/readiness" element={<ErrorBoundary><ReadinessPage appCI={appCI} /></ErrorBoundary>} />
+            <Route path="/readiness" element={<ErrorBoundary><ReadinessPage appId={appId} /></ErrorBoundary>} />
             <Route path="/lookups" element={<ErrorBoundary><LookupsPage /></ErrorBoundary>} />
             <Route path="/portfolio" element={<ErrorBoundary><PortfolioPage /></ErrorBoundary>} />
             <Route path="/data" element={<ErrorBoundary><Data /></ErrorBoundary>} />

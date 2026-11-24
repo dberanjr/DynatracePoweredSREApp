@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { useDql } from "./useDql";
-import { appciFromEntityTags } from "../queries/maturityQueries";
+import { appIdFromEntityTags } from "../queries/maturityQueries";
 
-import { APP_CI_FIELD, LOAD } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD } from "../settings/appSettings";
 export type ChainDirection = "forward" | "backward";
 
 export interface DependencyNode {
@@ -10,7 +10,7 @@ export interface DependencyNode {
   name: string;
   parentId: string;
   level: number;
-  appCIs: string[];
+  appIds: string[];
   severity: string | null;
   businessImpact: string | null;
   problemRole: string | null; // "Root cause" | "Impacted" | null
@@ -26,8 +26,8 @@ export interface DependencyChainResult {
   perLevelCounts: Record<number, number>;
   totalLevels: number;
   capped: boolean;
-  uniqueAppCIsAllLevels: string[];
-  appCICounts: Record<string, number>;
+  uniqueAppIdsAllLevels: string[];
+  appIdCounts: Record<string, number>;
   isLoading: boolean;
   hasError: boolean;
 }
@@ -64,7 +64,7 @@ const METRICS_JOIN = `
     }, by:{dt.entity.service}, from:now()-1h
   ], sourceField: depId, lookupField: dt.entity.service, fields: {reqCount = req, p95Us = p95}`;
 
-// AppCI tags live on the classic dt.entity.service model, not on the
+// application ID tags live on the classic dt.entity.service model, not on the
 // smartscapeNodes "SERVICE" representation of the same entity (verified live —
 // smartscapeNodes' tags field is empty for every service tested). Hence the
 // hybrid: traverse topology via smartscapeNodes, then join each result back
@@ -86,9 +86,9 @@ ${traverses}
 | fieldsAdd depId = toString(id), depName = name, parentId = ${parentExpr}
 | lookup [
     fetch dt.entity.service
-    ${appciFromEntityTags()}
-    | fields id, ${APP_CI_FIELD}
-  ], sourceField: depId, lookupField: id, fields: {appciList = ${APP_CI_FIELD}}
+    ${appIdFromEntityTags()}
+    | fields id, ${APP_ID_FIELD}
+  ], sourceField: depId, lookupField: id, fields: {appIdList = ${APP_ID_FIELD}}
 | lookup [
     ${LOAD.criticalServices}
     | filter entity_ids != "-"
@@ -96,7 +96,7 @@ ${traverses}
     | expand idList
     | fields idList, severity, business_impact
   ], sourceField: depId, lookupField: idList, fields: {critSeverity = severity, critImpact = business_impact}${METRICS_JOIN}${includeProblems ? PROBLEM_JOIN : ""}
-| fields depId, depName, parentId, appciList, critSeverity, critImpact, reqCount, p95Us${extraFields}
+| fields depId, depName, parentId, appIdList, critSeverity, critImpact, reqCount, p95Us${extraFields}
 | limit 300`;
 }
 
@@ -123,7 +123,7 @@ export function useDependencyChain(originId: string | null, direction: ChainDire
 
   // Without this memo, every render of this hook (which happens on *any*
   // unrelated re-render of the parent page, not just when new data arrives)
-  // built brand-new levels/appCICounts/etc. objects — a new `chain` object
+  // built brand-new levels/appIdCounts/etc. objects — a new `chain` object
   // every time, cascading into a new `nodes` array in DependencyGraphPanel's
   // own useMemo, which retriggers its fitView() effect. In fullscreen, that
   // meant panning could get yanked back to "fit" mid-drag whenever an
@@ -135,8 +135,8 @@ export function useDependencyChain(originId: string | null, direction: ChainDire
     const levels: Record<number, DependencyNode[]> = {};
     const perLevelCounts: Record<number, number> = {};
     const seen = new Set<string>();
-    const uniqueAppCIs = new Set<string>();
-    const appCICounts: Record<string, number> = {};
+    const uniqueAppIds = new Set<string>();
+    const appIdCounts: Record<string, number> = {};
     let totalLevels = 0;
     let capped = false;
 
@@ -149,17 +149,17 @@ export function useDependencyChain(originId: string | null, direction: ChainDire
           const id = String(r.depId || "");
           if (!id || seen.has(id)) continue;
           seen.add(id);
-          const appCIs = (Array.isArray(r.appciList) ? (r.appciList as unknown[]) : []).map((a) => String(a).toLowerCase());
-          appCIs.forEach((a) => {
-            uniqueAppCIs.add(a);
-            appCICounts[a] = (appCICounts[a] || 0) + 1;
+          const appIds = (Array.isArray(r.appIdList) ? (r.appIdList as unknown[]) : []).map((a) => String(a).toLowerCase());
+          appIds.forEach((a) => {
+            uniqueAppIds.add(a);
+            appIdCounts[a] = (appIdCounts[a] || 0) + 1;
           });
           newNodes.push({
             id,
             name: String(r.depName || id),
             parentId: String(r.parentId || originId),
             level: levelNum,
-            appCIs,
+            appIds,
             severity: r.critSeverity != null ? String(r.critSeverity) : null,
             businessImpact: r.critImpact != null ? String(r.critImpact) : null,
             problemRole: r.problemRole != null ? String(r.problemRole) : null,
@@ -184,8 +184,8 @@ export function useDependencyChain(originId: string | null, direction: ChainDire
       perLevelCounts,
       totalLevels,
       capped,
-      uniqueAppCIsAllLevels: Array.from(uniqueAppCIs).sort(),
-      appCICounts,
+      uniqueAppIdsAllLevels: Array.from(uniqueAppIds).sort(),
+      appIdCounts,
       isLoading,
       hasError,
     };

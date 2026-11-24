@@ -3,7 +3,7 @@ import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { DependencyChainResult, DependencyNode, MAX_LEVELS } from "../hooks/useDependencyChain";
 import { severityColor } from "./dependencyUtils";
 
-import { APP_CI_LABEL } from "../settings/appSettings";
+import { APP_ID_LABEL } from "../settings/appSettings";
 interface Props {
   direction: "upstream" | "downstream";
   chain: DependencyChainResult;
@@ -19,11 +19,11 @@ interface SummaryPanelProps extends Props {
    * value) — one chip section is rendered per level from 1 up to this. */
   levels: number;
   onSelectService: (serviceId: string, serviceName: string) => void;
-  /** Fired when an AppCI row with at least one problematic service is
-   * clicked. The caller switches the global AppCI filter to this code and
+  /** Fired when an application ID row with at least one problematic service is
+   * clicked. The caller switches the global application ID filter to this code and
    * decides what to do with the service list (auto-select if there's
    * exactly one, otherwise let the user pick). */
-  onSelectAppCI: (appCI: string, problematicServices: ProblematicService[]) => void;
+  onSelectAppId: (appId: string, problematicServices: ProblematicService[]) => void;
   /** Skip the level-1 section — used when the caller renders direct
    * dependencies separately via DirectDependencyRail (the narrow column
    * beside the map) instead of in this stacked list. */
@@ -33,15 +33,15 @@ interface SummaryPanelProps extends Props {
 const ACCENT = "#1966FF";
 const PROBLEM_RED = "#dc3545";
 
-// Ranked, weighted AppCI pill: identity (the code) is a fixed single hue —
+// Ranked, weighted application ID pill: identity (the code) is a fixed single hue —
 // these aren't a small comparable category set, so per-entity hues would
 // violate the "never cycle categorical hues" rule for an open-ended list.
-// Magnitude (how many chain nodes belong to that AppCI) is instead encoded
+// Magnitude (how many chain nodes belong to that application ID) is instead encoded
 // sequentially via fill width, one hue light->dark, turning a flat tag list
 // into a compact ranked mini-bar-chart. A problem badge (root cause > has a
 // problem, in that precedence) makes the row clickable — clicking hands the
-// AppCI and its problematic services up to the caller.
-function AppCIWeightRow({
+// application ID and its problematic services up to the caller.
+function AppIdWeightRow({
   code,
   count,
   max,
@@ -135,7 +135,7 @@ function DependencyChip({
     <button
       type="button"
       onClick={() => onSelectService(node.id, node.name)}
-      title={`${node.name}${node.appCIs.length ? ` — ${node.appCIs.join(", ")}` : ""}${hasProblem ? ` — ${node.problemRole}` : ""} — click to focus`}
+      title={`${node.name}${node.appIds.length ? ` — ${node.appIds.join(", ")}` : ""}${hasProblem ? ` — ${node.problemRole}` : ""} — click to focus`}
       style={{
         display: fullWidth ? "flex" : "inline-flex",
         width: fullWidth ? "100%" : undefined,
@@ -153,8 +153,8 @@ function DependencyChip({
       }}
     >
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.name}</span>
-      {node.appCIs.length > 0 && (
-        <span style={{ fontWeight: 800, opacity: hasProblem ? 0.95 : 0.6, flexShrink: 0, marginLeft: "auto" }}>{node.appCIs.join(",")}</span>
+      {node.appIds.length > 0 && (
+        <span style={{ fontWeight: 800, opacity: hasProblem ? 0.95 : 0.6, flexShrink: 0, marginLeft: "auto" }}>{node.appIds.join(",")}</span>
       )}
     </button>
   );
@@ -282,34 +282,34 @@ function levelHeading(lvl: number, direction: "upstream" | "downstream"): string
   return lvl === 1 ? "Direct (level 1) dependencies" : `${lvl} levels deep ${direction}`;
 }
 
-// Per-AppCI problem status, derived from whichever levels are currently
+// Per-application ID problem status, derived from whichever levels are currently
 // rendered (1..levels) — the same scope already used for the per-level chip
 // sections and the graph's problem highlighting, since the active-problem
 // join is only fetched for rendered levels to begin with (see
 // useDependencyChain). Expanding the level slider naturally reveals more of
 // the picture, consistent with how everything else in this view loads.
-function computeAppCIProblems(chain: DependencyChainResult, levels: number) {
-  const byAppCI = new Map<string, { hasProblem: boolean; hasRootCause: boolean; services: Map<string, string> }>();
+function computeAppIdProblems(chain: DependencyChainResult, levels: number) {
+  const byAppId = new Map<string, { hasProblem: boolean; hasRootCause: boolean; services: Map<string, string> }>();
   for (let lvl = 1; lvl <= levels; lvl++) {
     for (const n of chain.levels[lvl] || []) {
       if (!n.problemRole) continue;
-      for (const appci of n.appCIs) {
-        const entry = byAppCI.get(appci) || { hasProblem: false, hasRootCause: false, services: new Map<string, string>() };
+      for (const appId of n.appIds) {
+        const entry = byAppId.get(appId) || { hasProblem: false, hasRootCause: false, services: new Map<string, string>() };
         entry.hasProblem = true;
         if (n.problemRole === "Root cause") entry.hasRootCause = true;
         entry.services.set(n.id, n.name);
-        byAppCI.set(appci, entry);
+        byAppId.set(appId, entry);
       }
     }
   }
-  return byAppCI;
+  return byAppId;
 }
 
-export const DependencySummaryPanel = ({ direction, chain, levels, onSelectService, onSelectAppCI, hideLevel1 }: SummaryPanelProps) => {
-  const rankedAppCIs = Object.entries(chain.appCICounts).sort((a, b) => b[1] - a[1]);
-  const maxAppCICount = Math.max(1, ...rankedAppCIs.map(([, c]) => c));
+export const DependencySummaryPanel = ({ direction, chain, levels, onSelectService, onSelectAppId, hideLevel1 }: SummaryPanelProps) => {
+  const rankedAppIds = Object.entries(chain.appIdCounts).sort((a, b) => b[1] - a[1]);
+  const maxAppIdCount = Math.max(1, ...rankedAppIds.map(([, c]) => c));
   const levelNumbers = Array.from({ length: levels }, (_, i) => i + 1).filter((l) => !hideLevel1 || l > 1);
-  const appCIProblems = computeAppCIProblems(chain, levels);
+  const appIdProblems = computeAppIdProblems(chain, levels);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12 }}>
@@ -335,27 +335,27 @@ export const DependencySummaryPanel = ({ direction, chain, levels, onSelectServi
 
       <div>
         <Heading level={6} style={{ marginBottom: 6 }}>
-          Unique {APP_CI_LABEL}s {direction} ({rankedAppCIs.length})
+          Unique {APP_ID_LABEL}s {direction} ({rankedAppIds.length})
         </Heading>
-        {rankedAppCIs.length === 0 ? (
+        {rankedAppIds.length === 0 ? (
           <Paragraph style={{ color: "var(--sre-text-secondary)", opacity: 0.6, fontSize: 11 }}>None resolved</Paragraph>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 160, overflowY: "auto", paddingRight: 6 }}>
-            {rankedAppCIs.map(([code, count]) => {
-              const problemInfo = appCIProblems.get(code);
+            {rankedAppIds.map(([code, count]) => {
+              const problemInfo = appIdProblems.get(code);
               const problematicServices: ProblematicService[] = problemInfo
                 ? Array.from(problemInfo.services, ([id, name]) => ({ id, name }))
                 : [];
               return (
-                <AppCIWeightRow
+                <AppIdWeightRow
                   key={code}
                   code={code}
                   count={count}
-                  max={maxAppCICount}
+                  max={maxAppIdCount}
                   hasProblem={!!problemInfo?.hasProblem}
                   hasRootCause={!!problemInfo?.hasRootCause}
                   problematicServices={problematicServices}
-                  onClick={() => onSelectAppCI(code, problematicServices)}
+                  onClick={() => onSelectAppId(code, problematicServices)}
                 />
               );
             })}

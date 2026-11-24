@@ -5,9 +5,9 @@ import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { RefreshOverlay } from "./RefreshOverlay";
 import { severityColor, severityLabel, severityRank, formatDurationUs } from "./dependencyUtils";
 import { openProblem } from "./SmartscapeViewMenu";
-import { appciFromEntityTags } from "../queries/maturityQueries";
+import { appIdFromEntityTags } from "../queries/maturityQueries";
 
-import { APP_CI_FIELD, LOAD, APP_CI_LABEL } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_LABEL } from "../settings/appSettings";
 export type SeverityFilterValue = "high" | "medium" | "low" | "none";
 
 function severityBucket(severity: string | null): SeverityFilterValue {
@@ -24,13 +24,13 @@ function severityBucket(severity: string | null): SeverityFilterValue {
 }
 
 interface Props {
-  appCI: string;
+  appId: string;
   selectedServiceId: string | null;
   onSelect: (serviceId: string, serviceName: string) => void;
   /** Empty set = no filtering (show all services). */
   severityFilter: Set<SeverityFilterValue>;
   /** When set, shows only these specific entity ids (e.g. "the problematic
-   * services" handed off from an AppCI click in the Unique AppCIs list) —
+   * services" handed off from an application ID click in the Unique AppIds list) —
    * a separate, additive restriction on top of severityFilter. Null/undefined
    * = no restriction. */
   restrictToServiceIds?: Set<string> | null;
@@ -38,24 +38,24 @@ interface Props {
 
 // Adapts the existing L2 "Golden Signal SLIs" query (checkDetailConfigs.ts)
 // with four additions:
-//  - critical-service severity, scoped to this AppCI, joined by entity id
+//  - critical-service severity, scoped to this application ID, joined by entity id
 //    (not entity_name — service names collide across apps) after exploding
 //    entity_ids (a single critical_services row can pack multiple ids).
 //  - direct upstream/downstream dependency counts, reusing the exact query
 //    shape from the "4. Smartscape Discovery" check (checkDetailConfigs.ts) —
 //    downstream comes straight off the service's own `calls` field; upstream
 //    is a global (cross-app) inverted lookup, since callers can belong to
-//    other AppCIs.
+//    other AppIds.
 //  - active (status == "ACTIVE") Davis problem enrichment, joined by
 //    exploding affected_entity_ids, with root-cause vs. victim distinguished
 //    by comparing to root_cause_entity_id. A service can be listed in more
 //    than one active problem simultaneously, so all matches are collected
 //    into an array (root-cause entries sorted first) rather than deduped
 //    down to one.
-const buildQuery = (appCI: string) => `fetch dt.entity.service
-${appciFromEntityTags()}
-| expand ${APP_CI_FIELD}
-| filter ${APP_CI_FIELD} == lower("${appCI}")
+const buildQuery = (appId: string) => `fetch dt.entity.service
+${appIdFromEntityTags()}
+| expand ${APP_ID_FIELD}
+| filter ${APP_ID_FIELD} == lower("${appId}")
 | dedup id
 | fields id, entity.name, calls
 | limit 500
@@ -71,7 +71,7 @@ ${appciFromEntityTags()}
 | fieldsAdd p95Us = p95
 | lookup [
     ${LOAD.criticalServices}
-    | filter lower(appci) == lower("${appCI}")
+    | filter lower(appId) == lower("${appId}")
     | filter entity_ids != "-"
     | fieldsAdd idList = splitString(entity_ids, " ")
     | expand idList
@@ -255,8 +255,8 @@ function SortableHeader({ col, sortKey, sortDir, onSort }: { col: { key: SortKey
   );
 }
 
-export const ServiceGoldenSignalsTable = ({ appCI, selectedServiceId, onSelect, severityFilter, restrictToServiceIds }: Props) => {
-  const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query: buildQuery(appCI) });
+export const ServiceGoldenSignalsTable = ({ appId, selectedServiceId, onSelect, severityFilter, restrictToServiceIds }: Props) => {
+  const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query: buildQuery(appId) });
   const [sortKey, setSortKey] = useState<SortKey>("errorRate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 

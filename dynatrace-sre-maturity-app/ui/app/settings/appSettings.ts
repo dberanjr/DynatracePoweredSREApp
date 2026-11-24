@@ -1,7 +1,7 @@
 /**
  * Customer-specific app settings.
  *
- * APP_CI_FIELD is the name of the unique application identifier a customer
+ * APP_ID_FIELD is the name of the unique application identifier a customer
  * carries on their Grail records / entity tags (United: "applicationci",
  * others: e.g. "app_id", "service_id", "costcenter"). It is interpolated into
  * DQL throughout the app, so queries are built from the value that was in
@@ -9,8 +9,8 @@
  * after saving.
  */
 
-export const DEFAULT_APP_CI_FIELD = DEFAULT_APPCI_FIELD;
-export const DEFAULT_APP_CI_LABEL = "Application ID";
+export { DEFAULT_APP_ID_FIELD };
+export const DEFAULT_APP_ID_LABEL = "Application ID";
 /** Company name from the build (.env COMPANY_NAME → generated constants.ts); Settings can override it at runtime. */
 export const DEFAULT_COMPANY_NAME = BUILD_COMPANY_NAME;
 export const DEFAULT_COMPANY_LOGO_URL = "";
@@ -18,7 +18,7 @@ export const DEFAULT_COMPANY_LOGO_URL = "";
 import { COMPANY_NAME as BUILD_COMPANY_NAME } from "../constants";
 import {
   CONFIG_GLOBAL_KEY,
-  DEFAULT_APPCI_FIELD,
+  DEFAULT_APP_ID_FIELD,
   defaultLookupSettings,
   normalizeCatalogSettings,
   normalizeIdMaxLength,
@@ -82,8 +82,8 @@ function read(): Partial<AppSettings> {
 
 export function loadSettings(): AppSettings {
   const s = read();
-  const field = typeof s.appCiField === "string" && !validateAppCiField(s.appCiField) ? s.appCiField.trim() : DEFAULT_APP_CI_FIELD;
-  const label = typeof s.appCiLabel === "string" && s.appCiLabel.trim() ? s.appCiLabel.trim() : DEFAULT_APP_CI_LABEL;
+  const field = typeof s.appCiField === "string" && !validateAppCiField(s.appCiField) ? s.appCiField.trim() : DEFAULT_APP_ID_FIELD;
+  const label = typeof s.appCiLabel === "string" && s.appCiLabel.trim() ? s.appCiLabel.trim() : DEFAULT_APP_ID_LABEL;
   const companyName = typeof s.companyName === "string" && s.companyName.trim() ? s.companyName.trim() : DEFAULT_COMPANY_NAME;
   const companyLogoUrl =
     typeof s.companyLogoUrl === "string" && !validateCompanyLogoUrl(s.companyLogoUrl) ? s.companyLogoUrl.trim() : DEFAULT_COMPANY_LOGO_URL;
@@ -97,7 +97,7 @@ export function saveSettings(next: AppSettings): void {
     STORAGE_KEY,
     JSON.stringify({
       appCiField: next.appCiField.trim(),
-      appCiLabel: next.appCiLabel.trim() || DEFAULT_APP_CI_LABEL,
+      appCiLabel: next.appCiLabel.trim() || DEFAULT_APP_ID_LABEL,
       cloudTagKey: next.cloudTagKey.trim(),
       appCiMaxLength: normalizeIdMaxLength(next.idMaxLength),
       companyName: next.companyName.trim() || DEFAULT_COMPANY_NAME,
@@ -115,9 +115,9 @@ export function resetSettings(): void {
 const loaded = loadSettings();
 
 /** Field name used in DQL (tag keys, aliases, lookup columns). Fixed for the lifetime of the page. */
-export const APP_CI_FIELD: string = loaded.appCiField;
+export const APP_ID_FIELD: string = loaded.appCiField;
 /** Display label for the identifier. */
-export const APP_CI_LABEL: string = loaded.appCiLabel;
+export const APP_ID_LABEL: string = loaded.appCiLabel;
 /** Organization name shown in the UI. */
 export const COMPANY_NAME: string = loaded.companyName;
 /** Landing-page background logo URL; empty string means none. */
@@ -131,11 +131,11 @@ export { defaultLookupSettings, defaultCatalogSettings };
 /** Resolved config for the query layer. */
 export const SRE_CONFIG: SreConfig = resolveConfig(loaded.appCiField, loaded.lookups, loaded.catalog, loaded.cloudTagKey, loaded.idMaxLength);
 /** Cloud resource / guardian tag key (e.g. ApplicationCI), case-sensitive. */
-export const APP_CI_CLOUD_TAG: string = SRE_CONFIG.cloudTagKey;
+export const APP_ID_CLOUD_TAG: string = SRE_CONFIG.cloudTagKey;
 /** True when the SLO lookup has an Application ID column (SLOs are matched by tag, not by name prefix). */
 export const SLO_ID_FROM_COLUMN: boolean = SRE_CONFIG.sloIdFromColumn;
 /** Longest application ID the bulk queries accept. */
-export const APP_CI_MAX_LENGTH: number = loaded.idMaxLength;
+export const APP_ID_MAX_LENGTH: number = loaded.idMaxLength;
 /** The override as saved (blank = derived). */
 export const CLOUD_TAG_OVERRIDE: string = loaded.cloudTagKey;
 

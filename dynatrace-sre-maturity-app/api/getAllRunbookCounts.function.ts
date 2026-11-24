@@ -4,8 +4,8 @@ interface DocumentEntry {
 }
 
 // Bulk sibling of getRunbookDetail: same Documents API fetch (it already reads
-// every notebook in the tenant before filtering to one AppCI), but groups by
-// AppCI instead of filtering to one — so the portfolio leaderboard can score
+// every notebook in the tenant before filtering to one application ID), but groups by
+// application ID instead of filtering to one — so the portfolio leaderboard can score
 // Runbooks Linked for every app in a single call instead of the 0-for-everyone
 // placeholder it used before. See getRunbookDetail.function.ts for the
 // per-app version this mirrors, including why Documents API reads live rather
@@ -24,7 +24,7 @@ export default async function (_input: unknown = undefined) {
   } while (pageKey);
 
   // Same naming convention as getRunbookDetail: name starts with a 3-letter
-  // AppCI token and contains the word "Runbook" (any case).
+  // application ID token and contains the word "Runbook" (any case).
   const tokenRe = /^[A-Za-z]{3}([^A-Za-z]|$)/;
   const runbookRe = /runbook/i;
 
@@ -32,8 +32,8 @@ export default async function (_input: unknown = undefined) {
   for (const d of docs) {
     const name = d.name || '';
     if (tokenRe.test(name) && runbookRe.test(name)) {
-      const appci = name.slice(0, 3).toLowerCase();
-      counts[appci] = (counts[appci] || 0) + 1;
+      const appId = name.slice(0, 3).toLowerCase();
+      counts[appId] = (counts[appId] || 0) + 1;
     }
   }
   return { counts };

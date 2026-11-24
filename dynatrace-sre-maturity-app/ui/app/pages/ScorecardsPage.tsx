@@ -9,11 +9,11 @@ import { SkeletonKeyframes } from "../components/SkeletonBar";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOverride";
 import { LevelId, LevelRecord } from "../components/checkStatus";
-import { SLO_APPCI_EXPR, appciFromEntityTags, appciFromProblemTags, hasTierLookup, appciFromWorkflowTitle } from "../queries/maturityQueries";
+import { SLO_APP_ID_EXPR, appIdFromEntityTags, appIdFromProblemTags, hasTierLookup, appIdFromWorkflowTitle } from "../queries/maturityQueries";
 
-import { APP_CI_FIELD, LOAD, APP_CI_LABEL, APP_CI_CLOUD_TAG } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG } from "../settings/appSettings";
 interface Props {
-  appCI: string;
+  appId: string;
   timeframe: { from: string; to: string };
 }
 
@@ -26,59 +26,59 @@ const runbooksLiveOverride: LiveCheckOverride = {
   appFunctionName: "getRunbookDetail",
   toStatus: (result) => {
     const count = ((result as { runbooks?: unknown[] })?.runbooks ?? []).length;
-    return count > 0 ? `pass ${count} runbook(s)` : `fail No ${APP_CI_LABEL} runbooks`;
+    return count > 0 ? `pass ${count} runbook(s)` : `fail No ${APP_ID_LABEL} runbooks`;
   },
 };
 
-export const ScorecardsPage = ({ appCI, timeframe }: Props) => {
+export const ScorecardsPage = ({ appId, timeframe }: Props) => {
 
   const l1Query = `// L1 Full Observability - Maturity Scorecard
-data record(${APP_CI_FIELD} = lower("${appCI}"))
+data record(${APP_ID_FIELD} = lower("${appId}"))
 
 // Signal 1: OneAgent / Metrics
 | lookup [
     fetch dt.entity.host
     | limit 100000
     | filter lifetime[end] > asTimestamp(now()-2h)
-    ${appciFromEntityTags()}
-    | expand ${APP_CI_FIELD}
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID_FIELD}
     // PaaS-injected hosts (ECS Fargate, EKS Fargate, etc.) never get a
     // monitoringMode value — PaaS OneAgent has no partial mode, it's always
     // full-stack or not present at all — so a null mode here still counts.
     | summarize
         hostCount = count(),
         fullStackCount = countIf(monitoringMode == "FULL_STACK" or isNull(monitoringMode)),
-        by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{hostCount, fullStackCount}
+        by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{hostCount, fullStackCount}
 | fieldsRename hosts = hostCount, fullStack = fullStackCount
 
 // Signal 2: Services / Traces
 | lookup [
     fetch dt.entity.service
-    ${appciFromEntityTags()}
-    | expand ${APP_CI_FIELD}
-    | summarize serviceCount = count(), by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{serviceCount}
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID_FIELD}
+    | summarize serviceCount = count(), by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{serviceCount}
 | fieldsRename services = serviceCount
 
 // Signal 3: Logs
 | lookup [
     fetch logs, samplingRatio:1000
-    | filter isNotNull(${APP_CI_FIELD})
-    | summarize logCount = count(), by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{logCount}
+    | filter isNotNull(${APP_ID_FIELD})
+    | summarize logCount = count(), by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{logCount}
 | fieldsRename logs = logCount
 
 // Signal 4: Kubernetes clusters
 // Cluster-name-prefix detection, NOT workload tags — K8s workloads (dt.entity.cloud_application)
 // are often tagged with a sub-application's CI (e.g. a shared EKS cluster hosting several
-// namespaces), while the cluster itself is named "<appci>-<region>-<env>". Matching on the
-// cluster name correctly reflects the parent ${APP_CI_LABEL} for portfolio-style apps.
+// namespaces), while the cluster itself is named "<appId>-<region>-<env>". Matching on the
+// cluster name correctly reflects the parent ${APP_ID_LABEL} for portfolio-style apps.
 | lookup [
     fetch dt.entity.kubernetes_cluster
-    | fieldsAdd ${APP_CI_FIELD} = lower(splitString(entity.name, "-")[0])
-    | summarize k8sClusterCount = count(), by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{k8sClusterCount}
+    | fieldsAdd ${APP_ID_FIELD} = lower(splitString(entity.name, "-")[0])
+    | summarize k8sClusterCount = count(), by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{k8sClusterCount}
 | fieldsRename k8sClusters = k8sClusterCount
 
 // Signal 4a: Cloud Native Full Stack OneAgent Operator health — the operator
@@ -87,7 +87,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 | lookup [
     smartscapeNodes K8S_DAEMONSET
     | filter matchesPhrase(k8s.workload.name, "oneagent") and not matchesPhrase(k8s.workload.name, "csi-driver")
-    | fieldsAdd ${APP_CI_FIELD} = lower(splitString(k8s.cluster.name, "-")[0])
+    | fieldsAdd ${APP_ID_FIELD} = lower(splitString(k8s.cluster.name, "-")[0])
     | parse k8s.object, "JSON:config"
     | fieldsAdd
         component = \`tags:k8s.labels\`[\`app.kubernetes.io/component\`],
@@ -95,25 +95,25 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
         ready = toLong(config[status][numberReady])
     | summarize
         cloudNativeOperatorHealthy = countIf(component == "cloudnativefullstack" and desired > 0 and ready == desired),
-        by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{cloudNativeOperatorHealthy}
+        by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{cloudNativeOperatorHealthy}
 
 // Signal 4b: K8s-scoped tracing — dt.service.request.count carries k8s.cluster.name
 // as a dimension, no direct Smartscape edge exists from SERVICE to K8S_POD.
 | lookup [
     timeseries reqs = sum(dt.service.request.count), by:{k8s.cluster.name}, from:now()-2h
-    | fieldsAdd ${APP_CI_FIELD} = lower(splitString(k8s.cluster.name, "-")[0]),
+    | fieldsAdd ${APP_ID_FIELD} = lower(splitString(k8s.cluster.name, "-")[0]),
         total = arraySum(reqs)
-    | summarize k8sScopedTracing = sum(total), by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{k8sScopedTracing}
+    | summarize k8sScopedTracing = sum(total), by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{k8sScopedTracing}
 
 // Signal 4c: K8s-scoped logs
 | lookup [
     fetch logs, samplingRatio:1000, from:now()-2h
     | filter isNotNull(k8s.cluster.name)
-    | fieldsAdd ${APP_CI_FIELD} = lower(splitString(k8s.cluster.name, "-")[0])
-    | summarize k8sScopedLogs = count(), by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{k8sScopedLogs}
+    | fieldsAdd ${APP_ID_FIELD} = lower(splitString(k8s.cluster.name, "-")[0])
+    | summarize k8sScopedLogs = count(), by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{k8sScopedLogs}
 
 // Signal 5: Cloud (all AWS/Azure/GCP resources — same smartscapeNodes source as
 // the Clouds app, not just EC2/RDS/Lambda, since those undercounted vs. the
@@ -124,38 +124,38 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 // verify against, but a wrong field name just yields 0 rows, not an error.)
 | lookup [
     smartscapeNodes "AWS*"
-    | fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
+    | fieldsFlatten \`tags:aws\`, fields:{${APP_ID_CLOUD_TAG}}
     | append [
         smartscapeNodes "AZURE*"
-        | fieldsFlatten \`tags:azure\`, fields:{${APP_CI_CLOUD_TAG}}
+        | fieldsFlatten \`tags:azure\`, fields:{${APP_ID_CLOUD_TAG}}
       ]
     | append [
         smartscapeNodes "GCP*"
-        | fieldsFlatten \`tags:gcp_labels\`, fields:{${APP_CI_CLOUD_TAG}}
+        | fieldsFlatten \`tags:gcp_labels\`, fields:{${APP_ID_CLOUD_TAG}}
       ]
-    | filter isNotNull(${APP_CI_CLOUD_TAG})
-    | fieldsAdd ${APP_CI_FIELD} = lower(${APP_CI_CLOUD_TAG})
-    | summarize cloudCount = count(), by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{cloudCount}
+    | filter isNotNull(${APP_ID_CLOUD_TAG})
+    | fieldsAdd ${APP_ID_FIELD} = lower(${APP_ID_CLOUD_TAG})
+    | summarize cloudCount = count(), by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{cloudCount}
 | fieldsRename cloudResources = cloudCount
 
 // Signal 6: RUM
 | lookup [
     fetch dt.entity.application, from:now()-1000d
-    ${appciFromEntityTags()}
-    | expand ${APP_CI_FIELD}
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID_FIELD}
     | fieldsAdd rumActive = if(lifetime[end] > now()-7d, true, else: false)
-    | summarize rumCount = countIf(rumActive == true), by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{rumCount}
+    | summarize rumCount = countIf(rumActive == true), by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{rumCount}
 | fieldsRename rumApps = rumCount
 
 // Signal 7: Synthetics
 | lookup [
     fetch dt.entity.synthetic_test
-    ${appciFromEntityTags()}
-    | expand ${APP_CI_FIELD}
-    | summarize synCount = count(), by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{synCount}
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID_FIELD}
+    | summarize synCount = count(), by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{synCount}
 | fieldsRename synthetics = synCount
 
 // Null-safe defaults
@@ -223,40 +223,40 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
     \`7. RUM / Synthetics\``;
 
   const l2Query = `// L2 Measured Reliability - Maturity Scorecard
-data record(${APP_CI_FIELD} = lower("${appCI}"))
+data record(${APP_ID_FIELD} = lower("${appId}"))
 
 // Signal 1: Golden signal metrics
 | lookup [
     fetch dt.entity.service
-    ${appciFromEntityTags()}
-    | expand ${APP_CI_FIELD}
-    | summarize serviceCount = count(), by:{${APP_CI_FIELD}}
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{serviceCount}
+    ${appIdFromEntityTags()}
+    | expand ${APP_ID_FIELD}
+    | summarize serviceCount = count(), by:{${APP_ID_FIELD}}
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{serviceCount}
 | fieldsRename goldenSignalServices = serviceCount
 
-// Signal 2: SLOs created (from the /lookups/sre/slo table; ${APP_CI_LABEL} = first 3 chars of the SLO name)
+// Signal 2: SLOs created (from the /lookups/sre/slo table; ${APP_ID_LABEL} = first 3 chars of the SLO name)
 | lookup [
     ${LOAD.slo}
-    | fieldsAdd appci = ${SLO_APPCI_EXPR}
-    | summarize sloCount = count(), by:{appci}
-  ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{sloCount}
+    | fieldsAdd appId = ${SLO_APP_ID_EXPR}
+    | summarize sloCount = count(), by:{appId}
+  ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{sloCount}
 
 // Signal 3: Site Reliability Guardians (from /lookups/sre/guardians; itemized one row per
 //   guardian, refreshed daily at 06:00 UTC by workflow — summarize to a count here)
 | lookup [
     ${LOAD.guardians}
-    | fieldsAdd appci = lower(appci)
-    | summarize guardianCount = count(), by:{appci}
-  ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{guardianCount}
+    | fieldsAdd appId = lower(appId)
+    | summarize guardianCount = count(), by:{appId}
+  ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{guardianCount}
 
 // Signal 4: SLO dashboards published (from /lookups/sre/slo_dashboards; itemized one row
 //   per dashboard, refreshed daily at 06:00 UTC by workflow — counts dashboards whose
-//   name starts with a 3-letter ${APP_CI_LABEL} token and contains "SLO")
+//   name starts with a 3-letter ${APP_ID_LABEL} token and contains "SLO")
 | lookup [
     ${LOAD.sloDashboards}
-    | fieldsAdd appci = lower(appci)
-    | summarize dashboardCount = count(), by:{appci}
-  ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{dashboardCount}
+    | fieldsAdd appId = lower(appId)
+    | summarize dashboardCount = count(), by:{appId}
+  ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{dashboardCount}
 | fieldsRename dashboards = dashboardCount
 
 // Signal 5: SRE assessment (CMDB tier assigned)
@@ -269,9 +269,9 @@ ${hasTierLookup()}
 //   entity, not merely being listed. ~38% of rows resolve tenant-wide.)
 | lookup [
     ${LOAD.criticalServices}
-    | fieldsAdd appci = lower(appci)
-    | summarize criticalCount = count(), resolved = countIf(entity_ids != "-"), by:{appci}
-  ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{criticalCount, resolved}
+    | fieldsAdd appId = lower(appId)
+    | summarize criticalCount = count(), resolved = countIf(entity_ids != "-"), by:{appId}
+  ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{criticalCount, resolved}
 
 // Null-safe defaults
 | fieldsAdd
@@ -296,7 +296,7 @@ ${hasTierLookup()}
         else: "fail None found"),
     \`4. SLO Dashboards Published\` = if(dashboards > 0,
         concat("pass ", toString(dashboards), " dashboards"),
-        else: "fail No ${APP_CI_LABEL} dashboards"),
+        else: "fail No ${APP_ID_LABEL} dashboards"),
     \`5. SRE Assessment in ARD\` = if(sreAssessment > 0,
         "pass CMDB tier assigned",
         else: "fail No tier data"),
@@ -325,7 +325,7 @@ ${hasTierLookup()}
     \`6. Critical Services Tagged\``;
 
   const l3Query = `// L3 AI-Assisted Operations - Maturity Scorecard
-data record(${APP_CI_FIELD} = lower("${appCI}"))
+data record(${APP_ID_FIELD} = lower("${appId}"))
 
 // Event correlation signal
 //   FIXED (2026-08-28): two bugs. (1) This read arraySize(affected_entities),
@@ -336,13 +336,13 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 //   numbers shown side by side described different windows. Now aligned to 7d.
 | lookup [
     fetch dt.davis.problems, from:now()-7d
-    ${appciFromProblemTags()}
-    | filter isNotNull(appci)
+    ${appIdFromProblemTags()}
+    | filter isNotNull(appId)
     | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
     | fieldsAdd isCorrelated = arraySize(affected_entity_ids) > 1
-    | summarize correlatedProblems = countIf(isCorrelated == true), by:{appci}
-    | fieldsRename ${APP_CI_FIELD} = appci
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{correlatedProblems}
+    | summarize correlatedProblems = countIf(isCorrelated == true), by:{appId}
+    | fieldsRename ${APP_ID_FIELD} = appId
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{correlatedProblems}
 | fieldsRename correlated = correlatedProblems
 
 // Problem signals (causal vs noise), last 7 days
@@ -351,8 +351,8 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 | lookup [
     fetch dt.davis.problems, from:now()-7d
     | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
-    ${appciFromProblemTags()}
-    | filter isNotNull(appci)
+    ${appIdFromProblemTags()}
+    | filter isNotNull(appId)
     | fieldsAdd eventCount = arraySize(dt.davis.event_ids)
     | fieldsAdd isCausal = matchesValue(event.category, array("ERROR", "SLOWDOWN")) and eventCount > 1
     | fieldsAdd isNoise = eventCount == 1 and matchesValue(event.category, array("AVAILABILITY", "RESOURCE_CONTENTION", "CUSTOM_ALERT", "MONITORING_UNAVAILABLE"))
@@ -364,22 +364,22 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
         causalTotal = countIf(isCausal),
         causalWithCause = countIf(isCausal and hasRootCause == true),
         noiseTotal = countIf(isNoise),
-        by:{appci}
-    | fieldsRename ${APP_CI_FIELD} = appci
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{total7d, causalActive, causalClosed, causalTotal, causalWithCause, noiseTotal}
+        by:{appId}
+    | fieldsRename ${APP_ID_FIELD} = appId
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{total7d, causalActive, causalClosed, causalTotal, causalWithCause, noiseTotal}
 
-// ITSM Integration: a workflow named "<${APP_CI_LABEL}> Production Dynatrace Alerts" exists (last 30 days)
+// ITSM Integration: a workflow named "<${APP_ID_LABEL}> Production Dynatrace Alerts" exists (last 30 days)
 | lookup [
     fetch dt.system.events, from:now()-30d
     | filter event.provider == "AUTOMATION_ENGINE"
     | filter event.kind == "WORKFLOW_EVENT"
     | filter event.type == "WORKFLOW_EXECUTION"
     | filter matchesValue(\`dt.automation_engine.workflow.title\`, "* Production Dynatrace Alerts")
-    | fieldsAdd wfAppci = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
-    | summarize itsmWorkflows = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppci}
-  ], sourceField:${APP_CI_FIELD}, lookupField:wfAppci, fields:{itsmWorkflows}
+    | fieldsAdd wfAppId = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+    | summarize itsmWorkflows = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppId}
+  ], sourceField:${APP_ID_FIELD}, lookupField:wfAppId, fields:{itsmWorkflows}
 
-// CI/CD + DORA: deployments from any CI/CD platform (last 30 days), per ${APP_CI_LABEL}
+// CI/CD + DORA: deployments from any CI/CD platform (last 30 days), per ${APP_ID_LABEL}
 //   covers GitHub Actions CDK deployments AND Harness pipeline deployments
 //   source: CUSTOM_DEPLOYMENT events (application_ci field required)
 | lookup [
@@ -391,8 +391,8 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
         deployTotal = count(),
         deploySuccess = countIf(\`workflow-outcome\` == "success"),
         avgLeadMs = avg(leadMs),
-        by:{appci = lower(application_ci)}
-  ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{deployTotal, deploySuccess, avgLeadMs}
+        by:{appId = lower(application_ci)}
+  ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{deployTotal, deploySuccess, avgLeadMs}
 
 // Runbooks Linked: NOT computed here. The Documents API this check depends on
 // can't be queried in DQL, so its live pass/fail + score adjustment is applied
@@ -474,12 +474,12 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
     \`7. DORA Metrics\``;
 
   const l4Query = `// L4 Proactive Reliability - Maturity Scorecard
-data record(${APP_CI_FIELD} = lower("${appCI}"))
+data record(${APP_ID_FIELD} = lower("${appId}"))
 
 // Signal 1: SLO burn-rate alerts (30d)
 //   Davis CUSTOM_ALERT problems raised by SLO burn-rate metric events. Alert names
-//   follow the tenant convention "<${APP_CI_LABEL}> - SLO <name> for Availability or Performance
-//   Burn Rate is above <threshold>", so the ${APP_CI_LABEL} is the 3-char token before " - ".
+//   follow the tenant convention "<${APP_ID_LABEL}> - SLO <name> for Availability or Performance
+//   Burn Rate is above <threshold>", so the ${APP_ID_LABEL} is the 3-char token before " - ".
 //   CAVEAT: this detects burn-rate alerts that FIRED, not alert configs that exist.
 //   A correctly-configured alert on a consistently healthy SLO will not appear here
 //   (alert configs live in anomaly-detector settings objects, not queryable in DQL).
@@ -488,10 +488,10 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
     | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
     | filter event.category == "CUSTOM_ALERT"
     | filter contains(lower(event.name), "burn rate")
-    | fieldsAdd appci = lower(trim(splitString(event.name, " - ")[0]))
-    | filter stringLength(appci) == 3
-    | summarize burnAlerts = countDistinct(event.name), burnFired = count(), by:{appci}
-  ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{burnAlerts, burnFired}
+    | fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
+    | filter stringLength(appId) == 3
+    | summarize burnAlerts = countDistinct(event.name), burnFired = count(), by:{appId}
+  ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{burnAlerts, burnFired}
 
 // Signal 2: Autoscaling constructs + total cloud footprint
 //   Counts real autoscaling entities, not a generic cloud-resource tally: EC2/EKS Auto
@@ -502,40 +502,40 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 //   they live in K8s workload YAML, which needs a separate per-mechanism evaluation.
 | lookup [
     smartscapeNodes "AWS*"
-    | fieldsFlatten \`tags:aws\`, fields:{${APP_CI_CLOUD_TAG}}
-    | filter isNotNull(${APP_CI_CLOUD_TAG})
+    | fieldsFlatten \`tags:aws\`, fields:{${APP_ID_CLOUD_TAG}}
+    | filter isNotNull(${APP_ID_CLOUD_TAG})
     | summarize
         cloudTotal = count(),
         asgCount = countIf(type == "AWS_AUTOSCALING_AUTOSCALINGGROUP"),
         ecsScale = countIf(type == "AWS_APPLICATIONAUTOSCALING_SCALABLETARGET"),
         ngCount = countIf(type == "AWS_EKS_NODEGROUP"),
-        by:{appci = lower(${APP_CI_CLOUD_TAG})}
-  ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{cloudTotal, asgCount, ecsScale, ngCount}
+        by:{appId = lower(${APP_ID_CLOUD_TAG})}
+  ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{cloudTotal, asgCount, ecsScale, ngCount}
 
 // Signal 3: Deployments (30d) — same CUSTOM_DEPLOYMENT source as the L3 CI/CD check
 | lookup [
     fetch events, from:now()-30d
     | filter event.type == "CUSTOM_DEPLOYMENT"
     | filter isNotNull(application_ci)
-    | summarize deployCount = count(), by:{appci = lower(application_ci)}
-  ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{deployCount}
+    | summarize deployCount = count(), by:{appId = lower(application_ci)}
+  ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{deployCount}
 
 // Signal 4: Site Reliability Guardian validations (30d)
-//   SRG emits SDLC_EVENT validation events carrying dt.srg.tags with the ${APP_CI_LABEL}.
+//   SRG emits SDLC_EVENT validation events carrying dt.srg.tags with the ${APP_ID_LABEL}.
 //   trigger.type distinguishes a guardian fired BY a deployment (the L4 goal) from one
 //   merely running on a cron schedule.
 | lookup [
     fetch events, from:now()-30d
     | filter event.kind == "SDLC_EVENT"
     | filter event.type == "validation" and event.status == "finished"
-    | fieldsAdd appci = lower(splitString(splitString(dt.srg.tags, "\\"${APP_CI_CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
-    | filter isNotNull(appci)
+    | fieldsAdd appId = lower(splitString(splitString(dt.srg.tags, "\\"${APP_ID_CLOUD_TAG}\\":[\\"")[1], "\\"")[0])
+    | filter isNotNull(appId)
     | fieldsAdd trig = coalesce(\`dt.automation_engine.workflow_execution.trigger.type\`, "Manual")
     | summarize
         srgRuns = count(),
         srgEventTriggered = countIf(trig != "Schedule" and trig != "Manual"),
-        by:{appci}
-  ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{srgRuns, srgEventTriggered}
+        by:{appId}
+  ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{srgRuns, srgEventTriggered}
 
 // Null-safe defaults
 | fieldsAdd
@@ -597,7 +597,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
     \`5. Error Budget Gating\``;
 
   const l5Query = `// L5 Autonomous Reliability - Maturity Scorecard
-data record(${APP_CI_FIELD} = lower("${appCI}"))
+data record(${APP_ID_FIELD} = lower("${appId}"))
 
 // Signal 1: Automation Engine workflows tied to this app (title prefixed
 // with the app's 3-letter code, executed in the last 30 days). FIXED
@@ -613,26 +613,26 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
     fetch dt.system.events, from:now()-30d
     | filter event.provider == "AUTOMATION_ENGINE"
     | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-    ${appciFromWorkflowTitle("wfAppci")}
-    | filter stringLength(wfAppci) == 3
-    | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppci}
-  ], sourceField:${APP_CI_FIELD}, lookupField:wfAppci, fields:{workflowCount}
+    ${appIdFromWorkflowTitle("wfAppId")}
+    | filter stringLength(wfAppId) == 3
+    | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppId}
+  ], sourceField:${APP_ID_FIELD}, lookupField:wfAppId, fields:{workflowCount}
 | fieldsRename workflows = workflowCount
 
 // Signal 2: Problem auto-enrichment
 | lookup [
     fetch dt.davis.problems
-    ${appciFromProblemTags()}
-    | filter isNotNull(appci)
+    ${appIdFromProblemTags()}
+    | filter isNotNull(appId)
     | filter dt.davis.is_duplicate == false
     | fieldsAdd hasItsmProfile = toString(labels.alerting_profile) != "[\\"Default\\"]"
         and isNotNull(labels.alerting_profile)
     | summarize
         totalProblems = count(),
         enrichedProblems = countIf(hasItsmProfile == true),
-        by:{appci}
-    | fieldsRename ${APP_CI_FIELD} = appci
-  ], sourceField:${APP_CI_FIELD}, lookupField:${APP_CI_FIELD}, fields:{totalProblems, enrichedProblems}
+        by:{appId}
+    | fieldsRename ${APP_ID_FIELD} = appId
+  ], sourceField:${APP_ID_FIELD}, lookupField:${APP_ID_FIELD}, fields:{totalProblems, enrichedProblems}
 | fieldsRename total = totalProblems, enriched = enrichedProblems
 
 // Null-safe defaults
@@ -684,7 +684,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
   // same-day manual re-run down to its latest snapshot.
   const trendQuery = `fetch bizevents, from:now()-90d
 | filter event.type == "workflow.summary.sre_maturity"
-| filter lower(${APP_CI_FIELD}) == lower("${appCI}")
+| filter lower(${APP_ID_FIELD}) == lower("${appId}")
 | sort timestamp desc
 | dedup snapshotDate
 | sort timestamp asc
@@ -704,7 +704,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
   // OverallScore.tsx component this replaces already used.
   const results = levelConfigs.map((lc) => {
     const { data, isLoading, isRefreshing, error } = useDqlWithCache({ query: lc.query });
-    const { apply } = useLiveCheckOverride(appCI, lc.liveOverride);
+    const { apply } = useLiveCheckOverride(appId, lc.liveOverride);
     return { ...lc, data, isLoading, isRefreshing, error, apply };
   });
 
@@ -744,7 +744,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
           boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
         }}
       >
-        <AppIdentityBar appCI={appCI} />
+        <AppIdentityBar appId={appId} />
         <div style={{ borderTop: "1px solid rgba(255,255,255,.12)", marginTop: 14, paddingTop: 16 }}>
           <MaturitySpine
             levelRecords={levelRecords}
@@ -787,7 +787,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
         <CheckDetailModal
           checkKey={openCheck.key}
           currentValue={openCheck.value}
-          appCI={appCI}
+          appId={appId}
           accentColor={results.find((r) => r.level === openCheck.level)!.color}
           onClose={() => setOpenCheck(null)}
           siblings={siblings}

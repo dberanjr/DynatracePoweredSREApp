@@ -1,7 +1,7 @@
 import type { DemoFixture, DemoFunctionFixture, DemoResult } from "./types";
 import { dqlFixtures, functionFixtures } from "./fixtures";
-import { APP_CI_FIELD, SRE_CONFIG } from "../settings/appSettings";
-import { DEFAULT_APPCI_FIELD, LOOKUP_KEYS, LOOKUP_DEFS } from "../settings/lookupDefs";
+import { APP_ID_FIELD, SRE_CONFIG } from "../settings/appSettings";
+import { DEFAULT_APP_ID_FIELD, LOOKUP_KEYS, LOOKUP_DEFS } from "../settings/lookupDefs";
 
 const EMPTY: DemoResult = { records: [] };
 
@@ -17,9 +17,9 @@ const EMPTY: DemoResult = { records: [] };
  */
 function toDefaults(q: string): string {
   let out = q;
-  if (APP_CI_FIELD !== DEFAULT_APPCI_FIELD) {
-    const esc = APP_CI_FIELD.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    out = out.replace(new RegExp(`(?<![A-Za-z0-9_])${esc}(?![A-Za-z0-9_])`, "g"), DEFAULT_APPCI_FIELD);
+  if (APP_ID_FIELD !== DEFAULT_APP_ID_FIELD) {
+    const esc = APP_ID_FIELD.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replace(new RegExp(`(?<![A-Za-z0-9_])${esc}(?![A-Za-z0-9_])`, "g"), DEFAULT_APP_ID_FIELD);
   }
   for (const k of LOOKUP_KEYS) {
     const custom = SRE_CONFIG.paths[k];
@@ -35,12 +35,12 @@ function match(q: string): DemoFixture | undefined {
 
 /** Fixtures return the default identifier column; rename it to the configured field. */
 function withConfiguredField(r: DemoResult): DemoResult {
-  if (APP_CI_FIELD === DEFAULT_APPCI_FIELD) return r;
+  if (APP_ID_FIELD === DEFAULT_APP_ID_FIELD) return r;
   return {
     ...r,
     records: r.records.map((rec) =>
-      DEFAULT_APPCI_FIELD in rec
-        ? Object.fromEntries(Object.entries(rec).map(([k, v]) => [k === DEFAULT_APPCI_FIELD ? APP_CI_FIELD : k, v]))
+      DEFAULT_APP_ID_FIELD in rec
+        ? Object.fromEntries(Object.entries(rec).map(([k, v]) => [k === DEFAULT_APP_ID_FIELD ? APP_ID_FIELD : k, v]))
         : rec
     ),
   };

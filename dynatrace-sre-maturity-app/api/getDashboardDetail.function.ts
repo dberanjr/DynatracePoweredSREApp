@@ -28,9 +28,9 @@ export default async function (input: unknown = undefined) {
   // Accept either shape so the same function is testable both ways.
   const raw = (input && typeof input === 'object' && 'payload' in (input as Record<string, unknown>)
     ? (input as { payload?: unknown }).payload
-    : input) as { appCI?: string } | undefined;
-  const appCI = String(raw?.appCI || '').trim().toLowerCase();
-  if (!appCI) return { dashboards: [] };
+    : input) as { appId?: string } | undefined;
+  const appId = String(raw?.appId || '').trim().toLowerCase();
+  if (!appId) return { dashboards: [] };
 
   const docs: DocumentEntry[] = [];
   let pageKey: string | null = null;
@@ -45,12 +45,12 @@ export default async function (input: unknown = undefined) {
   } while (pageKey);
 
   // Same naming convention as the lookup-table workflow: name starts with a
-  // 3-letter AppCI token and contains "SLO" as a standalone uppercase token.
+  // 3-letter application ID token and contains "SLO" as a standalone uppercase token.
   const tokenRe = /^[A-Za-z]{3}([^A-Za-z]|$)/;
   const sloRe = /(^|[^A-Z])SLO([^A-Z]|$)/;
   const matches = docs.filter((d) => {
     const name = d.name || '';
-    return sloRe.test(name) && tokenRe.test(name) && name.slice(0, 3).toLowerCase() === appCI;
+    return sloRe.test(name) && tokenRe.test(name) && name.slice(0, 3).toLowerCase() === appId;
   });
 
   // Resolve owner UUIDs -> display names in one batch call.

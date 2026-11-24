@@ -15,7 +15,7 @@ export interface DemoProblem {
 export interface DemoService {
   id: string; // SERVICE-XXXXXXXXXXXXXXXX
   name: string;
-  appCI: string;
+  appId: string;
   index: number;
   severity: "High" | "Medium" | "Low" | null;
   businessImpact: string | null;
@@ -84,7 +84,7 @@ export const DEMO_SERVICES: DemoService[] = DEMO_APPS.flatMap((app) => {
     return {
       id: ids[i],
       name: `${app.name} ${suf}`,
-      appCI: app.code,
+      appId: app.code,
       index: i,
       severity: sev,
       businessImpact: sev ? IMPACT[sev] : null,
@@ -100,7 +100,7 @@ export const DEMO_SERVICES: DemoService[] = DEMO_APPS.flatMap((app) => {
 export const DEMO_SERVICE_BY_ID: Record<string, DemoService> = Object.fromEntries(DEMO_SERVICES.map((s) => [s.id, s]));
 
 export function servicesForApp(code: string): DemoService[] {
-  return DEMO_SERVICES.filter((s) => s.appCI.toLowerCase() === code.toLowerCase());
+  return DEMO_SERVICES.filter((s) => s.appId.toLowerCase() === code.toLowerCase());
 }
 
 export function upstreamIds(id: string): string[] {

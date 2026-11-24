@@ -33,14 +33,14 @@ export const DEMO_APPS: DemoApp[] = [
 
 export const DEMO_APP_BY_CODE: Record<string, DemoApp> = Object.fromEntries(DEMO_APPS.map((a) => [a.code, a]));
 
-/** Fallback when a query names an AppCI we don't know about (or none at all). */
+/** Fallback when a query names an application ID we don't know about (or none at all). */
 export const DEFAULT_DEMO_APP = DEMO_APP_BY_CODE["ADH"];
 
 /**
- * Pull the AppCI a query is scoped to. Looks for any known demo code appearing
+ * Pull the application ID a query is scoped to. Looks for any known demo code appearing
  * as a quoted string literal (e.g. `== "PAY"`, `'ppay'`), case-insensitive.
  */
-export function extractAppCI(query: string): DemoApp {
+export function extractAppId(query: string): DemoApp {
   for (const a of DEMO_APPS) {
     const re = new RegExp(`["'\`]${a.code}["'\`]`, "i");
     if (re.test(query)) return a;
