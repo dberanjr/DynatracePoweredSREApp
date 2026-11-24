@@ -154,6 +154,15 @@ export default async function () {
     }
   }
 
+  // Surface ingest failures: a task that returns normally is reported as SUCCESS even if nothing was written.
+  if (failedBatches.length || events.length === 0) {
+    throw new Error(
+      events.length === 0
+        ? 'No applications were scored (record counts l1..l5: ' + [l1, l2, l3, l4, l5].map((r) => r.length).join('/') + ').'
+        : 'Ingest failed for ' + failedBatches.length + ' of ' + Math.ceil(events.length / BATCH_SIZE) + ' batches: ' + failedBatches[0].error
+    );
+  }
+
   return {
     appsProcessed: allAppci.size,
     recordCounts: { l1: l1.length, l2: l2.length, l3: l3.length, l4: l4.length, l5: l5.length },

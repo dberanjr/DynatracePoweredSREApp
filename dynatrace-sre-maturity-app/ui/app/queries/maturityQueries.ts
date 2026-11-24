@@ -19,13 +19,16 @@
 // APPCI is the customer's application identifier field (entity tag key, DQL alias, ID column of app-managed
 // lookups). LOAD.<table> is `load "<their path>"` plus a rename of their columns to the names used below.
 // Defaults reproduce the original queries exactly: applicationci and the /lookups/* paths.
-type SreConfigShape = { appciField: string; cloudTagKey: string; idMaxLength: number; loads: Record<string, string>; paths: Record<string, string> };
+type SreConfigShape = { appciField: string; cloudTagKey: string; idMaxLength: number; sloIdFromColumn: boolean; loads: Record<string, string>; paths: Record<string, string> };
 const SRE_CONFIG = (globalThis as unknown as Record<string, SreConfigShape | undefined>)["__SRE_CONFIG__"];
 if (!SRE_CONFIG) throw new Error("maturityQueries: settings were not published before this module loaded (import settings/appSettings first).");
 export const APPCI = SRE_CONFIG.appciField;
 export const LOAD = SRE_CONFIG.loads;
 export const CLOUD_TAG = SRE_CONFIG.cloudTagKey;
 export const ID_MAX = SRE_CONFIG.idMaxLength;
+/** DQL expression giving each /lookups/slo row's application ID: its ID column when mapped, else the first 3 characters of the name. */
+export const SLO_APPCI_EXPR = SRE_CONFIG.sloIdFromColumn ? "lower(appci)" : "lower(substring(slo, from:0, to:3))";
+export const SLO_ID_FROM_COLUMN = SRE_CONFIG.sloIdFromColumn;
 export const LOOKUP_PATHS = SRE_CONFIG.paths;
 
 export const APPCI_MAP_PATH = LOOKUP_PATHS["appciMap"];
@@ -281,7 +284,7 @@ ${appciFromEntityTags()}
 ${hasTierLookup()}
 | lookup [
     ${LOAD.slo}
-    | fieldsAdd appci = lower(substring(slo, from:0, to:3))
+    | fieldsAdd appci = ${SLO_APPCI_EXPR}
     | summarize sloCount = count(), by:{appci}
   ], sourceField:${APPCI}, lookupField:appci, fields:{sloCount}
 | lookup [

@@ -2,6 +2,7 @@ interface PlatformSlo {
   id: string;
   name: string;
   description?: string;
+  tags?: string[];
   criteria?: { target?: number; timeframeFrom?: string; timeframeTo?: string }[];
 }
 
@@ -20,7 +21,7 @@ export interface SloDetail {
 export default async function (input: unknown = undefined) {
   const raw = (input && typeof input === 'object' && 'payload' in (input as Record<string, unknown>)
     ? (input as { payload?: unknown }).payload
-    : input) as { appCI?: string } | undefined;
+    : input) as { appCI?: string; appCiField?: string; sloIdFromTag?: boolean } | undefined;
   const appCI = String(raw?.appCI || '').trim().toLowerCase();
   if (!appCI) return { slos: [] };
 
@@ -36,7 +37,15 @@ export default async function (input: unknown = undefined) {
     pageKey = body.nextPageKey || null;
   } while (pageKey);
 
-  const matches = slos.filter((s) => (s.name || '').slice(0, 3).toLowerCase() === appCI);
+  // Settings with an SLO Application ID column identify an SLO by its `<appCiField>:<id>` tag (the same rule the
+  // refresh workflow uses); otherwise the application is the first 3 characters of the name.
+  const tagKey = String(raw?.appCiField || '').trim().toLowerCase();
+  const byTag = raw?.sloIdFromTag === true && tagKey !== '';
+  const matches = slos.filter((s) =>
+    byTag
+      ? (s.tags || []).some((t) => t.toLowerCase() === `${tagKey}:${appCI}`)
+      : (s.name || '').slice(0, 3).toLowerCase() === appCI,
+  );
 
   const details: SloDetail[] = matches.map((s) => {
     const lastToken = s.name.split('-').pop() || s.name;

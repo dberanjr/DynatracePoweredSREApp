@@ -17,15 +17,33 @@
     },
     "appciMap": {
       "path": "/lookups/utan_map",
-      "columns": { "appName": "app_name", "appId": "$APPCI" }
+      "columns": {
+        "appName": "app_name",
+        "appId": "$APPCI"
+      }
+    },
+    "slo": {
+      "path": "/lookups/slo",
+      "columns": {
+        "slo": "slo",
+        "appId": "appci"
+      }
     }
   },
   "catalog": {
     "labels": {},
     "extras": [],
     "tiers": [
-      { "value": "yes", "label": "Top tier", "critical": true },
-      { "value": "no", "label": "Not top tier", "critical": false }
+      {
+        "value": "yes",
+        "label": "Top tier",
+        "critical": true
+      },
+      {
+        "value": "no",
+        "label": "Not top tier",
+        "critical": false
+      }
     ]
   }
 }

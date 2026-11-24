@@ -132,6 +132,8 @@ export { defaultLookupSettings, defaultCatalogSettings };
 export const SRE_CONFIG: SreConfig = resolveConfig(loaded.appCiField, loaded.lookups, loaded.catalog, loaded.cloudTagKey, loaded.idMaxLength);
 /** Cloud resource / guardian tag key (e.g. ApplicationCI), case-sensitive. */
 export const APP_CI_CLOUD_TAG: string = SRE_CONFIG.cloudTagKey;
+/** True when the SLO lookup has an Application ID column (SLOs are matched by tag, not by name prefix). */
+export const SLO_ID_FROM_COLUMN: boolean = SRE_CONFIG.sloIdFromColumn;
 /** Longest application ID the bulk queries accept. */
 export const APP_CI_MAX_LENGTH: number = loaded.idMaxLength;
 /** The override as saved (blank = derived). */

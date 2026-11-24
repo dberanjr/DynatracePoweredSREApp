@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph } from "@dynatrace/strato-components/typography";
 import { useDql } from "../hooks/useDql";
-import { appciFromEntityTags, unmappedApplicationsQuery, APPCI_MAP_ROWS_QUERY, appciFromWorkflowTitle } from "../queries/maturityQueries";
+import { SLO_APPCI_EXPR, appciFromEntityTags, unmappedApplicationsQuery, APPCI_MAP_ROWS_QUERY, appciFromWorkflowTitle } from "../queries/maturityQueries";
 import {
   INK,
   cardStyle,
@@ -52,7 +52,7 @@ const UNMAPPED_KIND_ONE = ["service", "host", "RUM app", "synthetic test"] as co
 const HOSTS_QUERY = tagCodes("fetch dt.entity.host\n| limit 100000\n| filter lifetime[end] > asTimestamp(now()-2h)", "n");
 
 const SLO_QUERY = `${LOAD.slo}
-| fieldsAdd ${APP_CI_FIELD} = lower(substring(slo, from:0, to:3))
+| fieldsAdd ${APP_CI_FIELD} = ${SLO_APPCI_EXPR}
 | summarize n = count(), by:{${APP_CI_FIELD}}`;
 const GUARDIAN_QUERY = `${LOAD.guardians}
 | fieldsAdd ${APP_CI_FIELD} = lower(appci)

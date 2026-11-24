@@ -1,7 +1,20 @@
 // Refreshes /lookups/slo (one row per SLO name) from the Gen3 SLO platform API.
-// The scorecard derives AppCI via: lower(substring(slo, from:0, to:3)).
+// The scorecard derives AppCI from the first 3 characters of the name, unless the settings map an Application ID
+// column for this table (ID_COL below is then non-empty): the ID is the SLO's `<APPCI>:<id>` tag, falling back to the
+// name up to its first separator when the SLO has no such tag.
 // NOTE: the platform SLO API rejects page-size when page-key is set — first
 // page uses page-size, subsequent pages use page-key only (confirmed in getSloDetail.function.ts).
+const ID_COL = '__SLO_ID_COL__';
+const TAG_KEY = '__APPCI__'.toLowerCase();
+const ID_MAX = __ID_MAX__;
+
+function sloAppId(s) {
+  const tag = (s.tags || []).find((t) => t.toLowerCase().startsWith(TAG_KEY + ':'));
+  if (tag) return tag.slice(TAG_KEY.length + 1).trim().toLowerCase();
+  const m = /^([A-Za-z0-9]+)[^A-Za-z0-9]/.exec(s.name || '');
+  return m && m[1].length <= ID_MAX ? m[1].toLowerCase() : '';
+}
+
 export default async function () {
   // 1. Page through all SLOs
   const slos = [];
@@ -16,14 +29,17 @@ export default async function () {
     }
     const body = await r.json();
     for (const s of body.slos || []) {
-      if (s.name) slos.push(s.name);
+      if (s.name) slos.push({ name: s.name.replace(/[\r\n^]/g, ' '), id: sloAppId(s) || '-' });
     }
     pageKey = body.nextPageKey || null;
   } while (pageKey);
 
   // 2. Build CSV — one row per SLO name, sorted for deterministic diffs
-  slos.sort();
-  const csv = '__SLO_COL__\n' + slos.join('\n') + '\n';
+  slos.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  // With an ID column the table has two '^'-separated columns (names contain commas); otherwise it is just the names.
+  const csv = ID_COL
+    ? '__SLO_COL__^' + ID_COL + '\n' + slos.map((s) => s.name + '^' + s.id).join('\n') + '\n'
+    : '__SLO_COL__\n' + slos.map((s) => s.name).join('\n') + '\n';
 
   // 3. Upload as a lookup table (overwrite existing)
   const meta = {
@@ -31,7 +47,7 @@ export default async function () {
     displayName: 'SLOs by AppCI',
     description: 'One row per SLO name; AppCI is derived from the first 3 characters of the name',
     lookupField: '__SLO_COL__',
-    parsePattern: 'LD:__SLO_COL__',
+    parsePattern: ID_COL ? "LD:__SLO_COL__ '^' LD:" + ID_COL : 'LD:__SLO_COL__',
     skippedRecords: 1,
     autoFlatten: true,
     timezone: 'UTC',

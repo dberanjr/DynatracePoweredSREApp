@@ -3,7 +3,7 @@
 // Keep in sync with ScorecardsPage.tsx when queries change.
 
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
-import { appciFromEntityTags, appciFromProblemTags, appciFromWorkflowTitle, hasTierLookup } from "../queries/maturityQueries";
+import { SLO_APPCI_EXPR, appciFromEntityTags, appciFromProblemTags, appciFromWorkflowTitle, hasTierLookup } from "../queries/maturityQueries";
 
 import { APP_CI_FIELD, LOAD, APP_CI_LABEL, APP_CI_CLOUD_TAG } from "../settings/appSettings";
 export interface CheckDetailConfig {
@@ -665,7 +665,7 @@ ${appciFromEntityTags()}
     sloRowClick: true,
     scorecardSnippet: `// Source: /lookups/slo  (refreshed hourly by workflow "Refresh /lookups/slo (SLOs by ${APP_CI_LABEL})")
 ${LOAD.slo}
-| fieldsAdd appci = lower(substring(slo, from:0, to:3))
+| fieldsAdd appci = ${SLO_APPCI_EXPR}
 | summarize sloCount = count(), by:{appci}
 
 // Naming convention: SLO name MUST start with the 3-letter ${APP_CI_LABEL} code

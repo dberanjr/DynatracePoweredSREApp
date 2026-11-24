@@ -70,10 +70,11 @@ export const LOOKUP_DEFS = {
   },
   slo: {
     label: "SLOs",
-    description: "One row per SLO. The application is derived from the first 3 characters of the SLO name.",
+    description: "One row per SLO. The application is the Application ID column when you map one, otherwise the first 3 characters of the SLO name.",
     defaultPath: "/lookups/slo",
     fields: {
       slo: { canonical: "slo", default: "slo", label: "SLO name", hint: "Name starting with the application code" },
+      appId: { canonical: "appci", default: "", label: "Application ID", hint: "Leave blank to use the first 3 characters of the SLO name", optional: true },
     },
   },
   sloDashboards: {
@@ -228,7 +229,8 @@ export function buildLoad(key: LookupKey, s: LookupTableSettings, appciField: st
   const fields: Record<string, LookupFieldDef> = LOOKUP_DEFS[key].fields;
   const renames = Object.entries(fields)
     .map(([f, d]) => [resolveColumn(d.canonical, appciField), resolveColumn(s.columns[f] ?? d.default, appciField)] as const)
-    .filter(([canonical, mapped]) => mapped !== canonical)
+    // an optional column that is unmapped and has no default is simply absent (not renamed to "")
+    .filter(([canonical, mapped], i) => mapped !== canonical && !(mapped === "" && Object.values(fields)[i].default === ""))
     .map(([canonical, mapped]) => `${dqlColumn(canonical)} = ${dqlColumn(mapped)}`);
   // Extra display columns (CMDB only) are exposed as extra_0, extra_1, ...
   if (key === "cmdb") extras.forEach((e, i) => renames.push(`${extraAlias(i)} = ${dqlColumn(e.column)}`));
@@ -274,6 +276,8 @@ export interface SreConfig {
   /** `load "<path>"` plus renames of the customer's columns to the app's names, per lookup table. */
   loads: Record<LookupKey, string>;
   paths: Record<LookupKey, string>;
+  /** True when the SLO table has an Application ID column (otherwise the ID is the first 3 characters of the SLO name). */
+  sloIdFromColumn: boolean;
   /** Chips for the application profile banners. */
   profileFields: ProfileField[];
   /** Tier value rules for the leaderboard. */
@@ -300,6 +304,7 @@ export function resolveConfig(appciField: string, lookups: LookupSettings, catal
     appciField,
     cloudTagKey: resolveCloudTagKey(appciField, cloudTagKeyOverride),
     idMaxLength,
+    sloIdFromColumn: !!lookups.slo.columns.appId,
     loads,
     paths,
     profileFields: buildProfileFields(lookups, catalog),

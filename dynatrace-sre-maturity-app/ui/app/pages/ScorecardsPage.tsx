@@ -9,7 +9,7 @@ import { SkeletonKeyframes } from "../components/SkeletonBar";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOverride";
 import { LevelId, LevelRecord } from "../components/checkStatus";
-import { appciFromEntityTags, appciFromProblemTags, hasTierLookup, appciFromWorkflowTitle } from "../queries/maturityQueries";
+import { SLO_APPCI_EXPR, appciFromEntityTags, appciFromProblemTags, hasTierLookup, appciFromWorkflowTitle } from "../queries/maturityQueries";
 
 import { APP_CI_FIELD, LOAD, APP_CI_LABEL, APP_CI_CLOUD_TAG } from "../settings/appSettings";
 interface Props {
@@ -237,7 +237,7 @@ data record(${APP_CI_FIELD} = lower("${appCI}"))
 // Signal 2: SLOs created (from the /lookups/slo table; ${APP_CI_LABEL} = first 3 chars of the SLO name)
 | lookup [
     ${LOAD.slo}
-    | fieldsAdd appci = lower(substring(slo, from:0, to:3))
+    | fieldsAdd appci = ${SLO_APPCI_EXPR}
     | summarize sloCount = count(), by:{appci}
   ], sourceField:${APP_CI_FIELD}, lookupField:appci, fields:{sloCount}
 

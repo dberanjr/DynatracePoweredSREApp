@@ -126,7 +126,7 @@ const TARGETS = [
     template: "scripts/workflow-scripts/refresh-lookups-slo.script.template.js",
     vars: () => {
       const s = settingsOf("slo");
-      return { __PATH__: s.path, __SLO_COL__: s.col("slo") };
+      return { __PATH__: s.path, __SLO_COL__: s.col("slo"), __SLO_ID_COL__: s.col("appId") ?? "", __APPCI__: sreConfig.appciField, __ID_MAX__: String(sreConfig.idMaxLength) };
     },
   },
 ];
