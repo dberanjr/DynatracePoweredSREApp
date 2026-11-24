@@ -64,7 +64,7 @@ dtctl apply -f <lookup-definition>.yaml      # or upload the CSV from the Lookup
 
 A CMDB lists applications that are retired or never instrumented. They clutter the picker and score zero.
 NM solved this with a workflow, **Refresh /lookups/utan_active**
-([workflows/refresh-lookups-utan-active.workflow-template.yaml](../workflows/refresh-lookups-utan-active.workflow-template.yaml)):
+([workflows/customers/nm/refresh-lookups-utan-active.workflow-template.yaml](../workflows/customers/nm/refresh-lookups-utan-active.workflow-template.yaml)):
 
 - Reads the source table, keeps only identifiers that have at least one live Smartscape node tagged with them in
   the last 24 hours, writes the result to `/lookups/utan_active`.
@@ -160,23 +160,29 @@ Tables you point at your own paths are shown read-only in the Lookups tab.
 ## 6. Generate and deploy the workflows
 
 The workflows embed the same queries as the app, so they are generated from the app's code and your settings.
+The files in [workflows/](../workflows/) are the **generic defaults** (`/lookups/sre/…` paths, identifier `appId`).
+Each customer's set is generated into its own folder, so a customer's pinned paths never leak into another's:
 
 ```
-npm run generate:workflows -- --config <exported-settings>.json
-npm run check:workflows -- --config <exported-settings>.json    # confirm nothing is out of date
+# 1. Write a settings file for the customer (start from scripts/settings/nm.json or Settings > Export saved settings)
+# 2. Generate that customer's workflows into their own folder
+node scripts/generate-snapshot-workflow.mjs --config scripts/settings/<customer>.json --out workflows/customers/<customer>
 ```
 
-Without `--config`, the generator produces the United defaults.
+Existing sets: [workflows/customers/nm/](../workflows/customers/nm/) and
+[workflows/customers/united/](../workflows/customers/united/) (`npm run generate:customers` regenerates both).
+`npm run check:workflows` checks only the generic defaults. Customer-specific hand-written workflows (for example NM's
+active-UTAN filter) live in that customer's folder.
 
 **Deploy with the script.** The generated files are templates wrapped in `metadata:` / `workflow:`, which
 `dtctl apply` would treat as a dashboard. [scripts/deploy-workflows.mjs](../scripts/deploy-workflows.mjs) flattens
 each one and updates the workflow with the same title in place (or creates it):
 
 ```
-npm run deploy:workflows -- --context <dtctl-context> --dry-run     # preview
-npm run deploy:workflows -- --context <dtctl-context>               # deploy all
-npm run deploy:workflows -- --context <dtctl-context> --run         # deploy, then run each and wait
-npm run deploy:workflows -- --context <dtctl-context> --only slo    # one workflow (file name or title match)
+npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer> --dry-run   # preview
+npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer>             # deploy all
+npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer> --run       # deploy, then run each and wait
+npm run deploy:workflows -- --context <dtctl-context> --dir workflows/customers/<customer> --only slo  # one workflow
 ```
 
 `--context` is required so a deploy never lands on the default tenant by accident. Lookup refreshes deploy and run
@@ -187,7 +193,7 @@ Workflows to deploy:
 
 | Workflow | Writes | Schedule |
 |---|---|---|
-| Refresh /lookups/utan_active (customer-specific, step 2.2) | `/lookups/utan_active` | daily |
+| Refresh /lookups/utan_active (NM only, step 2.2; in `workflows/customers/nm/`) | `/lookups/utan_active` | daily |
 | Refresh /lookups/critical_services | `/lookups/critical_services` | daily |
 | Refresh /lookups/guardians | `/lookups/guardians` | daily |
 | Refresh /lookups/slo_dashboards | `/lookups/slo_dashboards` | daily |

@@ -53,7 +53,7 @@ workflow:
                 if (i > 0) {
                   const k = String(t).slice(0, i).trim().toLowerCase();
                   const v = String(t).slice(i + 1).trim().toLowerCase();
-                  if ((k === 'utan' || k === 'appci') && v) appIds.add(v);
+                  if ((k === 'appid' || k === 'appci') && v) appIds.add(v);
                 }
               }
               for (const a of appIds) counts[a] = (counts[a] || 0) + 1;
@@ -66,15 +66,15 @@ workflow:
             // appId can never equal a real application ID (it never joins to a scorecard row).
             const rows = appIds.map((a) => `${a},${counts[a]}`);
             if (rows.length === 0) rows.push('__none__,0');
-            const csv = 'appci,guardianCount\n' + rows.join('\n') + '\n';
+            const csv = 'appId,guardianCount\n' + rows.join('\n') + '\n';
 
             // 4. Upload as a lookup table (overwrite existing)
             const meta = {
-              filePath: '/lookups/guardians',
+              filePath: '/lookups/sre/guardians',
               displayName: 'Guardians by application ID',
               description: 'Count of Site Reliability Guardians per applicationCI, refreshed from the guardian Settings API',
-              lookupField: 'appci',
-              parsePattern: "LD:appci ',' LD:guardianCount",
+              lookupField: 'appId',
+              parsePattern: "LD:appId ',' LD:guardianCount",
               skippedRecords: 1,
               autoFlatten: true,
               timezone: 'UTC',

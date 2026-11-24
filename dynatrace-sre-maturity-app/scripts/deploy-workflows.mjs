@@ -1,9 +1,11 @@
 // Deploys workflows/*.workflow-template.yaml to a Dynatrace tenant with dtctl.
 //
-//   node scripts/deploy-workflows.mjs --context <dtctl-context> [options]
+//   node scripts/deploy-workflows.mjs --context <dtctl-context> --dir workflows/customers/<customer> [options]
 //
 //   --context <name>   dtctl context (tenant) to deploy to. Required, so a deploy never lands on whatever
 //                      context happens to be the default.
+//   --dir <path>       folder of *.workflow-template.yaml to deploy (repeatable; default: workflows/). Use the folder
+//                      that `generate-snapshot-workflow.mjs --out` wrote for this customer.
 //   --only <text>      only templates whose file name or workflow title contains <text> (repeatable)
 //   --run              run each deployed workflow once and wait for it (in dependency order: lookups first,
 //                      the daily snapshot last)
@@ -15,7 +17,7 @@
 // Run `npm run generate:workflows` first if you changed settings.
 
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -27,6 +29,7 @@ const flag = (n) => args.includes(n);
 const values = (n) => args.flatMap((a, i) => (a === n && args[i + 1] ? [args[i + 1]] : []));
 const context = values("--context")[0];
 const only = values("--only");
+const dirs = values("--dir").length ? values("--dir").map((d) => resolve(d)) : [join(root, "workflows")];
 const dryRun = flag("--dry-run");
 const runAfter = flag("--run");
 
@@ -42,18 +45,19 @@ function dtctl(cmdArgs, { json = false } = {}) {
   return json ? JSON.parse(r.stdout) : r.stdout;
 }
 
-// Lookups first, the snapshot (which reads them) last.
 const order = (file) => (file.includes("daily-snapshot") ? 2 : 1);
-const files = readdirSync(join(root, "workflows"))
-  .filter((f) => f.endsWith(".workflow-template.yaml"))
-  .sort((a, b) => order(a) - order(b) || a.localeCompare(b));
-
-const templates = files
-  .map((file) => {
-    const doc = YAML.parse(readFileSync(join(root, "workflows", file), "utf8"));
-    if (!doc?.workflow?.title) throw new Error(`${file}: no workflow.title`);
-    return { file, workflow: doc.workflow };
-  })
+const templates = dirs
+  .flatMap((dir) =>
+    readdirSync(dir)
+      .filter((f) => f.endsWith(".workflow-template.yaml"))
+      .map((file) => {
+        const doc = YAML.parse(readFileSync(join(dir, file), "utf8"));
+        if (!doc?.workflow?.title) throw new Error(`${join(dir, file)}: no workflow.title`);
+        return { file, workflow: doc.workflow };
+      }),
+  )
+  // Lookups first, the snapshot (which reads them) last.
+  .sort((a, b) => order(a.file) - order(b.file) || a.file.localeCompare(b.file))
   .filter((t) => !only.length || only.some((o) => t.file.includes(o) || t.workflow.title.includes(o)));
 
 if (!templates.length) {

@@ -36,9 +36,9 @@ workflow:
           // name up to its first separator when the SLO has no such tag.
           // NOTE: the platform SLO API rejects page-size when page-key is set — first
           // page uses page-size, subsequent pages use page-key only (confirmed in getSloDetail.function.ts).
-          const ID_COL = 'appci';
-          const TAG_KEY = 'utan'.toLowerCase();
-          const ID_MAX = 10;
+          const ID_COL = '';
+          const TAG_KEY = 'appId'.toLowerCase();
+          const ID_MAX = 3;
 
           function sloAppId(s) {
             const tag = (s.tags || []).find((t) => t.toLowerCase().startsWith(TAG_KEY + ':'));
@@ -75,7 +75,7 @@ workflow:
 
             // 3. Upload as a lookup table (overwrite existing)
             const meta = {
-              filePath: '/lookups/slo',
+              filePath: '/lookups/sre/slo',
               displayName: 'SLOs by application ID',
               description: 'One row per SLO name; the application is derived from the first 3 characters of the name, or from the ID column when there is one',
               lookupField: 'slo',

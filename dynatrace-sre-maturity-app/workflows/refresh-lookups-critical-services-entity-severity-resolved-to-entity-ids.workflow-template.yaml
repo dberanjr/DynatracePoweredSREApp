@@ -27,7 +27,7 @@ workflow:
 
           // GENERATED PARTS: the three APP_ID_FROM_* constants below are produced by scripts/generate-snapshot-workflow.mjs
           // from ui/app/queries/maturityQueries.ts, so an application ID is resolved here exactly as in the app (an
-          // `utan:<code>` tag, or an `Application:<Name>` tag mapped through the application ID map table). Edit that
+          // `appId:<code>` tag, or an `Application:<Name>` tag mapped through the application ID map table). Edit that
           // module and run `npm run generate:workflows`; the template for this script is
           // workflows/refresh-lookups-critical-services.script.template.js.
           //
@@ -39,9 +39,9 @@ workflow:
           // unchunked estate-wide query fails with JOIN_RIGHT_TABLE_SIZE. Chunks of 100 keep the
           // Smartscape subquery bounded and finish in ~6s each.
 
-          const SRC    = '/lookups/entity_severity';
-          const SEED_ID = 'appci'; // the seed table's application ID column; renamed to `appId` below
-          const DST    = '/lookups/critical_services';
+          const SRC    = '/lookups/sre/entity_severity';
+          const SEED_ID = 'appId'; // the seed table's application ID column; renamed to `appId` below
+          const DST    = '/lookups/sre/critical_services';
           const CHUNK  = 100;        // appIds per query
           const D      = '^';        // field delimiter - verified to appear 0 times in the source data
           const WINDOW = 'now()-24h';
@@ -72,7 +72,7 @@ workflow:
                 splitString(
                   arrayRemoveNulls(
                     iCollectArray(
-                      if(matchesPhrase(id_tags[], "*utan*"), lower(id_tags[]))
+                      if(matchesPhrase(id_tags[], "*appId*"), lower(id_tags[]))
                     )
                   )[], ":"
                 )[1]
@@ -80,9 +80,9 @@ workflow:
             )
           | fieldsAdd idAppIdName = lower(arrayFirst(splitString(replaceString(arrayFirst(arrayRemoveNulls(iCollectArray(if(startsWith(lower(id_tags[]), "application:"), substring(id_tags[], from: 12))))), "\\\\", ""), "::")))
           | lookup [
-              load "/lookups/utan_map"
-              | fields app_name, utan
-            ], sourceField:idAppIdName, lookupField:app_name, fields:{idAppIdMapped = utan}
+              load "/lookups/sre/app_map"
+              | fields app_name, appId
+            ], sourceField:idAppIdName, lookupField:app_name, fields:{idAppIdMapped = appId}
           | fieldsAdd id_appIds = arrayDistinct(
               iCollectArray(
                 splitString(
@@ -97,7 +97,7 @@ workflow:
                 splitString(
                   arrayRemoveNulls(
                     iCollectArray(
-                      if(matchesPhrase(tags[], "*utan*"), lower(tags[]))
+                      if(matchesPhrase(tags[], "*appId*"), lower(tags[]))
                     )
                   )[], ":"
                 )[1]
@@ -105,10 +105,10 @@ workflow:
             )
           | fieldsAdd appIdName = lower(arrayFirst(splitString(replaceString(arrayFirst(arrayRemoveNulls(iCollectArray(if(startsWith(lower(tags[]), "application:"), substring(tags[], from: 12))))), "\\\\", ""), "::")))
           | lookup [
-              load "/lookups/utan_map"
-              | fields app_name, utan
-            ], sourceField:appIdName, lookupField:app_name, fields:{appIdMapped = utan}
-          | fieldsAdd utan = arrayDistinct(
+              load "/lookups/sre/app_map"
+              | fields app_name, appId
+            ], sourceField:appIdName, lookupField:app_name, fields:{appIdMapped = appId}
+          | fieldsAdd appId = arrayDistinct(
               iCollectArray(
                 splitString(
                   arrayConcat(appIdTagged, if(isNotNull(appIdMapped), array(lower(appIdMapped)), else: array()))[], ","
@@ -119,9 +119,9 @@ workflow:
 
           const APP_ID_FROM_TAG_MAP = `| fieldsAdd smapName = lower(arrayFirst(splitString(replaceString(trim(arrayFirst(splitString(replaceString(replaceString(replaceString(toString(coalesce(tags[Application], tags[application])), "[", ""), "]", ""), "\\"", ""), ","))), "\\\\", ""), "::")))
           | lookup [
-              load "/lookups/utan_map"
-              | fields app_name, utan
-            ], sourceField:smapName, lookupField:app_name, fields:{smapMapped = utan}`;
+              load "/lookups/sre/app_map"
+              | fields app_name, appId
+            ], sourceField:smapName, lookupField:app_name, fields:{smapMapped = appId}`;
 
           function buildQuery(appIds) {
             const inFilter = 'in(appId, array(' + appIds.map(qt).join(',') + '))';
@@ -143,8 +143,8 @@ workflow:
               '| join [',
               '      fetch dt.entity.service, from:' + WINDOW + ', to:now()',
               APP_ID_FROM_SERVICE_TAGS,
-              '      | expand utan',
-              '      | fieldsAdd appId = utan',
+              '      | expand appId',
+              '      | fieldsAdd appId = appId',
               '      | filter ' + inFilter,
               '      | fieldsAdd e_join = concat(appId, "_", entity.name)',
               '    ],',
@@ -152,9 +152,9 @@ workflow:
               '    on: { left[e_join] == right[e_join]}, fields:{id_1 = id}',
               '| join [',
               '      smartscapeNodes "*", from:' + WINDOW + ', to:now()',
-              '      | fields name, id, tags, `tags:aws`, aws.tags.utan, custom_metadata, host.custom.metadata',
+              '      | fields name, id, tags, `tags:aws`, aws.tags.appId, custom_metadata, host.custom.metadata',
               APP_ID_FROM_TAG_MAP,
-              '      | fieldsAdd appId = coalesce(tags[utan], `tags:aws`[utan], `tags:aws`[utan], aws.tags.utan, custom_metadata[utan], custom_metadata[utan], host.custom.metadata[utan], host.custom.metadata[utan], lower(smapMapped))',
+              '      | fieldsAdd appId = coalesce(tags[appId], `tags:aws`[appId], `tags:aws`[appId], aws.tags.appId, custom_metadata[appId], custom_metadata[appId], host.custom.metadata[appId], host.custom.metadata[appId], lower(smapMapped))',
               '      | filter ' + inFilter,
               '      | fieldsAdd e_join = concat(appId, "_", name)',
               '    ],',
@@ -208,7 +208,7 @@ workflow:
               ].join(D));
             }
 
-            const header = ['row_id', 'appci', 'entity_name', 'severity', 'entity_ids', 'id_count', 'business_impact'].join(D);
+            const header = ['row_id', 'appId', 'entity_name', 'severity', 'entity_ids', 'id_count', 'business_impact'].join(D);
             const content = header + '\n' + lines.join('\n') + '\n';
 
             // 4. publish the lookup table
@@ -217,7 +217,7 @@ workflow:
               displayName: 'Critical Services (resolved)',
               description: 'Critical services and endpoints from ' + SRC + ', resolved to Dynatrace entity IDs over a rolling 24h window. One row per source entry (row_id). entity_ids is space-separated; id_count = 0 means the row did not resolve; \'-\' means empty.',
               lookupField: 'row_id',
-              parsePattern: "INT:row_id '^' LD:appci '^' LD:entity_name '^' LD:severity '^' LD:entity_ids '^' INT:id_count '^' LD:business_impact",
+              parsePattern: "INT:row_id '^' LD:appId '^' LD:entity_name '^' LD:severity '^' LD:entity_ids '^' INT:id_count '^' LD:business_impact",
               // 0, not 1: the header line starts with 'row_id', which can't match INT:row_id, so it is already
               // dropped as an unparseable record. skippedRecords: 1 then also discarded the first real row.
               skippedRecords: 0,

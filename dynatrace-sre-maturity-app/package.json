@@ -5,6 +5,7 @@
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
     "generate:workflows": "node scripts/generate-snapshot-workflow.mjs",
+    "generate:customers": "node scripts/generate-snapshot-workflow.mjs --config scripts/settings/nm.json --out workflows/customers/nm && node scripts/generate-snapshot-workflow.mjs --config scripts/settings/united.json --out workflows/customers/united",
     "deploy:workflows": "node scripts/deploy-workflows.mjs",
     "check:workflows": "node scripts/generate-snapshot-workflow.mjs --check",
     "check:readiness": "node scripts/check-readiness-registry.mjs",

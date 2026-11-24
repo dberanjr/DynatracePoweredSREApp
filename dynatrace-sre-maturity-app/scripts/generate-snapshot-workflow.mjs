@@ -2,6 +2,9 @@
 //
 //   node scripts/generate-snapshot-workflow.mjs           write the generated files
 //   node scripts/generate-snapshot-workflow.mjs --check   exit 1 if a generated file is out of date
+//   node scripts/generate-snapshot-workflow.mjs --config <settings.json> --out <dir>
+//                                                          write one customer's workflows into <dir> and leave
+//                                                          workflows/ (the generic defaults) untouched
 //
 // WHY: a workflow cannot import app code, so its queries used to be hand-copied duplicates of the app's.
 // The copies drifted: the deployed snapshot workflow ran stale L1-L4 logic and, separately, failed on every
@@ -16,13 +19,16 @@
 //          lookup paths and column mapping. Placeholders in the templates: __APP_ID__ (identifier field),
 //          __CLOUD_TAG__ (cloud tag key), __PATH__ / __ID_COL__ / __SLO_COL__ (this workflow's lookup).
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join, dirname, basename, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import YAML from "yaml";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const check = process.argv.includes("--check");
+const outIdx = process.argv.indexOf("--out");
+const outDir = outIdx > 0 ? resolve(process.argv[outIdx + 1] ?? "") : null;
+if (outIdx > 0 && (!process.argv[outIdx + 1] || check)) { console.error("--out needs a directory and cannot be combined with --check"); process.exit(2); }
 // Settings. maturityQueries.ts reads the app's settings (identifier field, lookup paths and column mapping)
 // from a global the app publishes at startup; do the same here so generated workflows match the app.
 //   default                         the original deployment (applicationci, /lookups/* paths)
@@ -174,7 +180,8 @@ for (const t of TARGETS) {
   const next = yaml.slice(0, node.range[0]) + "|\n" + body + "\n" + yaml.slice(node.range[2]);
   const current = String(node.value).replace(/\s+$/, "");
   if (current !== script.replace(/\s+$/, "")) stale.push(t.yaml);
-  writes.push([yamlPath, current === script.replace(/\s+$/, "") ? yaml : next]);
+  // With --out the committed template is only the source; the customer's copy always gets the generated script.
+  writes.push(outDir ? [join(outDir, basename(yamlPath)), next] : [yamlPath, current === script.replace(/\s+$/, "") ? yaml : next]);
 }
 
 if (check) {
@@ -184,6 +191,8 @@ if (check) {
   }
   console.log("[generate-workflows] up to date");
 } else {
+  if (outDir) mkdirSync(outDir, { recursive: true });
   for (const [path, text] of writes) writeFileSync(path, text);
-  console.log(stale.length ? `[generate-workflows] updated: ${stale.join(", ")}` : "[generate-workflows] already up to date");
+  if (outDir) console.log(`[generate-workflows] wrote ${writes.length} workflow(s) to ${outDir}`);
+  else console.log(stale.length ? `[generate-workflows] updated: ${stale.join(", ")}` : "[generate-workflows] already up to date");
 }
