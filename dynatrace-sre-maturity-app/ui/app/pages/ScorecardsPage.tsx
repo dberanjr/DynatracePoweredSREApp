@@ -682,8 +682,10 @@ data record(${APP_ID_FIELD} = lower("${appId}"))
   // "workflow.summary.sre_maturity"). Filters early (event.type, then
   // applicationci) since this is a large shared tenant. dedup collapses a
   // same-day manual re-run down to its latest snapshot.
+  // TEMPORARY: default_bizevents is also read, because the snapshot workflow currently sends its events there until the
+  // snapshot bucket exists. Remove it from the filter once that bucket is in use.
   const trendQuery = `fetch bizevents, from:now()-90d
-| filter dt.system.bucket == "${SNAPSHOT_BUCKET}"
+| filter in(dt.system.bucket, array("${SNAPSHOT_BUCKET}", "default_bizevents"))
 | filter event.type == "workflow.summary.sre_maturity"
 | filter lower(appId) == lower("${appId}")
 | sort timestamp desc

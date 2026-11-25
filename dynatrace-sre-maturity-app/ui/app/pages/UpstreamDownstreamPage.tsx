@@ -162,8 +162,9 @@ export const UpstreamDownstreamPage = ({ appId, onAppIdChange }: Props) => {
   };
 
   const { data: statusData, isLoading: statusLoading } = useDql({ query: STATUS_QUERY(appId) });
-  const status = String(statusData?.records?.[0]?.operational_status || "");
-  const isInProduction = !statusLoading && status === "In Production";
+  const status = String(statusData?.records?.[0]?.operational_status ?? "").trim();
+  // A catalog without a status column (the column is optional) must not lock the page: a blank status counts as in production.
+  const isInProduction = !statusLoading && (status === "In Production" || status === "");
 
   const { data: summaryData } = useDql({ query: isInProduction ? SUMMARY_QUERY(appId) : "data record(skip = true) | limit 0" });
   const summary = summaryData?.records?.[0] as Record<string, unknown> | undefined;
