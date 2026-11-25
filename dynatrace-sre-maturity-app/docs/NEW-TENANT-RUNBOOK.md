@@ -1,6 +1,6 @@
 # Runbook: Getting the SRE Maturity App Working in a New Tenant
 
-**Status: draft.** Written from the NM (`nwm-prod`) onboarding. Items marked **TODO** are not yet verified or written.
+**Status: draft.** Written from the NM (`nwm-prod`) onboarding and updated for the shared Settings (`/lookups/dtsrepoweredapp/config`). Items marked **TODO** are not yet verified or written.
 
 This runbook is the ordered checklist for standing the app up for a new customer. It does not repeat everything
 in [HOW-TO-USE.md](HOW-TO-USE.md) (what each level checks, the Lookups tab, day-to-day use) or the
@@ -31,7 +31,8 @@ Fill this table before touching anything. Every later step depends on it.
 | Question | NM answer (example) | Customer answer |
 |---|---|---|
 | What is the **application identifier** called? (the tag / field that ties entities to an application) | `utan` (about 5 digits) | |
-| How are entities tagged? (`utan:<code>`, a Kubernetes label, a cloud tag) | `utan:<code>`; Kubernetes `nm.kubernetes/utan` | |
+| How are entities tagged, and under **which tag keys**? Several are fine (`utan:<code>`, a Kubernetes label, a cloud tag); list every key that carries the ID | `utan:<code>`; Kubernetes `nm.kubernetes/utan` | |
+| Which **column of their CMDB holds the same value the tags carry**? (CMDBs often have several ID-like columns; check, do not assume: step 2.5) | NM's table has `utan` and `app_number`; the tags follow `app_number` far more often | |
 | How long can an identifier be? | 10 | |
 | Where is the CMDB data, and which columns hold name, tier, owner, director, support group, status? | `/lookups/utan_data` (`SNOW_app_name`, `top_tier`, `managed_by`, `ownership_by`, `maintained_by`) | |
 | What do the tier values mean, and which count as critical? | `yes` = Top tier (critical), `no` = Not top tier | |
@@ -43,10 +44,11 @@ most common cause of an empty or confusing app.
 
 ## 2. Load and clean the lookup tables
 
-**Every tenant uses the same location: `/lookups/dtsrepoweredapp/`.** The location is not a setting. The app, the
-Lookups tab and the workflows all use it, so one set of workflows deploys everywhere. If you already have data
-elsewhere, copy it into these tables; do not point the app at your own paths. Your **column names** can differ: map
-them in Settings (step 5). See [HOW-TO-USE.md section 4.3](HOW-TO-USE.md) for the sample CSVs in
+**The app's own tables are in a fixed location, `/lookups/dtsrepoweredapp/`.** That is not a setting: the app, the Lookups
+tab and the workflows all use it, so one set of workflows deploys everywhere. The one table that is yours is the **source
+table** with your application data (step 2.1): put it at any path you like, with your own column names, and tell the app
+where it is and what its columns mean in Settings (step 5). The catalog workflow normalises it into
+`/lookups/dtsrepoweredapp/cmdb`. See [HOW-TO-USE.md section 4.3](HOW-TO-USE.md) for the sample CSVs in
 [lookups/](../lookups/).
 
 | Table | Purpose | Who maintains it | Path |
@@ -67,8 +69,16 @@ application; it needs at least an identifier). You do not reshape it: the catalo
 dtctl apply -f <lookup-definition>.yaml      # or upload the CSV from a Notebook
 ```
 
-**TODO:** pin down the exact `dtctl` command for lookup upload (the NM tables were created through the
-`lookup:upload` API with a `^` delimiter; see `scripts/workflow-scripts/refresh-application-catalog.script.template.js`).
+Upload a CSV with `dtctl` (it reads the header row and builds the parse pattern; see `dtctl create lookup --help`):
+
+```
+dtctl --context <ctx> create lookup -f applications.csv --path /lookups/my_applications \
+  --lookup-field <id column> --display-name "Application data"
+```
+
+**Grail keeps one row per `--lookup-field` value**, so choose a column that is unique per application; duplicate values
+collapse to one row. For values with commas or odd characters, use `--parse-pattern` with a delimiter that never occurs
+in the data (the NM tables use `^`). Not yet re-tested end to end for a fresh customer.
 
 ### 2.2 Build the application catalog (workflow)
 
@@ -133,6 +143,25 @@ applications, and 38 resolved to entity IDs on the first run.
   the app until added to the source table.
 - Malformed rows (embedded delimiters, truncated lines). NM's `updated_utan_data` had some (for example
   identifier `10014`).
+- **An ID column that does not match the tags.** NM's table had two ID-like columns, and 1,252 of its 2,254 rows had
+  different values in them. The tags followed `app_number` (397 of 511 tag values) more than `utan` (354), so with `utan`
+  mapped, applications such as 48259 were missing from the picker. Before choosing the column for Application ID in
+  Settings, compare each candidate with the tags (replace `utan` with the customer's tag key and the columns with theirs):
+
+```
+fetch dt.entity.service
+| fieldsAdd tag = arrayDistinct(iCollectArray(splitString(arrayRemoveNulls(iCollectArray(if(matchesPhrase(tags[], "*utan*"), lower(tags[]))))[], ":")[1]))
+| expand tag
+| filter isNotNull(tag)
+| summarize services = count(), by:{tag}
+| lookup [load "/lookups/my_applications" | fields app_number, hit_a = app_number], sourceField:tag, lookupField:app_number, fields:{hit_a}
+| lookup [load "/lookups/my_applications" | fields utan, hit_b = utan], sourceField:tag, lookupField:utan, fields:{hit_b}
+| summarize tag_values = count(), in_app_number = countIf(isNotNull(hit_a)), in_utan = countIf(isNotNull(hit_b)),
+    in_neither = countIf(isNull(hit_a) and isNull(hit_b))
+```
+
+  Pick the column with the higher count, check it has no blanks or duplicates, and ask the customer to confirm it is the one
+  their teams use. Tag values in neither column need adding to the source table or correcting at the source.
 
 ## 3. Create the service user and its permissions
 
@@ -164,6 +193,7 @@ Notes:
   statement.
 - The docs do not say which permissions a JavaScript task needs, so run each workflow once and read any 403.
 - Users who view the app need the permissions in [HOW-TO-USE.md section 4.2](HOW-TO-USE.md).
+- Whoever saves the app's **Settings** (step 5) writes a lookup table, so they also need `storage:files:write`. Everyone else sees the settings read-only.
 
 ## 4. Deploy the app
 
@@ -285,12 +315,9 @@ at least one snapshot.
 
 These are conventions in the app that settings do not cover yet:
 
-- **SLOs are handled.** If your SLOs carry an `<identifier>:<id>` tag (NM: 3,945 of 3,973 do), map the **Application ID**
-  column of the SLOs lookup in Settings (`appci` is what the refresh workflow writes). The workflow then writes a
-  second column with each SLO's ID, taken from the tag, falling back to the name up to its first separator. The
-  app's SLO counts and the SLO detail modal use the same rule. Leave the column blank to keep the original
-  "first 3 characters of the SLO name" rule. Redeploy the SLO workflow and run it **before** changing the setting,
-  because the old table has no ID column.
+- **SLOs are handled.** The SLO workflow writes each SLO's application ID (its `<tag key>:<id>` tag, for any of the
+  configured tag keys, falling back to the name up to its first separator). The app's SLO counts and the SLO detail modal
+  use the same rule. There is nothing to configure.
 - The **dashboard, runbook, burn-rate alert and workflow-title** checks still assume the first 3 characters of the
   name are the identifier (the `== 3` filters). NM has no such naming convention, so these checks score zero for NM
   until a rule is agreed (for example a tag, or a different name pattern).
