@@ -31,8 +31,9 @@ export default async function (input: unknown = undefined) {
   // Accept either shape so the same function is testable both ways.
   const raw = (input && typeof input === 'object' && 'payload' in (input as Record<string, unknown>)
     ? (input as { payload?: unknown }).payload
-    : input) as { appId?: string; appCiField?: string } | undefined;
-  const appCiField = String(raw?.appCiField || 'applicationci').trim().toLowerCase();
+    : input) as { appId?: string; appCiField?: string; tagKeys?: string[] } | undefined;
+  // Any of the configured tag keys identifies the application (the app sends its list; appCiField is the older single key).
+  const tagKeys = (Array.isArray(raw?.tagKeys) ? raw.tagKeys : [raw?.appCiField || 'applicationci']).map((k) => String(k || '').trim().toLowerCase()).filter(Boolean);
   const appId = String(raw?.appId || '').trim().toLowerCase();
   if (!appId) return { guardians: [] };
 
@@ -53,7 +54,7 @@ export default async function (input: unknown = undefined) {
       if (i > 0) {
         const k = String(t).slice(0, i).trim().toLowerCase();
         const val = String(t).slice(i + 1).trim().toLowerCase();
-        if ((k === appCiField || k === 'appci') && val === appId) matches = true;
+        if ((tagKeys.includes(k) || k === 'appci') && val === appId) matches = true;
       }
     }
     if (!matches) continue;

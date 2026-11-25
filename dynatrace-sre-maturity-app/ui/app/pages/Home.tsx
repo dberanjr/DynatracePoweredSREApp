@@ -8,6 +8,7 @@ import { AppContextBanner } from "../components/AppContextBanner";
 import { SimpleTable } from "../components/SimpleTable";
 
 import { APP_ID_FIELD } from "../settings/appSettings";
+import { parseAppIdFromTags } from "../queries/maturityQueries";
 interface Props {
   appId: string;
   timeframe: { from: string; to: string };
@@ -146,14 +147,14 @@ export const Home = ({ appId, timeframe }: Props) => {
   // ── Signal queries ──
   const servicesQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | summarize Count = count()`;
 
   const hostsQuery = `fetch dt.entity.host
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | summarize Count = count()`;
@@ -192,7 +193,7 @@ export const Home = ({ appId, timeframe }: Props) => {
 | filter event.kind == "DAVIS_EVENT"
 | filter event.type == "CUSTOM_DEPLOYMENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("affected_entity_tags")}
 | filter isNotNull(appId)
 | filter lower(appId) == lower("${appId}")
 | summarize Count = count()`;
@@ -200,7 +201,7 @@ export const Home = ({ appId, timeframe }: Props) => {
   // ── Detail table queries ──
   const serviceListQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | fields Service = entity.name
@@ -209,7 +210,7 @@ export const Home = ({ appId, timeframe }: Props) => {
 
   const hostListQuery = `fetch dt.entity.host
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | fields Host = entity.name, monitoringMode

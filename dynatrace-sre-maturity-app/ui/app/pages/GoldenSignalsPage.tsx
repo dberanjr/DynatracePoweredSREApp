@@ -9,6 +9,7 @@ import { ChartCard } from "../components/ChartCard";
 import { SparklineCard } from "../components/SparklineCard";
 
 import { APP_ID_FIELD } from "../settings/appSettings";
+import { parseAppIdFromTags } from "../queries/maturityQueries";
 // Auto-format microsecond durations into μs/ms/sec/min/hr
 const formatDurationUs = (us: number): string => {
   if (us >= 3600 * 1000000) return `${(us / (3600 * 1000000)).toFixed(1)} hr`;
@@ -165,7 +166,7 @@ export const GoldenSignalsPage = ({ appId, timeframe }: Props) => {
   // Latency keeps native microsecond unit so the chart auto-formats to ms/sec/min/hr
   const svcLookup = (metric: string, valueAlias: string = "val") => `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | lookup [
@@ -184,7 +185,7 @@ export const GoldenSignalsPage = ({ appId, timeframe }: Props) => {
   // ── KPI summary queries ──
   const totalRequestsQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | lookup [
@@ -196,7 +197,7 @@ export const GoldenSignalsPage = ({ appId, timeframe }: Props) => {
 
   const totalErrorsQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | lookup [
@@ -208,7 +209,7 @@ export const GoldenSignalsPage = ({ appId, timeframe }: Props) => {
 
   const avgP90Query = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | lookup [
@@ -220,7 +221,7 @@ export const GoldenSignalsPage = ({ appId, timeframe }: Props) => {
 
   const svcCountQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | summarize \`Services\` = count()`;
@@ -229,7 +230,7 @@ export const GoldenSignalsPage = ({ appId, timeframe }: Props) => {
   // ── Service summary table ──
   const serviceSummaryQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | lookup [

@@ -8,7 +8,8 @@ import { InfographicList } from "../components/InfographicList";
 import { SparklineCard } from "../components/SparklineCard";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 
-import { APP_ID_FIELD } from "../settings/appSettings";
+import { APP_ID_FIELD, APP_ID_TAG_KEY } from "../settings/appSettings";
+import { problemTagIdExpr } from "../queries/maturityQueries";
 interface Props {
   appId: string;
   timeframe: { from: string; to: string };
@@ -19,7 +20,7 @@ export const ProblemAnalyticsPage = ({ appId, timeframe }: Props) => {
 
   // Link to the new Davis Problems app filtered to this application ID
   const problemsAppBase = `${getEnvironmentUrl().replace(/\/+$/, "")}/ui/apps/dynatrace.davis.problems/`;
-  const tagFilter = encodeURIComponent(`"Entity tags" = "${APP_ID_FIELD}:${appId.toLowerCase()}"`);
+  const tagFilter = encodeURIComponent(`"Entity tags" = "${APP_ID_TAG_KEY}:${appId.toLowerCase()}"`);
   const fromParam = encodeURIComponent(timeframe.from);
   const toParam = encodeURIComponent(timeframe.to);
   const allProblemsUrl = `${problemsAppBase}?from=${fromParam}&to=${toParam}&filters=${tagFilter}`;
@@ -31,7 +32,7 @@ export const ProblemAnalyticsPage = ({ appId, timeframe }: Props) => {
 
   // Common filter — joins davis problems with the application ID tag
   const problemBase = `fetch dt.davis.problems, ${tf}
-| fieldsAdd appId = splitString(splitString(toString(entity_tags), "${APP_ID_FIELD}:")[1], "\\"")[0]
+| fieldsAdd appId = ${problemTagIdExpr()}
 | filter event.kind == "DAVIS_PROBLEM" and dt.davis.is_duplicate == false
 | filter lower(appId) == lower("${appId}")`;
 
@@ -102,7 +103,7 @@ export const ProblemAnalyticsPage = ({ appId, timeframe }: Props) => {
 | fieldsAdd dt.entity.service = if(startsWith(affected_entity_ids[0],"SERVICE"), affected_entity_ids[0])
 | fieldsAdd Service = entityName(dt.entity.service)
 | filter isNotNull(Service)
-| fieldsAdd appId = splitString(splitString(toString(entity_tags), "${APP_ID_FIELD}:")[1], "\\"")[0]
+| fieldsAdd appId = ${problemTagIdExpr()}
 | filter lower(appId) == lower("${appId}")
 | summarize Problems = count(), by:{Service}
 | sort Problems desc

@@ -1,17 +1,19 @@
 /**
- * Customer-specific app settings.
+ * Customer settings, shared by every user and every DT-SRE APP workflow.
  *
- * APP_ID_FIELD is the name of the unique application identifier a customer
- * carries on their Grail records / entity tags (United: "applicationci",
- * others: e.g. "app_id", "service_id", "costcenter"). It is interpolated into
- * DQL throughout the app, so queries are built from the value that was in
- * effect when the app loaded. The Settings page therefore reloads the app
- * after saving.
+ * They live in the lookup /lookups/dtsrepoweredapp/config (see SHARED_CONFIG_PATH in lookupDefs.ts). ui/main.tsx reads that
+ * table before the app loads and hands the rows to this module, because the DQL of the whole app is built from these values
+ * when it loads. The Settings page writes the table back (through the saveLookup function, which needs the user to be allowed
+ * to write lookup tables) and reloads the app.
+ *
+ * - The application ID tag keys (`<key>:<id>` on entities) are a list: any one of them identifies the application.
+ * - The DQL alias and the ID column of every lookup are always `appId`; the customer's own column is mapped to it by the
+ *   catalog workflow, from the source table configured here.
  */
 
 export { DEFAULT_APP_ID_FIELD, SNAPSHOT_BUCKET };
 export const DEFAULT_APP_ID_LABEL = "Application ID";
-/** Company name from the build (.env COMPANY_NAME → generated constants.ts); Settings can override it at runtime. */
+/** Company name from the build (.env COMPANY_NAME → generated constants.ts); Settings can override it. */
 export const DEFAULT_COMPANY_NAME = BUILD_COMPANY_NAME;
 export const DEFAULT_COMPANY_LOGO_URL = "";
 
@@ -19,125 +21,76 @@ import { COMPANY_NAME as BUILD_COMPANY_NAME } from "../constants";
 import {
   CONFIG_GLOBAL_KEY,
   DEFAULT_APP_ID_FIELD,
+  SHARED_CONFIG_GLOBAL_KEY,
   SNAPSHOT_BUCKET,
   defaultLookupSettings,
-  normalizeCatalogSettings,
-  normalizeIdMaxLength,
-  normalizeLookupSettings,
-  resolveConfig,
   defaultCatalogSettings,
+  defaultSourceSettings,
+  normalizeIdMaxLength,
+  parseSharedSettings,
+  resolveConfig,
+  serializeSharedSettings,
+  validateCompanyLogoUrlText,
   type CatalogSettings,
   type LookupSettings,
+  type SharedSettings,
+  type SourceSettings,
   type SreConfig,
 } from "./lookupDefs";
 
-const STORAGE_KEY = "sre-maturity.settings.v1";
-
-export interface AppSettings {
-  /** Field / tag-key name that identifies an application on Grail records. */
-  appCiField: string;
-  /** Human-readable label for that identifier shown in the UI. */
-  appCiLabel: string;
-  /** Cloud resource tag key override; blank = derive from the identifier field. */
-  cloudTagKey: string;
-  /** Longest application ID the bulk queries accept (default 3). */
-  idMaxLength: number;
-  /** Organization name shown in headings on the landing page and leaderboard. */
-  companyName: string;
-  /** Optional background logo on the landing page (relative path, https URL or data:image). Blank = none. */
-  companyLogoUrl: string;
-  /** Lookup table paths and column mappings. */
-  lookups: LookupSettings;
-  /** CMDB display: renamed labels, extra fields, tier values. */
-  catalog: CatalogSettings;
+/** What ui/main.tsx found when it read the shared config. */
+export interface SharedConfigState {
+  /** saved: read the table. missing: it does not exist yet (nothing saved on this tenant). unreadable: any other failure. */
+  state: "saved" | "missing" | "unreadable";
+  rows: Array<{ key?: unknown; value?: unknown }>;
+  error?: string;
 }
 
-/** Letters, digits, underscore and dots; must not start with a digit. Safe to use unquoted in DQL. */
-const FIELD_PATTERN = /^[A-Za-z_][A-Za-z0-9_.]*$/;
+export const validateCompanyLogoUrl = validateCompanyLogoUrlText;
 
-export function validateAppCiField(value: string): string | null {
-  const v = value.trim();
-  if (!v) return "Field name is required.";
-  if (!FIELD_PATTERN.test(v)) {
-    return "Use only letters, digits, underscores and dots, and don't start with a digit.";
-  }
-  return null;
+const published = (globalThis as Record<string, unknown>)[SHARED_CONFIG_GLOBAL_KEY] as SharedConfigState | undefined;
+export const SHARED_CONFIG_STATE: SharedConfigState = published ?? { state: "missing", rows: [] };
+
+/** Settings as parsed from the config table (defaults for anything not saved). */
+export function loadSettings(): SharedSettings {
+  return parseSharedSettings(SHARED_CONFIG_STATE.rows, DEFAULT_COMPANY_NAME);
 }
 
-const LOGO_PATTERN = /^(\.{0,2}\/|https:\/\/|data:image\/)\S+$/;
-
-export function validateCompanyLogoUrl(value: string): string | null {
-  const v = value.trim();
-  if (!v) return null;
-  return LOGO_PATTERN.test(v) ? null : 'Use a relative path (e.g. "./assets/logo.png"), an https:// URL or a data:image URI — or leave blank for no logo.';
-}
-
-function read(): Partial<AppSettings> {
-  try {
-    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
-    return raw ? (JSON.parse(raw) as Partial<AppSettings>) : {};
-  } catch {
-    return {};
-  }
-}
-
-export function loadSettings(): AppSettings {
-  const s = read();
-  const field = typeof s.appCiField === "string" && !validateAppCiField(s.appCiField) ? s.appCiField.trim() : DEFAULT_APP_ID_FIELD;
-  const label = typeof s.appCiLabel === "string" && s.appCiLabel.trim() ? s.appCiLabel.trim() : DEFAULT_APP_ID_LABEL;
-  const companyName = typeof s.companyName === "string" && s.companyName.trim() ? s.companyName.trim() : DEFAULT_COMPANY_NAME;
-  const companyLogoUrl =
-    typeof s.companyLogoUrl === "string" && !validateCompanyLogoUrl(s.companyLogoUrl) ? s.companyLogoUrl.trim() : DEFAULT_COMPANY_LOGO_URL;
-  const cloudTagKey = typeof s.cloudTagKey === "string" && !validateAppCiField(s.cloudTagKey) ? s.cloudTagKey.trim() : "";
-  const idMaxLength = normalizeIdMaxLength((s as Record<string, unknown>)["appCiMaxLength"]);
-  return { appCiField: field, appCiLabel: label, cloudTagKey, idMaxLength, companyName, companyLogoUrl, lookups: normalizeLookupSettings(s.lookups), catalog: normalizeCatalogSettings(s.catalog) };
-}
-
-export function saveSettings(next: AppSettings): void {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      appCiField: next.appCiField.trim(),
-      appCiLabel: next.appCiLabel.trim() || DEFAULT_APP_ID_LABEL,
-      cloudTagKey: next.cloudTagKey.trim(),
-      appCiMaxLength: normalizeIdMaxLength(next.idMaxLength),
-      companyName: next.companyName.trim() || DEFAULT_COMPANY_NAME,
-      companyLogoUrl: next.companyLogoUrl.trim(),
-      lookups: next.lookups,
-      catalog: next.catalog,
-    })
-  );
-}
-
-export function resetSettings(): void {
-  localStorage.removeItem(STORAGE_KEY);
-}
+/** The rows to write for these settings. Used by the Settings page's save. */
+export const settingsToRows = (s: SharedSettings): Array<{ key: string; value: string }> =>
+  serializeSharedSettings({ ...s, idMaxLength: normalizeIdMaxLength(s.idMaxLength) }).map(([key, value]) => ({ key, value }));
 
 const loaded = loadSettings();
 
-/** Field name used in DQL (tag keys, aliases, lookup columns). Fixed for the lifetime of the page. */
-export const APP_ID_FIELD: string = loaded.appCiField;
+/** DQL alias / ID column of every lookup. Always "appId". */
+export const APP_ID_FIELD: string = DEFAULT_APP_ID_FIELD;
+/** Entity tag keys that carry the application ID (any one identifies the application). */
+export const APP_ID_TAG_KEYS: string[] = loaded.tagKeys;
+/** The primary tag key, for wording ("tag it <key>:<code>"). */
+export const APP_ID_TAG_KEY: string = loaded.tagKeys[0];
 /** Display label for the identifier. */
-export const APP_ID_LABEL: string = loaded.appCiLabel;
+export const APP_ID_LABEL: string = loaded.appIdLabel;
 /** Organization name shown in the UI. */
 export const COMPANY_NAME: string = loaded.companyName;
 /** Landing-page background logo URL; empty string means none. */
 export const COMPANY_LOGO_URL: string = loaded.companyLogoUrl;
 /** Effective CMDB display options (labels, extra fields, tier values). */
 export const CATALOG_SETTINGS: CatalogSettings = loaded.catalog;
-/** Effective lookup table paths and column mappings. */
-export const LOOKUP_SETTINGS: LookupSettings = loaded.lookups;
+/** The customer's source table and column mapping for the catalog. */
+export const SOURCE_SETTINGS: SourceSettings = loaded.source;
+/** Lookup tables are at fixed paths with fixed columns. */
+export const LOOKUP_SETTINGS: LookupSettings = defaultLookupSettings();
 
-export { defaultLookupSettings, defaultCatalogSettings };
+export { defaultLookupSettings, defaultCatalogSettings, defaultSourceSettings };
 /** Resolved config for the query layer. */
-export const SRE_CONFIG: SreConfig = resolveConfig(loaded.appCiField, loaded.lookups, loaded.catalog, loaded.cloudTagKey, loaded.idMaxLength);
+export const SRE_CONFIG: SreConfig = resolveConfig(loaded.tagKeys, LOOKUP_SETTINGS, loaded.catalog, loaded.cloudTagKey, loaded.idMaxLength);
 /** Cloud resource / guardian tag key (e.g. ApplicationCI), case-sensitive. */
 export const APP_ID_CLOUD_TAG: string = SRE_CONFIG.cloudTagKey;
-/** True when the SLO lookup has an Application ID column (SLOs are matched by tag, not by name prefix). */
+/** True when the SLO lookup has an Application ID column (the workflow always writes one). */
 export const SLO_ID_FROM_COLUMN: boolean = SRE_CONFIG.sloIdFromColumn;
 /** Longest application ID the bulk queries accept. */
 export const APP_ID_MAX_LENGTH: number = loaded.idMaxLength;
-/** The override as saved (blank = derived). */
+/** The cloud tag override as saved (blank = the primary tag key). */
 export const CLOUD_TAG_OVERRIDE: string = loaded.cloudTagKey;
 
 // Publish for queries/maturityQueries.ts, which has no imports (the workflow generator loads it directly)

@@ -1,39 +1,40 @@
 import React, { useMemo, useState } from "react";
+import { functions } from "@dynatrace-sdk/app-utils";
 import { useDql } from "../hooks/useDql";
 import { useDemoMode } from "../demo/demoMode";
 import {
-  APP_ID_FIELD,
+  APP_ID_TAG_KEYS,
   APP_ID_LABEL,
   COMPANY_LOGO_URL,
   COMPANY_NAME,
-  DEFAULT_APP_ID_FIELD,
   DEFAULT_COMPANY_LOGO_URL,
   DEFAULT_COMPANY_NAME,
   DEFAULT_APP_ID_LABEL,
-  LOOKUP_SETTINGS,
+  SOURCE_SETTINGS,
   CATALOG_SETTINGS,
   CLOUD_TAG_OVERRIDE,
   APP_ID_MAX_LENGTH,
   APP_ID_CLOUD_TAG,
-  defaultLookupSettings,
-  resetSettings,
-  saveSettings,
-  validateAppCiField,
+  SHARED_CONFIG_STATE,
+  defaultSourceSettings,
+  defaultCatalogSettings,
+  settingsToRows,
   validateCompanyLogoUrl,
 } from "../settings/appSettings";
 import {
-  APP_ID_TOKEN,
   LOOKUP_DEFS,
-  LOOKUP_KEYS,
+  SHARED_CONFIG_PATH,
+  DEFAULT_TAG_KEY,
   validateColumn,
+  validateTagKey,
+  validateSourcePath,
+  parseTagKeys,
   normalizeIdMaxLength,
   DEFAULT_TIERS,
   MAX_EXTRA_FIELDS,
-  defaultCatalogSettings,
   type CatalogSettings,
+  type SourceSettings,
   type TierRule,
-  type LookupKey,
-  type LookupSettings,
   type LookupTableDef,
 } from "../settings/lookupDefs";
 
@@ -178,15 +179,6 @@ const ColumnInput = ({
   );
 };
 
-interface TableEditorProps {
-  tableKey: LookupKey;
-  value: LookupSettings[LookupKey];
-  onChange: (next: LookupSettings[LookupKey]) => void;
-  /** CMDB only: how its fields are labelled and shown. */
-  catalog?: CatalogSettings;
-  onCatalogChange?: (next: CatalogSettings) => void;
-}
-
 const smallButton: React.CSSProperties = { ...buttonStyle(false), padding: "4px 10px", fontSize: 12 };
 
 /** CMDB display options: extra fields and tier values. */
@@ -279,39 +271,63 @@ const CatalogOptions = ({ catalog, onChange, columns }: { catalog: CatalogSettin
   );
 };
 
-const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: TableEditorProps) => {
-  const showLabels = tableKey === "cmdb" && !!catalog && !!onCatalogChange;
-  const def: LookupTableDef = LOOKUP_DEFS[tableKey];
+const SourceEditor = ({
+  value,
+  onChange,
+  catalog,
+  onCatalogChange,
+}: {
+  value: SourceSettings;
+  onChange: (next: SourceSettings) => void;
+  catalog: CatalogSettings;
+  onCatalogChange: (next: CatalogSettings) => void;
+}) => {
+  const def: LookupTableDef = LOOKUP_DEFS.cmdb;
   const demo = useDemoMode();
   const [detect, setDetect] = useState(false);
-  const { columns, error, isLoading } = useDetectedColumns(value.path.trim(), detect && !demo);
+  const pathError = validateSourcePath(value.path);
+  const { columns, error, isLoading } = useDetectedColumns(value.path.trim(), detect && !demo && !pathError);
+  const windowError = /^\d+[hd]$/.test(value.window.trim()) ? null : 'Use a number of hours or days, e.g. "24h" or "7d".';
 
   return (
     <div style={cardStyle}>
-      <div style={{ fontWeight: 700, fontSize: 15 }}>{def.label}</div>
-      <div style={{ fontSize: 12, color: muted, margin: "2px 0 12px" }}>{def.description}</div>
+      <div style={{ fontWeight: 700, fontSize: 15 }}>Your application data</div>
+      <div style={{ fontSize: 12, color: muted, margin: "2px 0 12px" }}>
+        The lookup table you supply, with one row per application. The "Build /lookups/dtsrepoweredapp/cmdb" workflow reads it, maps your
+        columns to the ones below, keeps only the applications that have live entities in this tenant, and writes the result to
+        <code> {def.defaultPath}</code>, which feeds the application selector, profile banner and leaderboard. Your table is never modified.
+      </div>
 
-      <div style={{ fontSize: 12, fontWeight: 700 }}>Lookup table</div>
+      <label htmlFor="source-path" style={{ fontSize: 12, fontWeight: 700 }}>Your lookup table</label>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <code style={{ ...inputStyle, display: "flex", alignItems: "center", opacity: 0.85 }} title="Fixed: every tenant uses this location">{value.path}</code>
+        <input
+          id="source-path"
+          style={inputStyle}
+          value={value.path}
+          placeholder="/lookups/my_applications"
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => onChange({ ...value, path: e.target.value })}
+        />
         <button
-          style={{ ...buttonStyle(false, demo), whiteSpace: "nowrap" }}
-          disabled={demo}
+          style={{ ...buttonStyle(false, demo || !!pathError), whiteSpace: "nowrap" }}
+          disabled={demo || !!pathError}
           title={demo ? "Turn off demo mode to read your tenant's lookup tables" : "Read the table and suggest its column names"}
           onClick={() => setDetect(true)}
         >
           {isLoading ? "Reading…" : "Detect columns"}
         </button>
       </div>
+      <ErrorText msg={value.path.trim() ? pathError : null} />
       {detect && error && <ErrorText msg={`Couldn't read this table: ${error.message ?? "unknown error"}`} />}
       {detect && !error && !isLoading && columns.length > 0 && (
-        <div style={{ fontSize: 12, color: muted, marginTop: 3 }}>Found {columns.length} columns — use the ▾ button next to a column box to pick one.</div>
+        <div style={{ fontSize: 12, color: muted, marginTop: 3 }}>Found {columns.length} columns. Use the ▾ button next to a column box to pick one.</div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: showLabels ? "minmax(160px, 1fr) minmax(200px, 1.4fr) minmax(120px, 0.8fr)" : "minmax(160px, 1fr) minmax(200px, 1.4fr)", gap: "10px 16px", marginTop: 14, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(160px, 1fr) minmax(200px, 1.4fr) minmax(120px, 0.8fr)", gap: "10px 16px", marginTop: 14, alignItems: "start" }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>App needs</div>
         <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>Your column</div>
-        {showLabels && <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>Shown in app as</div>}
+        <div style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase" }}>Shown in app as</div>
         {Object.entries(def.fields).map(([fieldKey, f]) => {
           const colValue = value.columns[fieldKey] ?? "";
           const err = validateColumn(colValue, f.optional);
@@ -325,98 +341,153 @@ const TableEditor = ({ tableKey, value, onChange, catalog, onCatalogChange }: Ta
                 <div style={{ fontSize: 11, color: muted }}>{f.hint}</div>
               </div>
               <div>
-                {def.fixedColumns ? (
-                  <code style={{ ...inputStyle, display: "flex", alignItems: "center", opacity: 0.85 }} title="Fixed: the catalog workflow writes this column">
-                    {(f.canonical === APP_ID_TOKEN ? APP_ID_FIELD : f.canonical) || "(none)"}
-                  </code>
-                ) : (
                 <ColumnInput
-                  label={`${def.label}: ${f.label} column`}
+                  label={`${f.label} column in your table`}
                   columns={columns}
                   value={colValue}
-                  placeholder={f.optional ? "(none)" : f.default === APP_ID_TOKEN ? "(same as identifier field)" : f.default}
+                  placeholder={f.optional ? "(none)" : "your column"}
                   onChange={(v) => onChange({ ...value, columns: { ...value.columns, [fieldKey]: v } })}
                 />
-                )}
                 <ErrorText msg={err} />
               </div>
-              {showLabels && (
-                f.display ? (
-                  <input
-                    aria-label={`${f.label} display label`}
-                    style={{ ...inputStyle, fontFamily: "inherit" }}
-                    placeholder={f.display.label}
-                    value={catalog.labels[fieldKey] ?? ""}
-                    onChange={(e) => onCatalogChange({ ...catalog, labels: { ...catalog.labels, [fieldKey]: e.target.value } })}
-                  />
-                ) : (
-                  <div />
-                )
+              {f.display ? (
+                <input
+                  aria-label={`${f.label} display label`}
+                  style={{ ...inputStyle, fontFamily: "inherit" }}
+                  placeholder={f.display.label}
+                  value={catalog.labels[fieldKey] ?? ""}
+                  onChange={(e) => onCatalogChange({ ...catalog, labels: { ...catalog.labels, [fieldKey]: e.target.value } })}
+                />
+              ) : (
+                <div />
               )}
             </React.Fragment>
           );
         })}
       </div>
-      {showLabels && <CatalogOptions catalog={catalog} onChange={onCatalogChange} columns={columns} />}
+
+      <div style={{ marginTop: 14 }}>
+        <label htmlFor="source-window" style={{ fontSize: 12, fontWeight: 700 }}>An application counts as live if it was seen in the last</label>
+        <input
+          id="source-window"
+          style={{ ...inputStyle, maxWidth: 120, display: "block", marginTop: 4 }}
+          value={value.window}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => onChange({ ...value, window: e.target.value })}
+        />
+        <ErrorText msg={windowError} />
+        {!windowError && <div style={{ fontSize: 12, marginTop: 4, color: muted }}>Hours or days, e.g. 24h or 7d. Widen it to keep applications that report less often.</div>}
+      </div>
+
+      <CatalogOptions catalog={catalog} onChange={onCatalogChange} columns={columns} />
     </div>
   );
 };
 
 export const SettingsPage = () => {
-  const [field, setField] = useState(APP_ID_FIELD);
+  const [tagKeysText, setTagKeysText] = useState(APP_ID_TAG_KEYS.join(", "));
   const [label, setLabel] = useState(APP_ID_LABEL);
   const [cloudTag, setCloudTag] = useState(CLOUD_TAG_OVERRIDE);
   const [idMax, setIdMax] = useState(String(APP_ID_MAX_LENGTH));
   const [companyName, setCompanyName] = useState(COMPANY_NAME);
   const [logoUrl, setLogoUrl] = useState(COMPANY_LOGO_URL);
-  const [lookups, setLookups] = useState<LookupSettings>(() => structuredClone(LOOKUP_SETTINGS));
+  const [source, setSource] = useState<SourceSettings>(() => structuredClone(SOURCE_SETTINGS));
   const [catalog, setCatalog] = useState<CatalogSettings>(() => structuredClone(CATALOG_SETTINGS));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [noPermission, setNoPermission] = useState(false);
 
-  const fieldError = validateAppCiField(field);
-  const lookupsValid = LOOKUP_KEYS.every((k) => {
-    const def: LookupTableDef = LOOKUP_DEFS[k];
-    return (
-      Object.entries(def.fields).every(([f, d]) => !validateColumn(lookups[k].columns[f] ?? "", d.optional))
-    );
-  });
+  const rawKeys = tagKeysText.split(",").map((k) => k.trim()).filter(Boolean);
+  const tagKeys = parseTagKeys(tagKeysText);
+  const badKey = rawKeys.map((k) => ({ k, err: validateTagKey(k) })).find((x) => x.err);
+  const tagKeysError = !rawKeys.length ? "Enter at least one tag key." : badKey ? `"${badKey.k}": ${badKey.err}` : null;
   const logoError = validateCompanyLogoUrl(logoUrl);
+  const sourceFields = Object.entries(LOOKUP_DEFS.cmdb.fields as Record<string, { optional?: boolean }>);
+  const sourceValid =
+    !validateSourcePath(source.path) &&
+    /^\d+[hd]$/.test(source.window.trim()) &&
+    sourceFields.every(([f, d]) => !validateColumn(source.columns[f] ?? "", d.optional));
   const catalogValid =
     catalog.extras.every((e) => e.label.trim() && !validateColumn(e.column, false)) && catalog.tiers.every((t) => t.value.trim());
-  const cloudTagError = cloudTag.trim() ? validateAppCiField(cloudTag) : null;
+  const cloudTagError = cloudTag.trim() ? validateTagKey(cloudTag) : null;
   const idMaxError = normalizeIdMaxLength(idMax) === Number(idMax.trim()) && idMax.trim() !== "" ? null : "Enter a whole number from 1 to 64.";
-  const valid = !fieldError && !cloudTagError && !idMaxError && !logoError && lookupsValid && catalogValid;
+  const valid = !tagKeysError && !cloudTagError && !idMaxError && !logoError && sourceValid && catalogValid;
   const dirty =
-    field.trim() !== APP_ID_FIELD ||
+    SHARED_CONFIG_STATE.state !== "saved" ||
+    tagKeys.join(",") !== APP_ID_TAG_KEYS.join(",") ||
     cloudTag.trim() !== CLOUD_TAG_OVERRIDE ||
     normalizeIdMaxLength(idMax) !== APP_ID_MAX_LENGTH ||
     (companyName.trim() || DEFAULT_COMPANY_NAME) !== COMPANY_NAME ||
     logoUrl.trim() !== COMPANY_LOGO_URL ||
     (label.trim() || DEFAULT_APP_ID_LABEL) !== APP_ID_LABEL ||
-    JSON.stringify(lookups) !== JSON.stringify(LOOKUP_SETTINGS) ||
+    JSON.stringify(source) !== JSON.stringify(SOURCE_SETTINGS) ||
     JSON.stringify(catalog) !== JSON.stringify(CATALOG_SETTINGS);
 
-  const onSave = () => {
-    if (!valid) return;
-    const clean = structuredClone(lookups);
-    for (const k of LOOKUP_KEYS) {
-      for (const f of Object.keys(clean[k].columns)) clean[k].columns[f] = clean[k].columns[f].trim();
+  const demo = useDemoMode();
+  const onSave = async () => {
+    if (!valid || saving) return;
+    if (demo) {
+      setSaveError("Saving is disabled in demo mode. Turn Demo off to save settings to your tenant.");
+      return;
     }
-    saveSettings({ appCiField: field, appCiLabel: label, cloudTagKey: cloudTag, idMaxLength: normalizeIdMaxLength(idMax), companyName, companyLogoUrl: logoUrl, lookups: clean, catalog });
-    window.location.reload();
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const cleanSource: SourceSettings = {
+        path: source.path.trim(),
+        window: source.window.trim(),
+        columns: Object.fromEntries(Object.entries(source.columns).map(([k, v]) => [k, v.trim()])),
+      };
+      const rows = settingsToRows({
+        tagKeys,
+        cloudTagKey: cloudTag.trim(),
+        idMaxLength: normalizeIdMaxLength(idMax),
+        appIdLabel: label.trim() || DEFAULT_APP_ID_LABEL,
+        companyName: companyName.trim() || DEFAULT_COMPANY_NAME,
+        companyLogoUrl: logoUrl.trim(),
+        source: cleanSource,
+        catalog,
+      });
+      const res = await functions.call("saveLookup", { data: { table: "config", rows } });
+      await res.json();
+      window.location.reload();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/permission|storage:files:write|403|401/i.test(msg)) setNoPermission(true);
+      setSaveError(msg);
+      setSaving(false);
+    }
   };
 
-  const onReset = () => {
-    resetSettings();
-    window.location.reload();
-  };
+  const readOnly = noPermission;
+  const saveDisabled = !valid || !dirty || saving || readOnly;
 
   return (
     <div style={{ maxWidth: 820, padding: 24 }}>
       <h2 style={{ margin: "0 0 4px" }}>Settings</h2>
       <p style={{ marginTop: 0, color: muted }}>
-        Tell the app how your organization identifies an application in Dynatrace and where its lookup data lives. These
-        settings are stored in this browser.
+        Tell the app how your organization identifies an application in Dynatrace and where your application data lives. Settings are
+        stored in <code>{SHARED_CONFIG_PATH}</code>, so every user and every DT-SRE APP workflow sees the same ones.
       </p>
+
+      {SHARED_CONFIG_STATE.state === "missing" && (
+        <div role="status" style={{ ...cardStyle, borderColor: "#B7791F", background: "rgba(183,121,31,0.10)" }}>
+          <strong>No settings are saved on this tenant yet.</strong> The values below are defaults. Fill them in and Save to create <code>{SHARED_CONFIG_PATH}</code>
+          (this needs permission to write lookup tables, <code>storage:files:write</code>). The workflows stop with an error until it exists.
+        </div>
+      )}
+      {SHARED_CONFIG_STATE.state === "unreadable" && (
+        <div role="alert" style={{ ...cardStyle, borderColor: "#C4233B", background: "rgba(196,35,59,0.10)" }}>
+          <strong>The saved settings could not be read:</strong> {SHARED_CONFIG_STATE.error ?? "unknown error"}. The values below are defaults; do not save until this is resolved.
+        </div>
+      )}
+      {readOnly && (
+        <div role="alert" style={{ ...cardStyle, borderColor: "#C4233B", background: "rgba(196,35,59,0.10)" }}>
+          <strong>You can view these settings but not change them.</strong> Saving needs permission to write lookup tables (<code>storage:files:write</code>).
+          Ask a Dynatrace administrator to change them, or to give you that permission.
+        </div>
+      )}
 
       <h3 style={{ margin: "24px 0 8px" }}>Organization</h3>
       <div style={cardStyle}>
@@ -456,20 +527,21 @@ export const SettingsPage = () => {
 
       <h3 style={{ margin: "24px 0 8px" }}>Application identifier</h3>
       <div style={cardStyle}>
-        <label htmlFor="appId-field" style={{ display: "block", fontWeight: 700, marginBottom: 4 }}>
-          Field on your Grail records / entity tags
+        <label htmlFor="appId-tag-keys" style={{ display: "block", fontWeight: 700, marginBottom: 4 }}>
+          Entity tag keys that carry the {label.trim() || APP_ID_LABEL}
         </label>
         <input
-          id="appId-field"
+          id="appId-tag-keys"
           style={{ ...inputStyle, maxWidth: 420 }}
-          value={field}
-          onChange={(e) => setField(e.target.value)}
+          value={tagKeysText}
+          onChange={(e) => setTagKeysText(e.target.value)}
           spellCheck={false}
           autoComplete="off"
+          placeholder={DEFAULT_TAG_KEY}
         />
-        <div style={{ fontSize: 12, marginTop: 4, color: fieldError ? "#C4233B" : muted }}>
-          {fieldError ??
-            `The key your records and entity tags use, e.g. an entity tag "${field.trim()}:abc" or a log attribute named ${field.trim()}. Default: ${DEFAULT_APP_ID_FIELD}.`}
+        <div style={{ fontSize: 12, marginTop: 4, color: tagKeysError ? "#C4233B" : muted }}>
+          {tagKeysError ??
+            `Separate several keys with commas. An entity tagged "${tagKeys[0] ?? DEFAULT_TAG_KEY}:abc" belongs to application abc, and the same goes for each other key you list. The values must be the same IDs your application data uses.`}
         </div>
 
         <label htmlFor="appId-cloud-tag" style={{ display: "block", fontWeight: 700, margin: "16px 0 4px" }}>
@@ -482,13 +554,13 @@ export const SettingsPage = () => {
           onChange={(e) => setCloudTag(e.target.value)}
           spellCheck={false}
           autoComplete="off"
-          placeholder={`(auto: ${APP_ID_CLOUD_TAG})`}
+          placeholder={`(auto: ${tagKeys[0] ?? APP_ID_CLOUD_TAG})`}
         />
         <ErrorText msg={cloudTagError} />
         {!cloudTagError && (
           <div style={{ fontSize: 12, marginTop: 4, color: muted }}>
             The tag key on your AWS / Azure / GCP resources and Site Reliability Guardians. Unlike entity tags it is case-sensitive, so use it exactly as
-            it appears (e.g. <code>UTAN</code>). Leave blank to use {APP_ID_CLOUD_TAG}.
+            it appears (e.g. <code>UTAN</code>). Leave blank to use the first tag key.
           </div>
         )}
 
@@ -506,8 +578,7 @@ export const SettingsPage = () => {
         <ErrorText msg={idMaxError} />
         {!idMaxError && (
           <div style={{ fontSize: 12, marginTop: 4, color: muted }}>
-            Values longer than this are ignored as noise when listing applications and scoring them. The original deployment uses 3-letter codes, so the
-            default is 3; set it to your longest ID (e.g. 5 for five-digit numbers).
+            Values longer than this are ignored as noise when listing applications and scoring them. Set it to your longest ID (e.g. 5 for five-digit numbers).
           </div>
         )}
 
@@ -524,63 +595,39 @@ export const SettingsPage = () => {
         <div style={{ fontSize: 12, marginTop: 4, color: muted }}>Name shown for the identifier in the header selector. Default: {DEFAULT_APP_ID_LABEL}.</div>
       </div>
 
-      <h3 style={{ margin: "24px 0 4px" }}>Lookup tables</h3>
+      <h3 style={{ margin: "24px 0 4px" }}>Application catalog</h3>
       <p style={{ marginTop: 0, fontSize: 13, color: muted }}>
-        All lookup tables are stored in <code>/lookups/dtsrepoweredapp/</code> with fixed column names; there is nothing to
-        point or map. The application catalog is built by the "Build /lookups/dtsrepoweredapp/cmdb" workflow from your own
-        table, which is where your column names are mapped. Here you choose how the catalog is shown.
+        All other lookup tables are written by the workflows or the Lookups tab, in <code>/lookups/dtsrepoweredapp/</code> with fixed columns.
       </p>
-      {LOOKUP_KEYS.filter((k) => k === "cmdb").map((k) => (
-        <TableEditor
-          key={k}
-          tableKey={k}
-          value={lookups[k]}
-          onChange={(next) => setLookups((prev) => ({ ...prev, [k]: next }))}
-          catalog={catalog}
-          onCatalogChange={setCatalog}
-        />
-      ))}
+      <SourceEditor value={source} onChange={setSource} catalog={catalog} onCatalogChange={setCatalog} />
 
+      {saveError && !noPermission && (
+        <div role="alert" style={{ fontSize: 13, color: "#C4233B", margin: "0 0 10px" }}>
+          Could not save: {saveError}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8 }}>
-        <button style={buttonStyle(true, !valid || !dirty)} disabled={!valid || !dirty} onClick={onSave}>
-          Save &amp; reload
+        <button style={buttonStyle(true, saveDisabled)} disabled={saveDisabled} onClick={() => void onSave()}>
+          {saving ? "Saving…" : "Save & reload"}
         </button>
         <button
           style={buttonStyle(false)}
           onClick={() => {
-            setField(DEFAULT_APP_ID_FIELD);
+            setTagKeysText(DEFAULT_TAG_KEY);
             setLabel(DEFAULT_APP_ID_LABEL);
             setCloudTag("");
             setCompanyName(DEFAULT_COMPANY_NAME);
             setLogoUrl(DEFAULT_COMPANY_LOGO_URL);
-            setLookups(defaultLookupSettings());
+            setSource(defaultSourceSettings());
             setCatalog(defaultCatalogSettings());
           }}
         >
           Restore defaults in form
         </button>
-        <button
-          style={buttonStyle(false)}
-          title="Download these settings as JSON for: npm run generate:workflows -- --config settings.json"
-          onClick={() => {
-            const blob = new Blob([JSON.stringify({ appCiField: APP_ID_FIELD, cloudTagKey: CLOUD_TAG_OVERRIDE, appCiMaxLength: APP_ID_MAX_LENGTH, lookups: LOOKUP_SETTINGS, catalog: CATALOG_SETTINGS }, null, 2)], { type: "application/json" });
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = "sre-maturity-settings.json";
-            a.click();
-            URL.revokeObjectURL(a.href);
-          }}
-        >
-          Export saved settings
-        </button>
-        <button style={buttonStyle(false)} onClick={onReset}>
-          Reset &amp; reload
-        </button>
       </div>
       <p style={{ fontSize: 12, marginTop: 16, color: muted }}>
-        Queries are built when the app loads, so saving reloads the page. Scheduled workflows deployed separately are not
-        affected by these settings: export the saved settings and run <code>npm run generate:workflows -- --config sre-maturity-settings.json</code>
-        to regenerate them, then redeploy.
+        Queries are built when the app loads, so saving reloads the page. After changing the tag keys or the application data, run the
+        "Build /lookups/dtsrepoweredapp/cmdb" workflow to rebuild the catalog; the other workflows read these settings each time they run.
       </p>
     </div>
   );

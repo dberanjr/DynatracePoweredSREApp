@@ -50,27 +50,29 @@ To learn React, check out the [React documentation](https://reactjs.org/).
 
 ## Settings (Settings tab)
 
-Customer-specific values are configured in the app, per browser, and applied after the page reloads:
+Customer-specific values are configured in the app and stored in the lookup `/lookups/dtsrepoweredapp/config`, so every user
+and every workflow sees the same ones. The first Save creates the table and needs permission to write lookup tables
+(`storage:files:write`); without it the page is read-only. Saving reloads the app.
 
-- **Organization** — company name (defaults to `COMPANY_NAME` from `.env`) and an optional landing-page logo.
-- **Application identifier** — the key your entity tags / records / app-managed lookups use for an application
-  (default `appId`) and its display label (default "Application ID").
-- **Lookup tables** — a mapping from your column names to the ones the app needs, for each lookup the app reads (CMDB,
-  application-name map, critical services, SLOs, SLO dashboards, guardians). The tables themselves are fixed at
-  `/lookups/dtsrepoweredapp/<table>` for every tenant. **Detect columns**
-  reads a table and suggests names. The app renames your columns right after each `load`, so queries are otherwise
-  unchanged.
+- **Organization**: company name (defaults to `COMPANY_NAME` from `.env`) and an optional landing-page logo.
+- **Application identifier**: the entity tag keys that carry an application's ID (one or several, comma separated; an
+  entity tagged `<key>:<id>` for any of them belongs to application `<id>`), the cloud resource tag key, the longest ID,
+  and a display label (default "Application ID").
+- **Application catalog**: the lookup table **you** supply (one row per application, your own column names), and which of
+  its columns fills each catalog field (ID, name, tier, status, director, owner, support group). **Detect columns** reads
+  your table and suggests names. The "Build /lookups/dtsrepoweredapp/cmdb" workflow reads these settings, normalises your
+  table into `/lookups/dtsrepoweredapp/cmdb`, and keeps only applications with live entities.
 
-**CMDB display.** On the Application catalog card you can rename how each field is labelled in the app, hide a field by
+All other lookup tables are fixed at `/lookups/dtsrepoweredapp/<table>` with fixed columns (the ID column is always
+`appId`), written by the workflows or the Lookups tab.
+
+**Catalog display.** On the Application catalog card you can rename how each field is labelled in the app, hide a field by
 leaving its column blank (for example Operational status if you don't track it), add up to six extra columns to the
 profile banner, and define **Tier values** (what each value in your tier column means and which count as critical for the
 leaderboard's enterprise score; e.g. `yes` = Top tier / critical, `no` = Standard).
 
-The Lookups tab edits the app's own tables (fixed paths and layout; the ID column is named after the identifier field).
-If Settings point a table elsewhere, the tab says so.
-
-**Workflows** are generated from the same query source. After changing settings, use **Export saved settings**, then
-`npm run generate:workflows -- --config sre-maturity-settings.json` and redeploy. Without `--config` the defaults are used.
+**Workflows** are generated from the same query source (`npm run generate:workflows`) and are identical for every
+customer: at run time they read the tag keys and the catalog source from the config table.
 
 ## Demo mode
 

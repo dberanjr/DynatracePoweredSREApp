@@ -49,6 +49,18 @@ async function runDql(rawQuery, maxResultRecords) {
 
 __APP_ID_RESOLVER__
 
+let TAG_KEYS_RT = [];   // application ID tag keys, set from the run-time config
+
+// Where a Smartscape node can carry the application ID: its tags map (also as a Kubernetes label), AWS tags, custom metadata.
+function smartscapeTagExprs() {
+  const keys = [...TAG_KEYS_RT, ...(CFG && CFG.cloudTagKey && !TAG_KEYS_RT.includes(CFG.cloudTagKey) ? [CFG.cloudTagKey] : [])];
+  const maps = ['tags', '`tags:aws`', 'custom_metadata', 'host.custom.metadata'];
+  return [
+    ...keys.flatMap((k) => maps.map((m) => m + '[`' + k + '`]')),
+    ...TAG_KEYS_RT.map((k) => '`aws.tags.' + k + '`'),
+  ];
+}
+
 function buildQuery(appIds) {
   const inFilter = 'in(appId, array(' + appIds.map(qt).join(',') + '))';
   return [
@@ -69,8 +81,7 @@ function buildQuery(appIds) {
     '| join [',
     '      fetch dt.entity.service, from:' + WINDOW + ', to:now()',
     APP_ID_FROM_SERVICE_TAGS,
-    '      | expand __APPIDKEY__',
-    '      | fieldsAdd appId = __APPIDKEY__',
+    '      | expand appId',
     '      | filter ' + inFilter,
     '      | fieldsAdd e_join = concat(appId, "_", entity.name)',
     '    ],',
@@ -78,9 +89,9 @@ function buildQuery(appIds) {
     '    on: { left[e_join] == right[e_join]}, fields:{id_1 = id}',
     '| join [',
     '      smartscapeNodes "*", from:' + WINDOW + ', to:now()',
-    '      | fields name, id, tags, `tags:aws`, aws.tags.__APPIDKEY__, custom_metadata, host.custom.metadata',
+    '      | fields name, id, tags, `tags:aws`, ' + TAG_KEYS_RT.map((k) => '`aws.tags.' + k + '`').join(', ') + ', custom_metadata, host.custom.metadata',
     APP_ID_FROM_TAG_MAP,
-    '      | fieldsAdd appId = coalesce(tags[__APPIDKEY__], `tags:aws`[__APPIDKEY__], `tags:aws`[__CLOUDTAGKEY__], aws.tags.__APPIDKEY__, custom_metadata[__APPIDKEY__], custom_metadata[__CLOUDTAGKEY__], host.custom.metadata[__CLOUDTAGKEY__], host.custom.metadata[__APPIDKEY__], lower(smapMapped))',
+    '      | fieldsAdd appId = coalesce(' + smartscapeTagExprs().join(', ') + ', lower(smapMapped))',
     '      | filter ' + inFilter,
     '      | fieldsAdd e_join = concat(appId, "_", name)',
     '    ],',
@@ -94,6 +105,7 @@ function buildQuery(appIds) {
 
 export default async function () {
   CFG = await loadAppConfig();
+  TAG_KEYS_RT = CFG.tagKeys;
   // 1. every appId present in the source list
   const appIdRows = await runDql(
     'load "' + SRC + '" | fieldsAdd appId = ' + SEED_ID + ' | summarize n = count(), by:{appId} | fields appId | sort appId asc', 5000);

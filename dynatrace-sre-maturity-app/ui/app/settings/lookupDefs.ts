@@ -270,8 +270,12 @@ export function buildProfileFields(lookups: LookupSettings, catalog: CatalogSett
 
 /** What the query layer needs, computed once from the settings. */
 export interface SreConfig {
-  /** Application identifier field: entity tag key, DQL alias, and the ID column of app-managed lookups. */
+  /** DQL alias and ID column of every lookup: always "appId" (the catalog workflow normalises the customer's column to it). */
   appIdField: string;
+  /** Entity tag keys that carry the application ID (`<key>:<id>`); any one of them identifies the application. The first is the primary. */
+  tagKeys: string[];
+  /** True while generating a workflow: tag-key fragments are left as runtime markers (see maturityQueries.ts, _runtime-config.snippet.js). */
+  tagKeysRuntime: boolean;
   /** Tag key on cloud resources (smartscapeNodes: AWS tags, Azure tags, GCP labels) and guardians. */
   cloudTagKey: string;
   /** Longest application ID the bulk queries accept (a sanity cap on tag values). The original deployment's IDs are 3 characters. */
@@ -296,7 +300,9 @@ export const normalizeIdMaxLength = (v: unknown): number => {
   return Number.isInteger(n) && n >= 1 && n <= 64 ? n : DEFAULT_ID_MAX_LENGTH;
 };
 
-export function resolveConfig(appIdField: string, lookups: LookupSettings, catalog: CatalogSettings = defaultCatalogSettings(), cloudTagKeyOverride = "", idMaxLength = DEFAULT_ID_MAX_LENGTH): SreConfig {
+export function resolveConfig(tagKeys: string[], lookups: LookupSettings, catalog: CatalogSettings = defaultCatalogSettings(), cloudTagKeyOverride = "", idMaxLength = DEFAULT_ID_MAX_LENGTH, tagKeysRuntime = false): SreConfig {
+  const appIdField = DEFAULT_APP_ID_FIELD;
+  const keys = tagKeys.length ? tagKeys : [DEFAULT_TAG_KEY];
   const loads = {} as Record<LookupKey, string>;
   const paths = {} as Record<LookupKey, string>;
   for (const k of LOOKUP_KEYS) {
@@ -305,7 +311,9 @@ export function resolveConfig(appIdField: string, lookups: LookupSettings, catal
   }
   return {
     appIdField,
-    cloudTagKey: resolveCloudTagKey(appIdField, cloudTagKeyOverride),
+    tagKeys: keys,
+    tagKeysRuntime,
+    cloudTagKey: resolveCloudTagKey(keys[0], cloudTagKeyOverride),
     idMaxLength,
     sloIdFromColumn: !!lookups.slo.columns.appId,
     loads,
@@ -316,7 +324,10 @@ export function resolveConfig(appIdField: string, lookups: LookupSettings, catal
   };
 }
 
+/** The DQL alias / ID column of every table. Not a setting. */
 export const DEFAULT_APP_ID_FIELD = "appId";
+/** Tag key used until Settings are saved. */
+export const DEFAULT_TAG_KEY = "appId";
 /** Seed table the critical-services workflow reads (edited on the Lookups tab). */
 /** Grail bucket (table bizevents) that holds the daily maturity snapshots. Created once per tenant by scripts/setup-snapshot-bucket.mjs. */
 export const SNAPSHOT_BUCKET = "dtsrepoweredapp_snapshots";
@@ -325,8 +336,131 @@ export const DEFAULT_ENTITY_SEVERITY_PATH = `${LOOKUP_FOLDER}/entity_severity`;
  * Cloud resource / guardian tag key. Unset: the identifier field as typed (tag keys are case-sensitive:
  * override it if the tag on your cloud resources is spelled differently, for example "ApplicationCI").
  */
-export const resolveCloudTagKey = (appIdField: string, override: string): string => override.trim() || appIdField;
-export const defaultConfig = (): SreConfig => resolveConfig(DEFAULT_APP_ID_FIELD, defaultLookupSettings());
+export const resolveCloudTagKey = (primaryTagKey: string, override: string): string => override.trim() || primaryTagKey;
+export const defaultConfig = (): SreConfig => resolveConfig([DEFAULT_TAG_KEY], defaultLookupSettings());
 
 /** The config the app publishes at startup (see settings/appSettings.ts) and the workflow generator sets. */
 export const CONFIG_GLOBAL_KEY = "__SRE_CONFIG__";
+
+// ── Shared settings: /lookups/dtsrepoweredapp/config ─────────────────────────────────────────────────────────────────
+// One key^value table that the Settings page writes and that both the app and every DT-SRE APP workflow read, so all
+// users and all workflows see the same configuration. Values are single-line text (JSON where structured).
+
+export const SHARED_CONFIG_PATH = `${LOOKUP_FOLDER}/config`;
+/** Global the bootstrap (ui/main.tsx) fills with the parsed config rows before the app modules load. */
+export const SHARED_CONFIG_GLOBAL_KEY = "__SRE_SHARED_CONFIG__";
+
+/** The customer's own table the catalog is built from, and how its columns map to the catalog's. */
+export interface SourceSettings {
+  /** Lookup path of the customer's table, e.g. /lookups/my_apps. Blank until set. */
+  path: string;
+  /** cmdb field key (appId, name, tier, status, director, owner, supportGroup) → column in the customer's table ("" = none). */
+  columns: Record<string, string>;
+  /** How recent a Smartscape node must be for its application to count as live, e.g. "24h" or "7d". */
+  window: string;
+}
+
+export interface SharedSettings {
+  tagKeys: string[];
+  cloudTagKey: string;
+  idMaxLength: number;
+  appIdLabel: string;
+  companyName: string;
+  companyLogoUrl: string;
+  source: SourceSettings;
+  catalog: CatalogSettings;
+}
+
+export const DEFAULT_SOURCE_WINDOW = "24h";
+export const defaultSourceSettings = (): SourceSettings => ({
+  path: "",
+  columns: Object.fromEntries(Object.entries(LOOKUP_DEFS.cmdb.fields).map(([f, d]) => [f, d.canonical === APP_ID_TOKEN ? DEFAULT_APP_ID_FIELD : d.default])),
+  window: DEFAULT_SOURCE_WINDOW,
+});
+
+const TAG_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_./-]*$/;
+export function validateTagKey(value: string): string | null {
+  const v = value.trim();
+  if (!v) return "Tag key is required.";
+  if (!TAG_KEY_PATTERN.test(v)) return "Use letters, digits and _ . / - only, and don't start with a digit.";
+  return null;
+}
+/** "utan, app_id" → ["utan", "app_id"]: trimmed, valid, no repeats (case-insensitive, entity tags are matched ignoring case). */
+export function parseTagKeys(text: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const k of text.split(",").map((s) => s.trim()).filter(Boolean)) {
+    if (validateTagKey(k) || seen.has(k.toLowerCase())) continue;
+    seen.add(k.toLowerCase());
+    out.push(k);
+  }
+  return out;
+}
+
+export function validateSourcePath(path: string): string | null {
+  const p = path.trim();
+  if (!p) return "Enter the lookup table that holds your application data.";
+  if (!/^\/lookups\/[A-Za-z0-9_\-./]+$/.test(p)) return "A lookup path looks like /lookups/my_applications (letters, digits, _ - . / only).";
+  if (p === `${LOOKUP_FOLDER}/cmdb` || p.startsWith(`${LOOKUP_FOLDER}/`)) return `Use your own table, not one in ${LOOKUP_FOLDER}/ (the catalog is built into ${LOOKUP_FOLDER}/cmdb from it).`;
+  return null;
+}
+
+const LOGO_PATTERN = /^(\.{0,2}\/|https:\/\/|data:image\/)\S+$/;
+export function validateCompanyLogoUrlText(value: string): string | null {
+  const v = value.trim();
+  if (!v) return null;
+  return LOGO_PATTERN.test(v) ? null : 'Use a relative path (e.g. "./assets/logo.png"), an https:// URL or a data:image URI, or leave blank for no logo.';
+}
+
+const oneLine = (v: string): string => v.replace(/[\r\n\t^]/g, " ").trim();
+
+/** Rows to write to the config lookup, as [key, value] pairs. Every value is non-empty ("-" stands for empty). */
+export function serializeSharedSettings(s: SharedSettings): Array<[string, string]> {
+  const rows: Array<[string, string]> = [
+    ["tagKeys", s.tagKeys.join(",")],
+    ["cloudTagKey", s.cloudTagKey],   // blank = same as the first tag key
+    ["idMaxLength", String(s.idMaxLength)],
+    ["appIdLabel", s.appIdLabel],
+    ["companyName", s.companyName],
+    ["companyLogoUrl", s.companyLogoUrl],
+    ["sourcePath", s.source.path],
+    ["sourceColumns", JSON.stringify(s.source.columns)],
+    ["activeWindow", s.source.window],
+    ["passThrough", s.catalog.extras.map((e) => e.column).join(",")],
+    ["catalogDisplay", JSON.stringify({ labels: s.catalog.labels, extras: s.catalog.extras, tiers: s.catalog.tiers })],
+  ];
+  return rows.map(([k, v]) => [k, oneLine(v) || "-"]);
+}
+
+/** Inverse of serializeSharedSettings; anything missing or invalid falls back to the defaults. */
+export function parseSharedSettings(rows: Array<{ key?: unknown; value?: unknown }>, buildCompanyName: string): SharedSettings {
+  const raw: Record<string, string> = {};
+  const str = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : "");
+  for (const r of rows) if (r && str(r.key).trim()) raw[str(r.key).trim()] = str(r.value).trim();
+  const text = (k: string): string => (raw[k] && raw[k] !== "-" ? raw[k] : "");
+  const json = (k: string): unknown => {
+    try { return text(k) ? JSON.parse(text(k)) : undefined; } catch { return undefined; }
+  };
+  const tagKeys = parseTagKeys(text("tagKeys") || text("appIdKey"));   // appIdKey: the name used before several keys were supported
+  const source = defaultSourceSettings();
+  if (!validateSourcePath(text("sourcePath"))) source.path = text("sourcePath");
+  const cols = json("sourceColumns");
+  if (cols && typeof cols === "object") {
+    for (const [f, d] of Object.entries(LOOKUP_DEFS.cmdb.fields as Record<string, LookupFieldDef>)) {
+      const v = (cols as Record<string, unknown>)[f];
+      if (typeof v === "string" && !validateColumn(v, d.optional)) source.columns[f] = v.trim();
+    }
+  }
+  if (/^\d+[hd]$/.test(text("activeWindow"))) source.window = text("activeWindow");
+  const display = json("catalogDisplay");
+  return {
+    tagKeys: tagKeys.length ? tagKeys : [DEFAULT_TAG_KEY],
+    cloudTagKey: text("cloudTagKey") && !validateTagKey(text("cloudTagKey")) ? text("cloudTagKey") : "",
+    idMaxLength: normalizeIdMaxLength(text("idMaxLength")),
+    appIdLabel: text("appIdLabel") || "Application ID",
+    companyName: text("companyName") || buildCompanyName,
+    companyLogoUrl: validateCompanyLogoUrlText(text("companyLogoUrl")) ? "" : text("companyLogoUrl"),
+    source,
+    catalog: normalizeCatalogSettings(display),
+  };
+}

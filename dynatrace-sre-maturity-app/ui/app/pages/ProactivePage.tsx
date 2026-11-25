@@ -6,6 +6,7 @@ import { ChartCard } from "../components/ChartCard";
 import { TableCard } from "../components/TableCard";
 
 import { APP_ID_FIELD } from "../settings/appSettings";
+import { parseAppIdFromTags } from "../queries/maturityQueries";
 interface Props {
   appId: string;
   timeframe: { from: string; to: string };
@@ -18,7 +19,7 @@ export const ProactivePage = ({ appId, timeframe }: Props) => {
   const eventFilter = `fetch events, ${tf}
 | filter event.kind == "DAVIS_EVENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("affected_entity_tags")}
 | filter isNotNull(appId)
 | filter lower(appId) == lower("${appId}")`;
 
@@ -27,7 +28,7 @@ export const ProactivePage = ({ appId, timeframe }: Props) => {
 | filter event.kind == "DAVIS_EVENT"
 | filter event.type == "CUSTOM_DEPLOYMENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("affected_entity_tags")}
 | filter isNotNull(appId)
 | filter lower(appId) == lower("${appId}")
 | summarize \`Count\` = count()`;
@@ -42,7 +43,7 @@ export const ProactivePage = ({ appId, timeframe }: Props) => {
 
   const serviceCountQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup id
 | summarize \`Count\` = count()`;
@@ -66,7 +67,7 @@ export const ProactivePage = ({ appId, timeframe }: Props) => {
 | filter event.kind == "DAVIS_EVENT"
 | filter event.type == "CUSTOM_DEPLOYMENT"
 | expand affected_entity_tags
-| parse affected_entity_tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("affected_entity_tags")}
 | filter isNotNull(appId)
 | filter lower(appId) == lower("${appId}")
 | makeTimeseries Deployments = count()`;
@@ -82,7 +83,7 @@ export const ProactivePage = ({ appId, timeframe }: Props) => {
   // ── Table queries ──
   const serviceListQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter lower(appId) == lower("${appId}")
 | dedup entity.name
 | fields Service = entity.name

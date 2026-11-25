@@ -5,7 +5,7 @@
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { SLO_APP_ID_EXPR, appIdFromEntityTags, appIdFromProblemTags, appIdFromWorkflowTitle, hasTierLookup } from "../queries/maturityQueries";
 
-import { APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG, APP_ID_TAG_KEY } from "../settings/appSettings";
 export interface CheckDetailConfig {
   level: "L1" | "L2" | "L3" | "L4" | "L5";
   levelColor: string;
@@ -136,7 +136,7 @@ export const CHECK_DETAIL_CONFIGS: Record<string, CheckDetailConfig> = {
     passLogic:
       `Pass: at least one host is tagged with this application and was alive in the last 2 hours.`,
     guidance:
-      `Deploy OneAgent on all hosts serving this application. Tag them with the '${APP_ID_FIELD}:<code>' host metadata tag. Ensure hosts are in Full-Stack mode for the richest signal coverage. Infrastructure mode provides limited observability; Discovery mode means OneAgent is not installed, only lightweight scanning is active. PaaS/container workloads (ECS Fargate, EKS Fargate) don't expose a monitoringMode at all but are inherently full-stack once OneAgent is injected.`,
+      `Deploy OneAgent on all hosts serving this application. Tag them with the '${APP_ID_TAG_KEY}:<code>' host metadata tag. Ensure hosts are in Full-Stack mode for the richest signal coverage. Infrastructure mode provides limited observability; Discovery mode means OneAgent is not installed, only lightweight scanning is active. PaaS/container workloads (ECS Fargate, EKS Fargate) don't expose a monitoringMode at all but are inherently full-stack once OneAgent is injected.`,
     chartType: "table",
     detailQuery: (appId: string) => `fetch dt.entity.host
 | limit 100000
@@ -216,7 +216,7 @@ ${appIdFromEntityTags()}
       `Verifies that at least one service entity tagged with this application is emitting distributed traces. Services appear in Dynatrace when OneAgent captures HTTP or RPC traffic between processes. Click any service row to open it in Distributed Tracing (last 2 hours). Note: dependency count uses the service topology 'calls' relationship, which reflects direct downstream service connections.`,
     passLogic: `Pass: at least one service (dt.entity.service) is tagged with this application.`,
     guidance:
-      `Ensure OneAgent is installed on all service hosts and processes. Confirm that HTTP/gRPC traffic is flowing through the monitored process. If a service exists but is not tagged, add the '${APP_ID_FIELD}:<code>' tag via host metadata, tag rules, or the entity API.`,
+      `Ensure OneAgent is installed on all service hosts and processes. Confirm that HTTP/gRPC traffic is flowing through the monitored process. If a service exists but is not tagged, add the '${APP_ID_TAG_KEY}:<code>' tag via host metadata, tag rules, or the entity API.`,
     chartType: "table",
     detailQuery: (appId: string) => `fetch dt.entity.service
 ${appIdFromEntityTags()}
@@ -307,7 +307,7 @@ ${appIdFromEntityTags()}
     passLogic:
       `Pass: at least one service is tagged with this application (same signal as Tracing Validated).`,
     guidance:
-      `Smartscape discovery is automatic once OneAgent is installed and services are tagged. Ensure services are correctly tagged with '${APP_ID_FIELD}:<code>'. Full topology discovery may take 1–2 hours after initial instrumentation.`,
+      `Smartscape discovery is automatic once OneAgent is installed and services are tagged. Ensure services are correctly tagged with '${APP_ID_TAG_KEY}:<code>'. Full topology discovery may take 1–2 hours after initial instrumentation.`,
     chartType: "table",
     detailQuery: (appId: string) => `fetch dt.entity.service
 ${appIdFromEntityTags()}
@@ -681,7 +681,7 @@ ${LOAD.slo}
     passLogic:
       `Pass: at least one SRG is found tagged with this application's appId code (case-insensitive, ${APP_ID_FIELD} or appId tag key).`,
     guidance:
-      `Create an SRG in Dynatrace → Site Reliability Guardian, tag it with '${APP_ID_FIELD}:<code>', and define evaluation objectives for the app's critical SLOs. SRGs are most impactful when triggered automatically by deployment events.`,
+      `Create an SRG in Dynatrace → Site Reliability Guardian, tag it with '${APP_ID_TAG_KEY}:<code>', and define evaluation objectives for the app's critical SLOs. SRGs are most impactful when triggered automatically by deployment events.`,
     chartType: "table",
     appFunction: {
       name: "getGuardianDetail",

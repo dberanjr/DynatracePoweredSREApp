@@ -6,6 +6,7 @@ import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { MaturityLeaderboard, TierMaturityData } from "../components/MaturityLeaderboard";
 
 import { APP_ID_FIELD, APP_ID_LABEL, APP_ID_MAX_LENGTH } from "../settings/appSettings";
+import { parseAppIdFromTags } from "../queries/maturityQueries";
 // --- Styled components ---
 
 function TierBadge({ tier }: { tier: string }) {
@@ -164,7 +165,7 @@ function PortfolioSummary({
 export const PortfolioPage = () => {
   const appInventoryQuery = `fetch dt.entity.service
 | expand tags
-| parse tags, "'${APP_ID_FIELD}:' LD:appId"
+${parseAppIdFromTags("tags")}
 | filter isNotNull(appId)
 | fieldsAdd appId = upper(appId)
 | filter stringLength(appId) <= ${APP_ID_MAX_LENGTH}

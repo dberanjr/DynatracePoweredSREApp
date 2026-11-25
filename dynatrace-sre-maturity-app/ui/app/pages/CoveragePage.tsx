@@ -18,7 +18,7 @@ import {
   tableRowBorder,
 } from "../components/redesignStyles";
 
-import { APP_ID_FIELD, LOAD, APP_ID_LABEL } from "../settings/appSettings";
+import { APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_TAG_KEY } from "../settings/appSettings";
 // Tagging / onboarding coverage: for every active application in the CMDB table, how much of its
 // data the scorecards can actually find. Read-only: it measures, it never changes tenant config.
 // Each signal is its own query so a missing lookup or a failing source degrades one column, not the page.
@@ -32,7 +32,7 @@ const CMDB_QUERY = `${LOAD.cmdb}
 | fields ${APP_ID_FIELD}, name, business_criticality, operational_status
 | limit 10000`;
 
-// application ID codes found in `${APP_ID_FIELD}:<code>` tags on one entity type, with how many entities carry each.
+// application ID codes found in `${APP_ID_TAG_KEY}:<code>` tags on one entity type, with how many entities carry each.
 const tagCodes = (entityFetch: string, countField: string) => `${entityFetch}
 ${appIdFromEntityTags()}
 | expand ${APP_ID_FIELD}
@@ -77,10 +77,10 @@ interface Signal {
 }
 
 const SIGNALS: Signal[] = [
-  { key: "services", label: "Services", how: `Services tagged ${APP_ID_FIELD}:<code>, or tagged Application:<name> with that name mapped to the code on Lookups > ${APP_ID_LABEL} map` },
-  { key: "hosts", label: "Hosts", how: `Hosts tagged ${APP_ID_FIELD}:<code>, or tagged Application:<name> mapped to the code on Lookups > ${APP_ID_LABEL} map` },
+  { key: "services", label: "Services", how: `Services tagged ${APP_ID_TAG_KEY}:<code>, or tagged Application:<name> with that name mapped to the code on Lookups > ${APP_ID_LABEL} map` },
+  { key: "hosts", label: "Hosts", how: `Hosts tagged ${APP_ID_TAG_KEY}:<code>, or tagged Application:<name> mapped to the code on Lookups > ${APP_ID_LABEL} map` },
   { key: "slos", label: "SLOs", how: "SLO names that start with the code (from /lookups/dtsrepoweredapp/slo)" },
-  { key: "guardians", label: "Guardians", how: `Site Reliability Guardians tagged ${APP_ID_FIELD}:<code> (from /lookups/dtsrepoweredapp/guardians)` },
+  { key: "guardians", label: "Guardians", how: `Site Reliability Guardians tagged ${APP_ID_TAG_KEY}:<code> (from /lookups/dtsrepoweredapp/guardians)` },
   { key: "dashboards", label: "SLO dashboards", how: "Dashboards named <code> … SLO (from /lookups/dtsrepoweredapp/slo_dashboards)" },
   { key: "critical", label: "Critical services", how: "Rows in the critical services seed; resolved = matched to a Dynatrace entity" },
   { key: "workflows", label: "Workflows", how: `Automation workflows whose title starts with the code, or with an application name in the ${APP_ID_LABEL} map (last 30 days)` },
@@ -236,7 +236,7 @@ export const CoveragePage = () => {
         {!loading && !cmdb.error && apps.length > 0 && taggedApps === 0 && (
           <div style={{ ...noticeStyle("warn"), margin: 13 }}>
             No service resolves to a CMDB {APP_ID_LABEL}, so the leaderboard and daily snapshot will be empty. Services resolve through an{" "}
-            <code>{APP_ID_FIELD}:&lt;code&gt;</code> tag or through the {APP_ID_LABEL} map on the Lookups tab.
+            <code>{APP_ID_TAG_KEY}:&lt;code&gt;</code> tag or through the {APP_ID_LABEL} map on the Lookups tab.
           </div>
         )}
         {loading ? (

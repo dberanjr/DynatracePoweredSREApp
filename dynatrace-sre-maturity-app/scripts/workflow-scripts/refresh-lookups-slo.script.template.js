@@ -1,5 +1,5 @@
 // Refreshes the SLOs lookup (/lookups/dtsrepoweredapp/slo; one row per SLO name) from the Gen3 SLO platform API.
-// Each SLO's application ID is its `<appIdKey>:<id>` tag, falling back to the name up to its first separator when the SLO
+// Each SLO's application ID is its `<tagKey>:<id>` tag (any of the configured tag keys), falling back to the name up to its first separator when the SLO
 // has no such tag (and the prefix is no longer than the configured longest ID). The key and length come from the run-time config.
 // NOTE: the platform SLO API rejects page-size when page-key is set — first
 // page uses page-size, subsequent pages use page-key only (confirmed in getSloDetail.function.ts).
@@ -7,19 +7,21 @@ import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
 __RUNTIME_CONFIG__
 
-let TAG_KEY = '';
+let TAG_KEYS = [];
 let ID_MAX = 0;
 
 function sloAppId(s) {
-  const tag = (s.tags || []).find((t) => t.toLowerCase().startsWith(TAG_KEY + ':'));
-  if (tag) return tag.slice(TAG_KEY.length + 1).trim().toLowerCase();
+  for (const key of TAG_KEYS) {
+    const tag = (s.tags || []).find((t) => t.toLowerCase().startsWith(key + ':'));
+    if (tag) return tag.slice(key.length + 1).trim().toLowerCase();
+  }
   const m = /^([A-Za-z0-9]+)[^A-Za-z0-9]/.exec(s.name || '');
   return m && m[1].length <= ID_MAX ? m[1].toLowerCase() : '';
 }
 
 export default async function () {
   const cfg = await loadAppConfig();
-  TAG_KEY = cfg.appIdKey.toLowerCase();
+  TAG_KEYS = cfg.tagKeys.map((k) => k.toLowerCase());
   ID_MAX = cfg.idMaxLength;
   // 1. Page through all SLOs
   const slos = [];

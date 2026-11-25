@@ -7,7 +7,7 @@ __RUNTIME_CONFIG__
 // Site Reliability Guardian settings objects, matching on the application ID tag (the key comes from the run-time config; "appci" is accepted as a shorthand).
 export default async function () {
   const cfg = await loadAppConfig();
-  const TAG_KEYS = [cfg.appIdKey, cfg.cloudTagKey, 'appci'].map((k) => k.toLowerCase());
+  const TAG_KEYS = [...cfg.tagKeys, cfg.cloudTagKey, 'appci'].map((k) => k.toLowerCase());
   // 1. Read all guardian settings objects
   const res = await settingsObjectsClient.getSettingsObjects({
     schemaIds: 'app:dynatrace.site.reliability.guardian:guardians',

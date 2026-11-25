@@ -21,7 +21,7 @@ export interface SloDetail {
 export default async function (input: unknown = undefined) {
   const raw = (input && typeof input === 'object' && 'payload' in (input as Record<string, unknown>)
     ? (input as { payload?: unknown }).payload
-    : input) as { appId?: string; appCiField?: string; sloIdFromTag?: boolean } | undefined;
+    : input) as { appId?: string; appCiField?: string; tagKeys?: string[]; sloIdFromTag?: boolean } | undefined;
   const appId = String(raw?.appId || '').trim().toLowerCase();
   if (!appId) return { slos: [] };
 
@@ -39,11 +39,12 @@ export default async function (input: unknown = undefined) {
 
   // Settings with an SLO Application ID column identify an SLO by its `<appCiField>:<id>` tag (the same rule the
   // refresh workflow uses); otherwise the application is the first 3 characters of the name.
-  const tagKey = String(raw?.appCiField || '').trim().toLowerCase();
-  const byTag = raw?.sloIdFromTag === true && tagKey !== '';
+  // Any of the configured tag keys identifies the application (the app sends its list; appCiField is the older single key).
+  const tagKeys = (Array.isArray(raw?.tagKeys) ? raw.tagKeys : [raw?.appCiField]).map((k) => String(k || '').trim().toLowerCase()).filter(Boolean);
+  const byTag = raw?.sloIdFromTag === true && tagKeys.length > 0;
   const matches = slos.filter((s) =>
     byTag
-      ? (s.tags || []).some((t) => t.toLowerCase() === `${tagKey}:${appId}`)
+      ? (s.tags || []).some((t) => tagKeys.some((k) => t.toLowerCase() === `${k}:${appId}`))
       : (s.name || '').slice(0, 3).toLowerCase() === appId,
   );
 

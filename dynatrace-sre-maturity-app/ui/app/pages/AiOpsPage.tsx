@@ -6,6 +6,7 @@ import { ChartCard } from "../components/ChartCard";
 import { TableCard } from "../components/TableCard";
 
 import { APP_ID_FIELD } from "../settings/appSettings";
+import { parseAppIdFromTags } from "../queries/maturityQueries";
 interface Props {
   appId: string;
   timeframe: { from: string; to: string };
@@ -26,7 +27,7 @@ export const AiOpsPage = ({ appId, timeframe }: Props) => {
 | lookup [
     fetch dt.entity.service
     | expand tags
-    | parse tags, "'${APP_ID_FIELD}:' LD:appId"
+    ${parseAppIdFromTags("tags")}
     | filter lower(appId) == lower("${appId}")
     | dedup id
     | fieldsAdd idStr = toString(id)

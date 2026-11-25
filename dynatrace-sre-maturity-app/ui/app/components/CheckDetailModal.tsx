@@ -9,7 +9,7 @@ import { CHECK_DETAIL_CONFIGS, LEVEL_META, CheckDetailConfig } from "./checkDeta
 import { HardcodedBadge } from "./HardcodedBadge";
 import { SmartscapeViewMenu } from "./SmartscapeViewMenu";
 
-import { APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG, SLO_ID_FROM_COLUMN } from "../settings/appSettings";
+import { APP_ID_FIELD, APP_ID_TAG_KEYS, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG, SLO_ID_FROM_COLUMN } from "../settings/appSettings";
 interface Props {
   checkKey: string;
   currentValue: string;
@@ -821,7 +821,7 @@ function DataPanel({
 
   const appFn = config?.appFunction;
   const fnResult = useAppFunction<unknown>(
-    { name: appFn?.name ?? "__unused__", data: { appId, appCiField: APP_ID_FIELD, sloIdFromTag: SLO_ID_FROM_COLUMN } },
+    { name: appFn?.name ?? "__unused__", data: { appId, tagKeys: [...APP_ID_TAG_KEYS, APP_ID_CLOUD_TAG], sloIdFromTag: SLO_ID_FROM_COLUMN } },
     { autoFetch: !!appFn, autoFetchOnUpdate: true }
   );
 
@@ -1436,7 +1436,7 @@ function SecondaryDataPanel({
 }) {
   const dqlResult = useDqlWithCache({ query });
   const fnResult = useAppFunction<unknown>(
-    { name: appFunction?.name ?? "__unused__", data: { appId, appCiField: APP_ID_FIELD, sloIdFromTag: SLO_ID_FROM_COLUMN } },
+    { name: appFunction?.name ?? "__unused__", data: { appId, tagKeys: [...APP_ID_TAG_KEYS, APP_ID_CLOUD_TAG], sloIdFromTag: SLO_ID_FROM_COLUMN } },
     { autoFetch: !!appFunction, autoFetchOnUpdate: true }
   );
   const isLoading = appFunction ? fnResult.isLoading : dqlResult.isLoading;

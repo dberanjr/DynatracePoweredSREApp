@@ -53,15 +53,15 @@ const SEED_QUERY = [
   '| fieldsAdd calledByService = called_by[dt.entity.service]',
   '| filter serviceType == "WEB_REQUEST_SERVICE" and (isNotNull(byApp) or isNull(calledByService))',
   APP_ID_FROM_SERVICE_TAGS,
-  '| expand __APPIDKEY__',
-  '| filter stringLength(__APPIDKEY__) <= __IDMAX__',
+  '| expand appId',
+  '| filter stringLength(appId) <= __IDMAX__',
   '| lookup [',
   '    ' + LOAD_CMDB,
   '    | filter business_criticality == "Yes"',
-  '    | fields __APPIDKEY__, name',
-  '  ], sourceField:__APPIDKEY__, lookupField:__APPIDKEY__, fields:{appName = name}',
+  '    | fields appId, name',
+  '  ], sourceField:appId, lookupField:appId, fields:{appName = name}',
   '| filter isNotNull(appName)',
-  '| summarize userFacing = countIf(isNotNull(byApp)), by:{appId = __APPIDKEY__, entity_name = entity.name}',
+  '| summarize userFacing = countIf(isNotNull(byApp)), by:{appId, entity_name = entity.name}',
   '| sort appId asc, userFacing desc',
 ].join('\n');
 
@@ -81,7 +81,7 @@ export default async function () {
   const existing = await readExisting();
   if (existing) {
     const custom = existing.filter((r) => {
-      const id = String(r.appId === undefined || r.appId === null ? (r[CFG.appIdKey] || '') : r.appId).trim();
+      const id = String(r.appId === undefined || r.appId === null ? '' : r.appId).trim();
       if (id === '' || id === '__none__') return false;
       return !String(r.business_impact || '').startsWith('user-facing:');
     });

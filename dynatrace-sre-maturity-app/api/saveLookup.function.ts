@@ -29,6 +29,7 @@ interface TableDef {
   appIdColumn: string;
   lowercase: string[]; // columns normalised to lower case (consumers compare them lower-cased)
   keyColumns: string[]; // together unique within the table
+  maxValueLength?: number; // default MAX_VALUE_LENGTH; the config table holds JSON values
   // Grail keeps ONE row per lookup-field value. When the rows are unique only by several columns together, a derived
   // column holds their combination and is the lookup field. It is written to the file but is not an editable column.
   derivedKey?: string;
@@ -76,6 +77,21 @@ const TABLES: Record<string, TableDef> = {
     lowercase: ['appId', 'severity'],
     keyColumns: ['appId', 'entity_name'],
   },
+  config: {
+    // The shared settings (Settings page): key^value rows read by the app at startup and by every DT-SRE APP workflow.
+    // Keep this path in sync with SHARED_CONFIG_PATH in ui/app/settings/lookupDefs.ts.
+    path: '/lookups/dtsrepoweredapp/config',
+    backupPath: '/lookups/dtsrepoweredapp/config_backup',
+    displayName: 'DT-SRE APP configuration',
+    description: 'Settings shared by the SRE maturity app and its workflows: application ID tag keys, source table and column mapping, display options. Edit them on the Settings page of the app.',
+    lookupField: 'key',
+    columns: ['key', 'value'],
+    required: ['key', 'value'],
+    appIdColumn: '',
+    lowercase: [],
+    keyColumns: ['key'],
+    maxValueLength: 4000,
+  },
   app_map: {
     // Read by the shared application ID resolver in ui/app/queries/maturityQueries.ts (APP_ID_MAP_PATH) -
     // keep this path in sync with that constant. Backend code cannot import from the UI.
@@ -95,8 +111,8 @@ const TABLES: Record<string, TableDef> = {
   },
 };
 
-const clean = (v: unknown): string =>
-  (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : '').replace(/[\r\n\t^]/g, ' ').trim().slice(0, MAX_VALUE_LENGTH);
+const clean = (v: unknown, max = MAX_VALUE_LENGTH): string =>
+  (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : '').replace(/[\r\n\t^]/g, ' ').trim().slice(0, max);
 
 function validate(t: TableDef, input: unknown): Row[] {
   if (!Array.isArray(input) || input.length === 0) {
@@ -112,7 +128,7 @@ function validate(t: TableDef, input: unknown): Row[] {
   input.forEach((raw, i) => {
     const row: Row = {};
     for (const c of t.columns) {
-      const v = clean((raw as Record<string, unknown>)?.[c]);
+      const v = clean((raw as Record<string, unknown>)?.[c], t.maxValueLength);
       row[c] = t.lowercase.includes(c) ? v.toLowerCase() : v;
     }
     const line = i + 1;
@@ -237,7 +253,7 @@ async function readCurrent(t: TableDef): Promise<Row[] | null> {
   if (!records?.length) return null;
   return records.map((rec) => {
     const row: Row = {};
-    for (const c of t.columns) row[c] = clean(rec?.[c]);
+    for (const c of t.columns) row[c] = clean(rec?.[c], t.maxValueLength);
     return row;
   });
 }

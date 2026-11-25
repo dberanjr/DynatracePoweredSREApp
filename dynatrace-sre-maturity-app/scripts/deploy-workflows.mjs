@@ -1,13 +1,11 @@
 // Deploys workflows/*.workflow-template.yaml to a Dynatrace tenant with dtctl.
 //
-//   node scripts/deploy-workflows.mjs --context <dtctl-context> --dir workflows --dir workflows/customers/<customer> [options]
+//   node scripts/deploy-workflows.mjs --context <dtctl-context> [options]
 //
 //   --context <name>   dtctl context (tenant) to deploy to. Required, so a deploy never lands on whatever
 //                      context happens to be the default.
 //   --dir <path>       folder of *.workflow-template.yaml to deploy (repeatable; default: workflows/). A later --dir wins when
-//                      two files have the same title, so a customer's catalog workflow
-//                      (`generate-snapshot-workflow.mjs --config <customer>.json --out <dir>`) replaces the standard one:
-//                      --dir workflows --dir workflows/customers/<customer>
+//                      two files have the same title.
 //   --only <text>      only templates whose file name or workflow title contains <text> (repeatable)
 //   --run              run each deployed workflow once and wait for it (in dependency order: lookups first,
 //                      the daily snapshot last)

@@ -79,31 +79,24 @@ reads your source table, **maps your columns onto the app's fixed catalog column
 in the tenant (tagged with the ID in the last 24 hours), so retired or never-instrumented applications never reach
 the picker or the leaderboard. It throws if it would keep zero rows, so a broken query never wipes the catalog.
 
-What you tell it, as constants at the top of the script (or in the settings JSON, `catalogSource`, when generating):
+What you tell it is entered **in the app, on the Settings page** (step 5), not in the workflow, and stored in
+`/lookups/dtsrepoweredapp/config`, which the workflow reads each time it runs:
 
-| Setting | Meaning | NM example |
+| Setting (Settings > Application catalog) | Meaning | NM example |
 |---|---|---|
-| `path` | Your source table | `/lookups/updated_utan_data` |
-| `columns` | Which of your columns holds each catalog field (`appId`, `name`, `tier`, `status`, `director`, `owner`, `supportGroup`); `""` = you have none (written blank) | `appId: utan`, `name: SNOW_app_name`, `tier: top_tier` |
-| `passThrough` | Extra columns copied as they are (usable as profile-banner extras in Settings) | `Engineering_lead`, `portfolio` |
-| `activeTagKeys` | Smartscape tag keys that carry the ID, besides the identifier and the cloud tag key | `nm.kubernetes/utan` |
-| `activeWindow` | How recent "live" is | `24h` |
+| Your lookup table | Your source table | `/lookups/updated_utan_data` |
+| Your column, per catalog field | Which of your columns holds each catalog field (Application ID, name, tier, status, director, owner, support group); blank = you have none (written blank) | Application ID = `utan`, name = `SNOW_app_name`, tier = `top_tier` |
+| Extra fields | Extra columns copied as they are and shown in the profile banner | `Engineering_lead`, `portfolio` |
+| Live within | How recent "live" is | `24h` |
+| Entity tag keys (Settings > Application identifier) | Tags that carry the ID; also used to decide which applications are live | `utan, nm.kubernetes/utan` |
 
-The same workflow serves every customer; only these values differ. It never modifies your source table.
+The workflow is identical for every customer; there is nothing to edit in it. It never modifies your source table.
 
-**Changing the ID column (or any of these values) later, without our scripts.** The values are plain constants at the top
-of the workflow's script, so you can change them yourself in the Dynatrace UI:
-
-1. Open **Workflows**, then **DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table)**.
-2. Select its single task, **Input**, and edit the constant. For example, to take the application ID from a different column,
-   change the first line of `SOURCE_COLUMNS` from `"appId": "utan"` to `"appId": "app_number"` (the left side stays `appId`;
-   the right side is the column name in *your* table).
-3. Save, then **Run**. It rebuilds `cmdb` and `config`, and stops with an error, leaving the old catalog in place, if the
-   new setting would keep no rows.
-4. Re-run the other DT-SRE APP workflows that read the catalog (critical_services, and the starter seed if you use it).
-
-Check first that the column you choose has no blanks or duplicates, and that its values are what your entities carry in the
-application ID tag. The app's own Settings page cannot change this: it holds only the tag key and display labels.
+**To change the ID column later** (for example from `utan` to `app_number`): open Settings, choose the other column next to
+Application ID, Save, then run the **Build /lookups/dtsrepoweredapp/cmdb** workflow again (and the critical_services workflow,
+and the starter seed if you use it). The workflow stops with an error, leaving the old catalog in place, if the new setting
+would keep no rows. Check first that the column has no blanks or duplicates, and that its values are what your entities
+carry in the ID tag.
 
 ### 2.3 Create the name map
 
@@ -183,23 +176,21 @@ deploying.
 
 ## 5. Configure Settings in the app
 
-Settings are stored **per browser** (`localStorage` key `sre-maturity.settings.v1`), so each user has to do this
-once, or import the same settings export. Save reloads the page.
+Open **Settings** in the app. The settings are stored in **`/lookups/dtsrepoweredapp/config`**, shared by every user and
+read by every workflow, so this is done **once per tenant**, not per user. The first Save creates the table; it needs
+permission to write lookup tables (`storage:files:write`). A user without it sees the settings read-only with a message
+saying so. Until the table exists the workflows stop with "Cannot read /lookups/dtsrepoweredapp/config". Save reloads the page.
 
 | Setting | NM value | Notes |
 |---|---|---|
-| Application identifier field | `utan` | Must be a plain identifier. |
+| Entity tag keys | `utan, nm.kubernetes/utan` | One or several, comma separated. An entity carrying `<key>:<id>` for **any** of them belongs to application `<id>`. The values must be the same IDs your source table uses. |
+| Cloud resource tag key | blank | Case-sensitive key on AWS/Azure/GCP resources and guardians; blank = the first tag key. |
 | Longest identifier (characters) | `10` | Default is 3. A value that is too small silently drops every application. |
-| Application catalog | nothing to map | Its columns are fixed; the catalog workflow fills them from your source table. Use **Detect columns** to list pass-through columns for the profile banner. |
-| Operational status column | blank | A mapped column that does not exist makes the picker show only "N/A". The Settings page warns in red. |
-| Name map columns | name `app_name`, ID = identifier | |
+| Your lookup table and columns | `/lookups/updated_utan_data` | Your source table and which column fills each catalog field (see 2.2). Use **Detect columns** to list its columns. |
+| Operational status column | blank | A column that does not exist in your table makes the picker show only "N/A". The Settings page warns in red. |
 | Tier values | `yes` = Top tier (critical), `no` = Not top tier | |
-| SLOs table: Application ID column | the identifier (`$APPCI`) | Blank = first 3 characters of the SLO name. Set it only after the SLO workflow has written the column. |
 
-Use **Export saved settings** to produce the JSON that drives the workflow generator in step 6. A worked example
-is [scripts/settings/nm.json](../scripts/settings/nm.json).
-
-Tables whose columns you remapped are shown read-only in the Lookups tab, so an edit never overwrites your extra columns.
+Settings other than these (the lookup tables' names and columns, the Application ID alias `appId`) are fixed.
 
 ## 6. Create the snapshot bucket, then deploy the workflows
 
@@ -221,41 +212,30 @@ workflows' service user.
 
 ### 6.2 The workflows
 
-Every workflow is **identical for every customer** except one. The scripts read the few customer values (the application
-ID tag key, the cloud tag key, the longest ID) at run time from `/lookups/dtsrepoweredapp/config`, which the catalog
-workflow writes from its constants. So the standard files in [workflows/](../workflows/) deploy as they are, and a
-customer only needs its **own catalog workflow**, generated from a settings file:
-
-```
-# Write the customer's settings file (start from scripts/settings/nm.json): appCiField, cloudTagKey, appCiMaxLength, catalogSource
-node scripts/generate-snapshot-workflow.mjs --config scripts/settings/<customer>.json --out workflows/customers/<customer>
-```
-
-That writes only `refresh-application-catalog.workflow-template.yaml` into the customer's folder (existing:
-[nm](../workflows/customers/nm/), [united](../workflows/customers/united/); `npm run generate:customers` regenerates
-both). A customer who prefers can instead edit the constants at the top of the deployed catalog workflow. A customer with
-the defaults (`appId`, three-character IDs) can deploy `workflows/` alone. `npm run check:workflows` checks the standard set.
+Every workflow is **identical for every customer**. The scripts read the customer's values (the application ID tag keys,
+the cloud tag key, the longest ID, and for the catalog workflow the source table and column mapping) at run time from
+`/lookups/dtsrepoweredapp/config`, which the Settings page writes (step 5). So the standard files in [workflows/](../workflows/)
+deploy as they are. `npm run check:workflows` checks that the generated scripts match the app's queries.
 
 **Deploy with the script.** The files are templates wrapped in `metadata:` / `workflow:`, which `dtctl apply` would treat as
 a dashboard. [scripts/deploy-workflows.mjs](../scripts/deploy-workflows.mjs) flattens each one and updates the workflow with the
-same title in place (or creates it). A later `--dir` wins when two files share a title, so the customer's catalog replaces the
-standard one:
+same title in place (or creates it):
 
 ```
-npm run deploy:workflows -- --context <dtctl-context> --dir workflows --dir workflows/customers/<customer> --dry-run
-npm run deploy:workflows -- --context <dtctl-context> --dir workflows --dir workflows/customers/<customer> --run
-npm run deploy:workflows -- --context <dtctl-context> --dir workflows --dir workflows/customers/<customer> --only slo
+npm run deploy:workflows -- --context <dtctl-context> --dry-run
+npm run deploy:workflows -- --context <dtctl-context> --run
+npm run deploy:workflows -- --context <dtctl-context> --only slo
 ```
 
-`--context` is required so a deploy never lands on the default tenant by accident. The catalog deploys and runs first (it
-writes the config the others read), and the snapshot last. If two workflows share a title the script stops for that one;
+`--context` is required so a deploy never lands on the default tenant by accident. The lookups deploy and run first, the critical-services
+workflow after them (it reads the seed table), and the snapshot last. If two workflows share a title the script stops for that one;
 delete the extra first. Set each workflow's actor to the service user afterwards (step 3); the script does not change actors.
 
 Workflows to deploy:
 
 | Workflow | Writes | Schedule |
 |---|---|---|
-| DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table) (step 2.2) | `/lookups/dtsrepoweredapp/cmdb` and `/lookups/dtsrepoweredapp/config` | daily |
+| DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table) (step 2.2) | `/lookups/dtsrepoweredapp/cmdb` | daily |
 | DT-SRE APP: Seed /lookups/dtsrepoweredapp/entity_severity (starter list of user-facing services) (optional, step 2.4) | `/lookups/dtsrepoweredapp/entity_severity` (only if it is missing, a placeholder or an earlier starter) | none; run manually |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/critical_services (entity_severity resolved to entity IDs) | `/lookups/dtsrepoweredapp/critical_services` | none; run manually |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/guardians (SRG by AppId) | `/lookups/dtsrepoweredapp/guardians` | daily |
@@ -263,8 +243,8 @@ Workflows to deploy:
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo (SLOs by AppId) | `/lookups/dtsrepoweredapp/slo` | hourly |
 | DT-SRE APP: Daily Maturity Snapshot (one bizevent per AppId) | bizevents `workflow.summary.sre_maturity` in bucket `dtsrepoweredapp_snapshots` | daily |
 
-Deploy and run the catalog **first** (it writes `/lookups/dtsrepoweredapp/config` and the catalog), then the lookup refreshes,
-then the snapshot. Without the config table the other workflows stop with "Cannot read /lookups/dtsrepoweredapp/config".
+Save the Settings first (step 5): without `/lookups/dtsrepoweredapp/config` the workflows stop with "Cannot read
+/lookups/dtsrepoweredapp/config". Then run the catalog first, then the lookup refreshes, then the snapshot.
 
 ## 7. Verify
 
@@ -299,8 +279,7 @@ at least one snapshot.
   and a process for keeping it current.
 - Tell them who owns the CMDB source table and how often it changes. The catalog workflow only filters and reshapes; it
   does not fix bad source data.
-- Record the service user, the workflow IDs, and the exported settings JSON somewhere the customer controls.
-- **TODO:** decide how Settings are shared across users (per-browser storage means each user repeats step 5).
+- Record the service user and the workflow IDs somewhere the customer controls. The settings live in `/lookups/dtsrepoweredapp/config` (the app keeps a copy of the previous version in `config_backup` on each save).
 
 ## Known gaps for non-United customers
 

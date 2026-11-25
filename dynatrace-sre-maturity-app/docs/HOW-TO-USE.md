@@ -11,8 +11,8 @@ this document is the operating manual.
 > `critical_services`, `slo`, `slo_dashboards`, `guardians`) for all tenants. The paths are not configurable. The rest
 > of this guide still shows the original United names (`applicationci`, `AppCI`, `/lookups/appci_map`, …). **United
 > must conform:** copy its tables into the standard locations, set its identifier (`applicationci`), label (`AppCI`)
-> and cloud tag key (`ApplicationCI`) in Settings, and deploy the standard workflows in `workflows/` plus United's own catalog workflow, generated from
-> [scripts/settings/united.json](../scripts/settings/united.json) (`workflows/customers/united/`). The daily snapshot events are
+> and cloud tag key (`ApplicationCI`) in Settings (stored in `/lookups/dtsrepoweredapp/config`), and deploy the standard workflows in `workflows/`;
+> they are identical for every customer and read those settings at run time. The daily snapshot events are
 > stored in their own bucket, `dtsrepoweredapp_snapshots`, with the event field `appId` (set up once with
 > `scripts/setup-snapshot-bucket.mjs`).
 

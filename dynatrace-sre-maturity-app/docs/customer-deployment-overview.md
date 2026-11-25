@@ -19,11 +19,11 @@ leaves the tenant: the app and its workflows call only Dynatrace platform APIs i
 | # | Item | Details |
 |---|---|---|
 | 1 | **App** `my.dynatrace.sre.maturity.app` ("DynatracePoweredSRE") | One custom app installed from our build. Requests the 15 scopes in section 5. |
-| 2 | **Six Automation workflows** | Listed below: five build lookup tables and one writes the daily snapshot. Five are identical for every customer; only the catalog workflow holds your values (source table, its column names, the identifier tag key), as constants at the top of its script. |
-| 3 | **Lookup tables** (Grail) | All in one fixed folder, `/lookups/dtsrepoweredapp/` (not configurable): see below. One of them, `config`, is written by the catalog workflow and holds three values the other workflows read at run time (the application ID tag key, cloud tag key and longest ID). |
+| 2 | **Six Automation workflows** | Listed below: five build lookup tables and one writes the daily snapshot. All are identical for every customer; they read your values (source table and column mapping, the application ID tag keys) from the app's Settings at run time. |
+| 3 | **Lookup tables** (Grail) | All in one fixed folder, `/lookups/dtsrepoweredapp/` (not configurable): see below. One of them, `config`, holds your settings; the app's Settings page writes it (it needs permission to write lookup tables) and every workflow reads it. |
 | 4 | **Business events, in their own bucket** | One event per application per day, type `workflow.summary.sre_maturity`, stored in a dedicated Grail bucket `dtsrepoweredapp_snapshots` (table `bizevents`, retention of your choice, default 365 days). An OpenPipeline route sends them there. See section 3. |
 | 5 | **OpenPipeline pipeline and route** | A custom bizevents pipeline that assigns the snapshot bucket, and one entry added to the bizevents routing settings (your existing entries are kept). Created once by an administrator. |
-| 6 | **Per-user app settings** | Stored in each user's browser only. **Nothing is written to tenant Settings.** |
+| 6 | **App settings** | Stored in the lookup `config` (item 3), shared by all users. **Nothing is written to Dynatrace tenant Settings.** |
 
 **Workflows** (every title starts with `DT-SRE APP:`, so they are easy to find in the Automations list)
 

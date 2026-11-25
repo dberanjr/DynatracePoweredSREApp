@@ -33,46 +33,74 @@ workflow:
         script: |
           import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
+          // ── Customer settings, read at run time ───────────────────────────────────────────────────────────────────────────────
+          // Every DT-SRE APP workflow is identical for all customers. What differs (the application ID tag keys, the cloud tag key,
+          // the longest ID and, for the catalog workflow, the source table and its column mapping) is read from
+          // /lookups/dtsrepoweredapp/config, which the app's Settings page writes. Until Settings have been saved, the workflows stop
+          // with an error that says so.
+          // The generated queries contain markers and placeholders that applyAppConfig fills in: __TAGHIT__(<tags array>) for
+          // "this entity carries one of the tag keys", and __APPIDKEY__ (the first tag key), __CLOUDTAGKEY__ and __IDMAX__.
+          const APP_CONFIG_PATH = '/lookups/dtsrepoweredapp/config';
+
+          async function loadAppConfig() {
+            let records;
+            try {
+              const started = await queryExecutionClient.queryExecute({
+                body: { query: 'load "' + APP_CONFIG_PATH + '"', maxResultRecords: 100, requestTimeoutMilliseconds: 30000 },
+              });
+              records = started.result ? started.result.records || [] : null;
+              for (let i = 0; records === null && i < 60; i++) {
+                await new Promise((r) => setTimeout(r, 500));
+                const p = await queryExecutionClient.queryPoll({ requestToken: started.requestToken });
+                if (p.state === 'SUCCEEDED') records = (p.result && p.result.records) || [];
+                else if (p.state !== 'NOT_STARTED' && p.state !== 'RUNNING') throw new Error('query ended in state ' + p.state);
+              }
+              if (records === null) throw new Error('query timed out');
+            } catch (e) {
+              throw new Error('Cannot read ' + APP_CONFIG_PATH + '. Open the SRE maturity app, go to Settings and Save; that creates it. (' + (e && e.message ? e.message : e) + ')');
+            }
+            const raw = {};
+            for (const r of records) raw[String(r.key)] = String(r.value === undefined || r.value === null ? '' : r.value).trim();
+            const text = (k) => (raw[k] && raw[k] !== '-' ? raw[k] : '');
+            const keyOk = /^[A-Za-z_][A-Za-z0-9_./-]*$/;
+            const tagKeys = Array.from(new Set((text('tagKeys') || text('appIdKey')).split(',').map((k) => k.trim()).filter(Boolean)));
+            if (!tagKeys.length || !tagKeys.every((k) => keyOk.test(k))) throw new Error(APP_CONFIG_PATH + ' has no valid tagKeys (found "' + text('tagKeys') + '"). Fix them in the app under Settings.');
+            const cloudTagKey = text('cloudTagKey') || tagKeys[0];
+            if (!keyOk.test(cloudTagKey)) throw new Error(APP_CONFIG_PATH + ' has an invalid cloudTagKey "' + cloudTagKey + '".');
+            const idMaxLength = Number(raw.idMaxLength);
+            if (!Number.isInteger(idMaxLength) || idMaxLength < 1 || idMaxLength > 64) throw new Error(APP_CONFIG_PATH + ' has an invalid idMaxLength "' + raw.idMaxLength + '".');
+            return { tagKeys, appIdKey: tagKeys[0], cloudTagKey, idMaxLength, raw, text };
+          }
+
+          function applyAppConfig(text, c) {
+            const hit = (arr) => {
+              const one = (k) => 'matchesPhrase(' + arr + ', "*' + k + '*")';
+              return c.tagKeys.length === 1 ? one(c.tagKeys[0]) : '(' + c.tagKeys.map(one).join(' or ') + ')';
+            };
+            return text
+              .replace(/__TAGHIT__\(([^()]*)\)/g, (m, arr) => hit(arr))
+              .split('__APPIDKEY__').join(c.appIdKey)
+              .split('__CLOUDTAGKEY__').join(c.cloudTagKey)
+              .split('__IDMAX__').join(String(c.idMaxLength));
+          }
+
           // Builds the app's application catalog, /lookups/dtsrepoweredapp/cmdb, from the table your organisation supplies.
           //
-          // The source table can use any column names. This workflow maps them onto the fixed columns the app needs
-          // (SOURCE_COLUMNS below) and keeps a row only if its application ID has at least one live Smartscape node in this
-          // tenant. Applications that nothing reports for are left out, so the app's picker, scorecards and leaderboard list
-          // only applications that can actually be scored. The source table is never modified.
+          // Everything this workflow needs is read from /lookups/dtsrepoweredapp/config at run time, which the app's Settings page
+          // writes: your source table, which of its columns holds what, the application ID tag keys, and how recent "live" is.
+          // The workflow is identical for every customer; there is nothing to edit here.
           //
-          // This is the only workflow with customer-specific values. To point it at your data, edit the constants below
-          // (source path, column names, tag keys). It also writes /lookups/dtsrepoweredapp/config from them (the application ID
-          // tag key, the cloud tag key and the longest ID), which every other DT-SRE APP workflow reads at run time, so run
-          // this one first and re-run it after changing a constant.
+          // It maps your columns onto the fixed columns the app needs and keeps a row only if its application ID has at least one
+          // live Smartscape node in this tenant. Applications that nothing reports for are left out, so the app's picker, scorecards
+          // and leaderboard list only applications that can actually be scored. The source table is never modified.
           //
-          // "Live" = a Smartscape node of any type seen in the last WINDOW that carries the application ID as a tag
-          // (`<key>:<id>` for any key in TAG_KEYS, also as a Kubernetes label). Widen WINDOW to keep applications that
-          // report less often.
+          // "Live" = a Smartscape node of any type seen in the last window that carries the application ID as a tag
+          // (`<key>:<id>` for any tag key in Settings, also as a Kubernetes label).
 
-          const SRC          = '/lookups/dtsrepoweredapp/app_source';
           const DST          = '/lookups/dtsrepoweredapp/cmdb';
-          const WINDOW       = 'now()-24h';
-          const APP_ID_KEY   = 'appId';     // the tag key on your entities that carries the application ID
-          const CLOUD_TAG_KEY = ''; // tag key on cloud resources and guardians; '' = same as APP_ID_KEY
-          const ID_MAX       = 3;          // longest application ID kept (a sanity cap on tag values)
-          const TAG_KEYS     = ["appId"];        // Smartscape tag keys that carry the application ID
-          // Output column -> column in YOUR source table. The first entry is the application ID (always written as `appId`). '' = your table has no such
-          // column; the output column is still written (blank) so the app always finds it.
-          const SOURCE_COLUMNS = {
-            "appId": "appId",
-            "name": "name",
-            "business_criticality": "business_criticality",
-            "operational_status": "operational_status",
-            "managed_by.u_managing_director": "managed_by.u_managing_director",
-            "owned_by": "owned_by",
-            "support_group": "support_group"
-          };
-          // Extra source columns copied unchanged (the app can show them in the profile banner, see Settings > Extra columns).
-          const PASS_THROUGH = [];
+          // Settings field key -> the catalog column it fills (generated from LOOKUP_DEFS.cmdb). The first entry is the application ID.
+          const FIELD_TO_OUT = {"appId":"appId","name":"name","tier":"business_criticality","status":"operational_status","director":"managed_by.u_managing_director","owner":"owned_by","supportGroup":"support_group"};
           const D            = '^';                 // field delimiter; stripped from values below so it can never occur in one
-
-          const OUT_COLUMNS = [...Object.keys(SOURCE_COLUMNS), ...PASS_THROUGH.filter((c) => !(c in SOURCE_COLUMNS))];
-          const ID_OUT = OUT_COLUMNS[0];
 
           const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
           // An empty LD token fails to parse, so an empty value is written as one space.
@@ -80,8 +108,6 @@ workflow:
             const s = (v === null || v === undefined) ? '' : String(v).replace(/[\r\n\t^]/g, ' ').trim();
             return s === '' ? ' ' : s;
           };
-
-          const CONFIG_PATH = '/lookups/dtsrepoweredapp/config';
 
           async function uploadLookup(meta, content, filename) {
             const full = { skippedRecords: 0, autoFlatten: true, timezone: 'UTC', locale: 'en_US', overwrite: true, ...meta };
@@ -121,22 +147,27 @@ workflow:
           }
 
           export default async function () {
-            // 0. The values every other DT-SRE APP workflow reads. Written first so they exist even if the catalog step stops below.
-            await uploadLookup({
-              filePath: CONFIG_PATH,
-              displayName: 'DT-SRE APP configuration',
-              description: 'Customer values read by the DT-SRE APP workflows. Written by the "DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb" workflow; do not edit.',
-              lookupField: 'key',
-              parsePattern: "LD:key '^' LD:value",
-              skippedRecords: 1,   // the header line matches this pattern, so it must be skipped
-            }, 'key^value\n' + [
-              ['appIdKey', APP_ID_KEY],
-              ['cloudTagKey', CLOUD_TAG_KEY || APP_ID_KEY],
-              ['idMaxLength', String(ID_MAX)],
-            ].map((kv) => kv.join(D)).join('\n') + '\n', 'config');
+            const cfg = await loadAppConfig();
+            const SRC = cfg.text('sourcePath');
+            if (!/^\/lookups\/[A-Za-z0-9_\-./]+$/.test(SRC)) throw new Error('No source table is configured. Open the SRE maturity app, go to Settings, enter your lookup table under "Application catalog", and Save.');
+            let columns = {};
+            try { columns = JSON.parse(cfg.text('sourceColumns') || '{}'); } catch (e) { throw new Error('sourceColumns in ' + APP_CONFIG_PATH + ' is not valid JSON. Save the Settings page again.'); }
+            const idColumn = String(columns.appId || '').trim();
+            if (!idColumn) throw new Error('No column is mapped to the application ID. Open Settings and map one under "Application catalog".');
+            const WINDOW = 'now()-' + (/^\d+[hd]$/.test(cfg.text('activeWindow')) ? cfg.text('activeWindow') : '24h');
+            const ID_MAX = cfg.idMaxLength;
+            const PASS_THROUGH = cfg.text('passThrough').split(',').map((c) => c.trim()).filter(Boolean);
+            // Catalog columns in order: the fixed ones, then the pass-through columns (kept under their own names).
+            const OUT_COLUMNS = [...Object.values(FIELD_TO_OUT), ...PASS_THROUGH.filter((c) => !Object.values(FIELD_TO_OUT).includes(c))];
+            const ID_OUT = OUT_COLUMNS[0];
+            const sourceColumnFor = (outColumn) => {
+              const field = Object.keys(FIELD_TO_OUT).find((f) => FIELD_TO_OUT[f] === outColumn);
+              return field ? String(columns[field] || '').trim() : outColumn;   // pass-through columns keep their own name
+            };
 
             // 1. Every application ID with live nodes, and how many nodes.
-            const tagExprs = TAG_KEYS.flatMap((k) => ['tags[`' + k + '`]', 'tags[`[Kubernetes]' + k + '`]']);
+            const tagKeys = Array.from(new Set([...cfg.tagKeys, cfg.cloudTagKey]));
+            const tagExprs = tagKeys.flatMap((k) => ['tags[`' + k + '`]', 'tags[`[Kubernetes]' + k + '`]']);
             const activeQuery = [
               'smartscapeNodes "*", from:' + WINDOW + ', to:now()',
               '| fieldsAdd tagValue = coalesce(' + tagExprs.join(', ') + ')',
@@ -154,14 +185,14 @@ workflow:
             const lines = [];
             let duplicates = 0;
             for (const r of source) {
-              const raw = r[SOURCE_COLUMNS[ID_OUT]];
+              const raw = r[idColumn];
               const id = String(raw === undefined || raw === null ? '' : raw).trim().toLowerCase();
               if (!id || !nodesById.has(id)) continue;
               if (seen.has(id)) { duplicates++; continue; }   // one row per application ID
               seen.add(id);
               const cells = OUT_COLUMNS.map((c) => {
                 if (c === ID_OUT) return id;
-                const from = c in SOURCE_COLUMNS ? SOURCE_COLUMNS[c] : c;   // pass-through columns keep their own name
+                const from = sourceColumnFor(c);
                 return clean(from ? r[from] : '');
               });
               lines.push([...cells.map(clean), String(nodesById.get(id))].join(D));

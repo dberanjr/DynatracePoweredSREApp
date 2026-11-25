@@ -19,10 +19,13 @@
 // APP_ID is the customer's application identifier field (entity tag key, DQL alias, ID column of app-managed
 // lookups). LOAD.<table> is `load "<their path>"` plus a rename of their columns to the names used below.
 // Lookup tables are at the fixed /lookups/dtsrepoweredapp/ location; the identifier defaults to appId.
-type SreConfigShape = { appIdField: string; cloudTagKey: string; idMaxLength: number; sloIdFromColumn: boolean; loads: Record<string, string>; paths: Record<string, string> };
+type SreConfigShape = { appIdField: string; tagKeys: string[]; tagKeysRuntime: boolean; cloudTagKey: string; idMaxLength: number; sloIdFromColumn: boolean; loads: Record<string, string>; paths: Record<string, string> };
 const SRE_CONFIG = (globalThis as unknown as Record<string, SreConfigShape | undefined>)["__SRE_CONFIG__"];
 if (!SRE_CONFIG) throw new Error("maturityQueries: settings were not published before this module loaded (import settings/appSettings first).");
-export const APP_ID = SRE_CONFIG.appIdField;
+export const APP_ID = SRE_CONFIG.appIdField;   // DQL alias of the resolved application ID: always "appId"
+/** Entity tag keys that carry the application ID; any one of them identifies the application. */
+export const TAG_KEYS = SRE_CONFIG.tagKeys;
+const TAG_KEYS_RUNTIME = SRE_CONFIG.tagKeysRuntime;
 export const LOAD = SRE_CONFIG.loads;
 export const CLOUD_TAG = SRE_CONFIG.cloudTagKey;
 export const ID_MAX = SRE_CONFIG.idMaxLength;
@@ -32,6 +35,29 @@ export const SLO_ID_FROM_COLUMN = SRE_CONFIG.sloIdFromColumn;
 export const LOOKUP_PATHS = SRE_CONFIG.paths;
 
 export const APP_ID_MAP_PATH = LOOKUP_PATHS["appciMap"];
+
+// ── Tag keys ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+// The customer may carry the application ID under several tag keys. These helpers are the only places that turn the key
+// list into DQL. When a workflow is generated the keys are not known yet, so the helpers leave a marker that the workflow
+// expands at run time from /lookups/dtsrepoweredapp/config (applyAppConfig in scripts/workflow-scripts/_runtime-config.snippet.js).
+
+/** DQL condition: some element of the tag array `arrayExpr` (e.g. `tags[]`) mentions one of the tag keys. */
+export const tagKeyHit = (arrayExpr: string): string => {
+  if (TAG_KEYS_RUNTIME) return `__TAGHIT__(${arrayExpr})`;
+  const one = (k: string) => `matchesPhrase(${arrayExpr}, "*${k}*")`;
+  return TAG_KEYS.length === 1 ? one(TAG_KEYS[0]) : `(${TAG_KEYS.map(one).join(" or ")})`;
+};
+
+/** DQL lines that put the application ID found under any tag key in `field` (an array of "key:value" tags) into `appId`. */
+export const parseAppIdFromTags = (field = "tags"): string => {
+  if (TAG_KEYS.length === 1) return `| parse ${field}, "'${TAG_KEYS[0]}:' LD:appId"`;
+  const names = TAG_KEYS.map((_, i) => `appIdTag${i}`);
+  return [
+    ...TAG_KEYS.map((k, i) => `| parse ${field}, "'${k}:' LD:${names[i]}"`),
+    `| fieldsAdd appId = coalesce(${names.join(", ")})`,
+    `| fieldsRemove ${names.join(", ")}`,
+  ].join("\n");
+};
 
 // DQL expression: the application name in the first `Application:<Name>[::<ENV>]` tag of an array
 // field (`tags[]` on entities, `entity_tags[]` on problems), lower-cased, backslashes and the
@@ -59,7 +85,7 @@ const appIdMapLookup = (nameField = "appIdName", mappedField = "appIdMapped") =>
 // "the scorecards cannot see this entity".
 export const unmappedApplicationsQuery = (entityFetch: string): string => `${entityFetch}
 | fieldsAdd appIdName = ${applicationNameExpr("tags")}
-| fieldsAdd hasAppIdTag = arraySize(arrayRemoveNulls(iCollectArray(if(matchesPhrase(tags[], "*${APP_ID}*"), tags[])))) > 0
+| fieldsAdd hasAppIdTag = arraySize(arrayRemoveNulls(iCollectArray(if(${tagKeyHit("tags[]")}, tags[])))) > 0
 | filter isNotNull(appIdName) and not hasAppIdTag
 ${appIdMapLookup()}
 | filter isNull(appIdMapped)
@@ -86,7 +112,7 @@ export const appIdFromEntityTags = ({ tagsField = "tags", outField = `${APP_ID}`
       splitString(
         arrayRemoveNulls(
           iCollectArray(
-            if(matchesPhrase(${tagsField}[], "*${APP_ID}*"), lower(${tagsField}[]))
+            if(${tagKeyHit(`${tagsField}[]`)}, lower(${tagsField}[]))
           )
         )[], ":"
       )[1]
@@ -113,10 +139,16 @@ export const appIdMappedFromTagValue = (valueExpr: string, nameField = "appIdNam
   )}
 ${appIdMapLookup(nameField, mappedField)}`;
 
+/** DQL expression: the application ID in the `<tagKey>:<id>` entity tag of a problem (first key that is present). */
+export const problemTagIdExpr = (): string => {
+  const one = (k: string) => `splitString(splitString(toString(entity_tags), "${k}:")[1], "\\"")[0]`;
+  return TAG_KEYS.length === 1 ? one(TAG_KEYS[0]) : `coalesce(${TAG_KEYS.map(one).join(", ")})`;
+};
+
 // Drop-in replacement for `| fieldsAdd appId = splitString(splitString(toString(entity_tags), ...))`
 // on dt.davis.problems. Leaves a single lower-case `appId`: the `${APP_ID}:` tag if present,
 // otherwise the code mapped from the problem's first `Application:` tag.
-export const appIdFromProblemTags = (): string => `| fieldsAdd appId = splitString(splitString(toString(entity_tags), "${APP_ID}:")[1], "\\"")[0]
+export const appIdFromProblemTags = (): string => `| fieldsAdd appId = ${problemTagIdExpr()}
 | fieldsAdd appIdName = ${applicationNameExpr("entity_tags")}
 ${appIdMapLookup()}
 | fieldsAdd appId = coalesce(appId, lower(appIdMapped))
