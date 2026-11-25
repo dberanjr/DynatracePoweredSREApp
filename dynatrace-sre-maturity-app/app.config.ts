@@ -27,7 +27,7 @@ const config = {
   app: {
     name: process.env.APP_NAME ?? "DynatracePoweredSRE",
     // sync-version.mjs reads this literal with a regex — keep it on one line.
-    version: "2.72.0",
+    version: "2.73.0",
     description: "Dynatrace-Powered SRE Maturity Assessment App",
     id: "my.dynatrace.sre.maturity.app",
     scopes: [
