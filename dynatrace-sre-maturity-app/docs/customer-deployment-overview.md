@@ -32,6 +32,7 @@ leaves the tenant: the app and its workflows call only Dynatrace platform APIs i
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo (SLOs by AppId) | hourly (`0 * * * *`) | Gen3 SLO API | `slo` lookup |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/guardians (SRG by AppId) | daily 06:00 | Guardian settings objects | `guardians` lookup |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo_dashboards (SLO dashboards by AppId) | daily 06:15 | Dashboard documents | `slo_dashboards` lookup |
+| DT-SRE APP: Seed /lookups/dtsrepoweredapp/entity_severity (starter list of user-facing services) (optional) | **none** (run manually, once) | cmdb, Smartscape services | `entity_severity` lookup, only if you have no list yet; never overwrites your own |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/critical_services (entity_severity resolved to entity IDs) | **none** (run manually, or we add a schedule) | `entity_severity` seed lookup, Smartscape, services | `critical_services` lookup |
 | DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table) | daily 05:00 | **your source table** (any path, any column names), Smartscape | `cmdb` lookup: your columns normalised, only applications with live nodes |
 | DT-SRE APP: Daily Maturity Snapshot (one bizevent per AppId) | daily 06:15 | Grail (5 scoring queries), lookups | Business events |

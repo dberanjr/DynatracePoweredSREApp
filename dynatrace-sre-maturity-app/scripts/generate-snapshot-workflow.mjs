@@ -129,6 +129,20 @@ const TARGETS = [
     },
   },
   {
+    name: "entity_severity starter seed",
+    yaml: "workflows/seed-entity-severity-starter-user-facing-services.workflow-template.yaml",
+    template: "scripts/workflow-scripts/seed-entity-severity.script.template.js",
+    placeholder: "__APP_ID_RESOLVER__",
+    fill: () =>
+      [
+        ["APP_ID_FROM_SERVICE_TAGS", q.appIdFromEntityTags()],
+        ["LOAD_CMDB", q.LOAD.cmdb],
+      ]
+        .map(([name, dql]) => `const ${name} = ${toTemplateLiteral(dql)};`)
+        .join("\n\n"),
+    vars: () => ({ __SEED_PATH__: core.DEFAULT_ENTITY_SEVERITY_PATH }),
+  },
+  {
     name: "critical services refresh",
     yaml: "workflows/refresh-lookups-critical-services-entity-severity-resolved-to-entity-ids.workflow-template.yaml",
     template: "scripts/workflow-scripts/refresh-lookups-critical-services.script.template.js",

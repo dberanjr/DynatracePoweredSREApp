@@ -218,6 +218,7 @@ live.
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/guardians (SRG by AppId) | `/lookups/dtsrepoweredapp/guardians` | Daily 06:00 UTC |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo_dashboards (SLO dashboards by AppId) | `/lookups/dtsrepoweredapp/slo_dashboards` | Daily 06:15 UTC |
 | DT-SRE APP: Daily Maturity Snapshot (one bizevent per AppId) | One `sre_maturity` bizevent per app, feeding the 90-day trend chart | Daily 06:15 UTC |
+| DT-SRE APP: Seed /lookups/dtsrepoweredapp/entity_severity (starter list of user-facing services) | `/lookups/dtsrepoweredapp/entity_severity` (optional starter) | Run manually once |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/critical_services (entity_severity resolved to entity IDs) | `/lookups/dtsrepoweredapp/critical_services` (from `entity_severity`) | **No schedule set. Run it manually once, then add one** |
 
 The critical-services workflow reads `/lookups/dtsrepoweredapp/entity_severity`. If you run it before loading

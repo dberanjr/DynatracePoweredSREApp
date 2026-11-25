@@ -47,7 +47,8 @@ function dtctl(cmdArgs, { json = false } = {}) {
   return json ? JSON.parse(r.stdout) : r.stdout;
 }
 
-const order = (file) => (file.includes("daily-snapshot") ? 2 : 1);
+const order = (file) => (file.includes("daily-snapshot") ? 3 : file.includes("critical-services") ? 2 : 1);
+// (order: catalog and other lookups, then critical services, which reads the seed table, then the snapshot)
 const allTemplates = dirs
   .flatMap((dir) =>
     readdirSync(dir)

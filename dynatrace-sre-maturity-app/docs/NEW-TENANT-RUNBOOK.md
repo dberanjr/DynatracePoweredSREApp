@@ -114,7 +114,9 @@ lookup-field value**, so when you create it yourself (for example with `dtctl cr
 application would survive. Saving the table from the app's Lookups tab adds `row_key` for you.
 
 **Starter seed.** If the customer has no list yet, a starter can be derived from the data: for each top-tier application, its
-services that are called by a real-user application, or are web entry points that no other service calls. Mark it clearly
+services that are called by a real-user application, or are web entry points that no other service calls. Run the
+**"Seed /lookups/dtsrepoweredapp/entity_severity"** workflow to build it (after the cmdb workflow, before the critical_services
+workflow); it leaves a table alone that holds rows it did not write, so it never overwrites a real list. Mark it clearly
 as a starter and replace it with the customer's real list. On NM this gave 42 services across 16 of 65 top-tier
 applications, and 38 resolved to entity IDs on the first run.
 
@@ -240,6 +242,7 @@ Workflows to deploy:
 | Workflow | Writes | Schedule |
 |---|---|---|
 | DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table) (step 2.2) | `/lookups/dtsrepoweredapp/cmdb` and `/lookups/dtsrepoweredapp/config` | daily |
+| DT-SRE APP: Seed /lookups/dtsrepoweredapp/entity_severity (starter list of user-facing services) (optional, step 2.4) | `/lookups/dtsrepoweredapp/entity_severity` (only if it is missing, a placeholder or an earlier starter) | none; run manually |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/critical_services (entity_severity resolved to entity IDs) | `/lookups/dtsrepoweredapp/critical_services` | none; run manually |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/guardians (SRG by AppId) | `/lookups/dtsrepoweredapp/guardians` | daily |
 | DT-SRE APP: Refresh /lookups/dtsrepoweredapp/slo_dashboards (SLO dashboards by AppId) | `/lookups/dtsrepoweredapp/slo_dashboards` | daily |
