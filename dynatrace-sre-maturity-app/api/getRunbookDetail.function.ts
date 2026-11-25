@@ -1,6 +1,10 @@
 import { getEnvironmentId } from '@dynatrace-sdk/app-environment';
 import { usersAndGroupsClient } from '@dynatrace-sdk/client-iam';
 
+// The naming rule (same as the app's queries, see nameWordsExpr in ui/app/queries/maturityQueries.ts): a name belongs to an
+// application when the application's ID is one of its WORDS, ignoring case. Words are separated by whitespace and _ - : / . , ( ) [ ] |
+const nameWords = (name: string): string[] => name.toLowerCase().split(/[\s_\-:/.,()[\]|]+/).filter(Boolean);
+
 interface DocumentEntry {
   id: string;
   name: string;
@@ -57,13 +61,10 @@ export default async function (input: unknown = undefined) {
     pageKey = body.nextPageKey || null;
   } while (pageKey);
 
-  // Naming convention, same as the lookup workflow: the name starts with a
-  // 3-letter application ID token and contains the word "Runbook" (any case).
-  const tokenRe = /^[A-Za-z]{3}([^A-Za-z]|$)/;
+  // Naming rule: the name contains the word "Runbook" (any case) and the application's ID as a word, anywhere.
   const runbookRe = /runbook/i;
 
-  const startsWithAppId = (name: string) =>
-    tokenRe.test(name) && name.slice(0, 3).toLowerCase() === appId;
+  const startsWithAppId = (name: string) => nameWords(name).includes(appId);
 
   const matches: DocumentEntry[] = [];
   const others: OtherNotebookEntry[] = [];
@@ -78,8 +79,8 @@ export default async function (input: unknown = undefined) {
       // thing to show a team whose check is failing.
       others.push({ notebookName: name, reason: 'Missing the word "Runbook" in the name' });
     } else if (hasRunbook && name.toLowerCase().includes(appId)) {
-      // Mentions the application ID and is a runbook, but not as the leading 3-letter token.
-      others.push({ notebookName: name, reason: 'The application ID is not the leading 3-letter token' });
+      // Mentions the application ID and is a runbook, but not as a separate word (for example inside a longer number).
+      others.push({ notebookName: name, reason: 'The application ID is not a separate word in the name' });
     }
   }
 

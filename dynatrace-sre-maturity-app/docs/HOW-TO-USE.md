@@ -96,9 +96,9 @@ lower-case code everywhere (the app lower-cases before comparing).
 The code must be the **same in every table and every tag**: for example `fct` in the CMDB table, in
 the critical services seed, in the service tag, and at the start of SLO names.
 
-> **Keep AppCIs to three characters.** Many queries only keep codes of three characters or fewer
-> (`stringLength(...) <= 3`), and several read the first three characters of a name. Longer codes (for
-> example `BILPRD`) are filtered out of the leaderboard and the snapshot, and SLO matching breaks.
+> **Longest ID.** The bulk queries keep application IDs up to the longest-ID setting (Settings; default 3), so set it to
+> your longest ID. Dashboards, runbooks, burn-rate alerts and workflows are attributed by name: the ID must be a whole
+> word anywhere in the name (see the naming rule in the new-tenant runbook).
 
 ## 4. Setup
 

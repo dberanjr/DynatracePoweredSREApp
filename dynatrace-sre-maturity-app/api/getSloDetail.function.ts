@@ -1,3 +1,7 @@
+// The naming rule (same as the app's queries, see nameWordsExpr in ui/app/queries/maturityQueries.ts): a name belongs to an
+// application when the application's ID is one of its WORDS, ignoring case. Words are separated by whitespace and _ - : / . , ( ) [ ] |
+const nameWords = (name: string): string[] => name.toLowerCase().split(/[\s_\-:/.,()[\]|]+/).filter(Boolean);
+
 interface PlatformSlo {
   id: string;
   name: string;
@@ -38,14 +42,14 @@ export default async function (input: unknown = undefined) {
   } while (pageKey);
 
   // Settings with an SLO Application ID column identify an SLO by its `<appCiField>:<id>` tag (the same rule the
-  // refresh workflow uses); otherwise the application is the first 3 characters of the name.
+  // refresh workflow uses); otherwise the application's ID must be a word of the name.
   // Any of the configured tag keys identifies the application (the app sends its list; appCiField is the older single key).
   const tagKeys = (Array.isArray(raw?.tagKeys) ? raw.tagKeys : [raw?.appCiField]).map((k) => String(k || '').trim().toLowerCase()).filter(Boolean);
   const byTag = raw?.sloIdFromTag === true && tagKeys.length > 0;
   const matches = slos.filter((s) =>
     byTag
       ? (s.tags || []).some((t) => tagKeys.some((k) => t.toLowerCase() === `${k}:${appId}`))
-      : (s.name || '').slice(0, 3).toLowerCase() === appId,
+      : nameWords(s.name || '').includes(appId),
   );
 
   const details: SloDetail[] = matches.map((s) => {

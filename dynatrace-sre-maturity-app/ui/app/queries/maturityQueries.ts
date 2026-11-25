@@ -176,14 +176,52 @@ export const hasTierLookup = (): string => `| lookup [
 | fieldsAdd hasTier = coalesce(hasTierCmdb, 0) + coalesce(hasTierImport, 0)
 | fieldsRemove hasTierCmdb, hasTierImport`;
 
-// L5 workflow checks: which application ID does an Automation workflow belong to? The original convention is a title
-// whose first word IS the 3-letter code. Titles that start with an application name instead ("MemberHub
-// Validation", "CrmSuite_PRD open problems alert") resolve through the application ID map, with a `_PRD` style
-// suffix removed. Run on dt.system.events; leaves `${outField}` (null when the title resolves to nothing).
-export const appIdFromWorkflowTitle = (outField = `${APP_ID}`): string => `| fieldsAdd wfWord = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+// ── Which application does a NAME belong to? ───────────────────────────────────────────────────────────────────────
+// Workflow titles, burn-rate alert names (and, in the app functions, notebook and dashboard names) carry no tag, so the
+// application is found in the name. THE RULE, the same everywhere: a name belongs to an application when the
+// application's ID appears in it as a WHOLE WORD, anywhere, ignoring case. Words are separated by spaces and by
+// _ - : / . , ( ) [ ] |   so "CRM 47689 Runbook", "SN-Svc-Map-Loans (47689)" and "Runbook - crm" all name the
+// applications 47689 / crm, while "47689123" and "crm2" do not. Only IDs that exist in the application catalog count, which
+// keeps stray words and numbers out. (The original deployment's names, which start with their 3-letter code, still match.)
+const NAME_SEPARATORS = ["_", "-", ":", "/", ".", ",", "(", ")", "[", "]", "|"];
+
+/** DQL expression: the lower-case words of a name (an array). */
+export const nameWordsExpr = (nameExpr: string): string =>
+  `splitString(${NAME_SEPARATORS.reduce((e, s) => `replaceString(${e}, "${s}", " ")`, `lower(${nameExpr})`)}, " ")`;
+
+/**
+ * Adds `outField`: the catalog application ID found as a word in `nameExpr` (null when there is none). A name with several
+ * IDs becomes several rows, one per ID, and a name with none stays as one row with a null.
+ */
+export const appIdFromNameWords = (nameExpr: string, outField = `${APP_ID}`, prefix = "nameWord"): string => `| fieldsAdd ${prefix}s = ${nameWordsExpr(nameExpr)}
+| expand ${prefix}s
+| lookup [
+    ${LOAD.cmdb}
+    | fieldsAdd appId = lower(appId)
+    | fields appId
+  ], sourceField:${prefix}s, lookupField:appId, fields:{${prefix}Hit = appId}
+| fieldsAdd ${outField} = ${prefix}Hit
+| fieldsRemove ${prefix}s, ${prefix}Hit`;
+
+// L5 workflow checks: which application ID does an Automation workflow belong to? By the name rule above applied to the
+// workflow title, or else through the application ID map (a title that starts with an application name, "MemberHub
+// Validation", "CrmSuite_PRD open problems alert", with a `_PRD` style suffix removed). Run on dt.system.events; leaves
+// `${outField}` (null when the title resolves to nothing). `dedupe` first reduces the events to one row per workflow and title,
+// which is what a count of workflows needs and keeps the word expansion small; pass false when the event rows are still needed.
+const WF_TITLE = "`dt.automation_engine.workflow.title`";
+const WF_ID = "`dt.automation_engine.workflow.id`";
+export const appIdFromWorkflowTitle = (outField = `${APP_ID}`, dedupe = true): string => `${dedupe ? `| summarize wfRuns = count(), by:{${WF_ID}, ${WF_TITLE}}\n` : ""}| fieldsAdd wfWord = lower(arrayFirst(splitString(${WF_TITLE}, " ")))
 | fieldsAdd wfName = lower(arrayFirst(splitString(wfWord, "_")))
 ${appIdMapLookup("wfName", "wfMapped")}
-| fieldsAdd ${outField} = if(stringLength(wfWord) == 3, wfWord, else: lower(wfMapped))
+${appIdFromNameWords(WF_TITLE, "wfHit", "wfWords")}
+| fieldsAdd ${outField} = coalesce(wfHit, lower(wfMapped))
+| fieldsRemove wfWord, wfName, wfMapped, wfHit`;
+
+/** The same for ONE known application: keeps every event row (no expansion), leaving `outField` = the ID or null. */
+export const appIdForWorkflowTitle = (appId: string, outField = "wfCode"): string => `| fieldsAdd wfWord = lower(arrayFirst(splitString(${WF_TITLE}, " ")))
+| fieldsAdd wfName = lower(arrayFirst(splitString(wfWord, "_")))
+${appIdMapLookup("wfName", "wfMapped")}
+| fieldsAdd ${outField} = if(in(lower("${appId}"), ${nameWordsExpr(WF_TITLE)}), lower("${appId}"), else: lower(wfMapped))
 | fieldsRemove wfWord, wfName, wfMapped`;
 
 // ── Bulk L1 query: per-app observability signals (matches scorecard L1 logic) ──
@@ -428,8 +466,8 @@ ${appIdFromEntityTags()}
     | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
     | filter event.category == "CUSTOM_ALERT"
     | filter contains(lower(event.name), "burn rate")
-    | fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
-    | filter stringLength(appId) == 3
+    ${appIdFromNameWords("event.name", "appId", "burnWord")}
+    | filter isNotNull(appId)
     | summarize burnAlerts = countDistinct(event.name), by:{appId}
   ], sourceField:${APP_ID}, lookupField:appId, fields:{burnAlerts}
 | lookup [
@@ -495,7 +533,7 @@ ${appIdFromProblemTags()}
     | filter event.provider == "AUTOMATION_ENGINE"
     | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
     ${appIdFromWorkflowTitle()}
-    | filter stringLength(${APP_ID}) == 3
+    | filter isNotNull(${APP_ID})
     | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{${APP_ID}}
   ]
 | summarize
@@ -615,7 +653,7 @@ ${resolvedFlag}
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
 ${appIdFromWorkflowTitle()}
-| fieldsAdd resolvedWf = if(isNotNull(${APP_ID}) and stringLength(${APP_ID}) == 3, 1, else: 0)
+| fieldsAdd resolvedWf = if(isNotNull(${APP_ID}), 1, else: 0)
 | summarize resolvedWf = max(resolvedWf), by:{wfId = \`dt.automation_engine.workflow.id\`}
 | summarize total = count(), ok = sum(resolvedWf)`,
 
@@ -728,7 +766,7 @@ ${appIdFromEntityTags()}
     workflows: `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appIdFromWorkflowTitle("wfCode")}
+${appIdForWorkflowTitle(a, "wfCode")}
 | filter wfCode == "${a}"
 | summarize total = countDistinct(\`dt.automation_engine.workflow.id\`)`,
 

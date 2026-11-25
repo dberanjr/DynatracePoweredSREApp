@@ -3,7 +3,7 @@
 // Keep in sync with ScorecardsPage.tsx when queries change.
 
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
-import { SLO_APP_ID_EXPR, appIdFromEntityTags, appIdFromProblemTags, appIdFromWorkflowTitle, hasTierLookup } from "../queries/maturityQueries";
+import { SLO_APP_ID_EXPR, appIdFromEntityTags, appIdFromProblemTags, appIdFromWorkflowTitle, appIdForWorkflowTitle, appIdFromNameWords, nameWordsExpr, hasTierLookup } from "../queries/maturityQueries";
 
 import { APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG, APP_ID_TAG_KEY } from "../settings/appSettings";
 export interface CheckDetailConfig {
@@ -630,11 +630,11 @@ ${appIdFromEntityTags()}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Counts Service Level Objectives (SLOs) configured for this application. This check calls the Gen3 SLO platform API live (via an app function) rather than the /lookups/dtsrepoweredapp/slo table, so each row shows its real target and description, not just a name. The ${APP_ID_LABEL} is identified by the first 3 characters of each SLO name. Each SLO's own name is parsed to derive its Type (Availability, Performance, etc.) — pure string-parsing of the name itself, not a cross-reference — and the secondary panel breaks down SLO count by that type, showing whether coverage leans on one signal (e.g. all-Availability) or spans multiple. Click a row to open the SLO settings page — the native SLO table has no deep-linkable URL for an individual SLO (row names are plain text with a JS-only click handler, confirmed via DOM inspection), so this opens the full list rather than that specific row.`,
+      `Counts Service Level Objectives (SLOs) configured for this application. This check calls the Gen3 SLO platform API live (via an app function) rather than the /lookups/dtsrepoweredapp/slo table, so each row shows its real target and description, not just a name. The ${APP_ID_LABEL} is the SLO's tag, or else the first word of its name that is an application ID. Each SLO's own name is parsed to derive its Type (Availability, Performance, etc.) — pure string-parsing of the name itself, not a cross-reference — and the secondary panel breaks down SLO count by that type, showing whether coverage leans on one signal (e.g. all-Availability) or spans multiple. Click a row to open the SLO settings page — the native SLO table has no deep-linkable URL for an individual SLO (row names are plain text with a JS-only click handler, confirmed via DOM inspection), so this opens the full list rather than that specific row.`,
     passLogic:
-      `Pass: at least one SLO exists whose name starts with this application's 3-letter code.`,
+      `Pass: at least one SLO exists whose name contains this application's ID as a word.`,
     guidance:
-      `Create SLOs in Dynatrace → SLO Management. Name each SLO starting with the 3-letter ${APP_ID_LABEL} code (e.g., 'ADH-API-AvailabilitySLO').`,
+      `Create SLOs in Dynatrace → SLO Management. Tag each SLO '<tag key>:<id>', or put the ${APP_ID_LABEL} in its name as a separate word (e.g., '<id>-API-AvailabilitySLO').`,
     chartType: "table",
     appFunction: {
       name: "getSloDetail",
@@ -727,9 +727,9 @@ ${LOAD.guardians}
     level: "L2",
     levelColor: "#2E3EEA",
     description:
-      `Checks whether SLO dashboards have been published for this application. This check calls the Documents API live (via an app function) rather than a scheduled lookup table, for the same reliability reason as the Guardians check. Dashboards whose name starts with the 3-letter ${APP_ID_LABEL} code and contains the word 'SLO' in standalone uppercase are listed with their creation date, last-modified date, and owner. Click a row to open that dashboard directly.`,
+      `Checks whether SLO dashboards have been published for this application. This check calls the Documents API live (via an app function) rather than a scheduled lookup table, for the same reliability reason as the Guardians check. Dashboards whose name contains the ${APP_ID_LABEL} as a word and contains the word 'SLO' in standalone uppercase are listed with their creation date, last-modified date, and owner. Click a row to open that dashboard directly.`,
     passLogic:
-      `Pass: at least one dashboard exists whose name starts with this application's 3-letter code and contains uppercase 'SLO'.`,
+      `Pass: at least one dashboard exists whose name contains this application's ID as a word and contains uppercase 'SLO'.`,
     guidance:
       `Create a Dynatrace dashboard named '<${APP_ID_LABEL}> SLO Dashboard' (e.g., 'ADH SLO Dashboard'). Include SLO burn-rate tiles, error budget gauges, and trend charts for all application SLOs.`,
     chartType: "table",
@@ -964,7 +964,7 @@ fetch events, from:now()-30d
     passLogic:
       `Pass: at least one Automation workflow titled '<${APP_ID_LABEL}> Production Dynatrace Alerts' has executed in the last 30 days.`,
     guidance:
-      `Create a Dynatrace Automation workflow named exactly '<${APP_ID_LABEL}> Production Dynatrace Alerts', using the 3-letter ${APP_ID_LABEL} code as the leading token — the name is what attributes it to this application. Trigger it on Davis problem events and route to the owning team's channel. To make this a genuine ITSM integration rather than a notification, add a ServiceNow action that opens an incident, and confirm the resulting ticket carries the problem ID for correlation.`,
+      `Create a Dynatrace Automation workflow named exactly '<${APP_ID_LABEL}> Production Dynatrace Alerts', using the ${APP_ID_LABEL} as the leading word — the name is what attributes it to this application. Trigger it on Davis problem events and route to the owning team's channel. To make this a genuine ITSM integration rather than a notification, add a ServiceNow action that opens an incident, and confirm the resulting ticket carries the problem ID for correlation.`,
     chartType: "table",
     detailQuery: (appId: string) => `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
@@ -1017,11 +1017,11 @@ fetch events, from:now()-30d
     level: "L3",
     levelColor: "#611CD9",
     description:
-      `Counts runbook notebooks linked to this application — the step-by-step remediation procedures an on-call operator follows during an incident. A notebook qualifies when its name starts with the 3-letter ${APP_ID_LABEL} code and contains the word 'Runbook'. The table lists each matching notebook with its owner and last-modified date; click a row to open it. Below it, a second table lists notebooks that belong to this app but did NOT qualify, and says exactly why — so a failing check tells you whether runbooks genuinely don't exist or simply aren't named to convention. RESOLVED (2026-08-29): the scorecard's pass/fail and the leaderboard ranking now both read the Documents API live too, the same as the modal — the /lookups/runbooks table (which held only an empty sentinel row despite its refresh workflow reporting success daily) is no longer used anywhere. The per-app scorecard calls getRunbookDetail directly; the portfolio leaderboard calls a bulk sibling, getAllRunbookCounts, which reads the same Documents API once for every app instead of filtering to one. All three views now agree by construction, not by coincidence.`,
+      `Counts runbook notebooks linked to this application — the step-by-step remediation procedures an on-call operator follows during an incident. A notebook qualifies when its name contains the ${APP_ID_LABEL} as a word and contains the word 'Runbook'. The table lists each matching notebook with its owner and last-modified date; click a row to open it. Below it, a second table lists notebooks that belong to this app but did NOT qualify, and says exactly why — so a failing check tells you whether runbooks genuinely don't exist or simply aren't named to convention. RESOLVED (2026-08-29): the scorecard's pass/fail and the leaderboard ranking now both read the Documents API live too, the same as the modal — the /lookups/runbooks table (which held only an empty sentinel row despite its refresh workflow reporting success daily) is no longer used anywhere. The per-app scorecard calls getRunbookDetail directly; the portfolio leaderboard calls a bulk sibling, getAllRunbookCounts, which reads the same Documents API once for every app instead of filtering to one. All three views now agree by construction, not by coincidence.`,
     passLogic:
-      `Pass: at least one notebook exists whose name starts with this application's 3-letter code and contains the word 'Runbook' (any case).`,
+      `Pass: at least one notebook exists whose name contains this application's ID as a word and contains the word 'Runbook' (any case).`,
     guidance:
-      `Create a Dynatrace Notebook named '<${APP_ID_LABEL}> Runbook - <Topic>', for example 'CCL Runbook - High Error Rate'. The name must start with the exact 3-letter ${APP_ID_LABEL} code and include the word 'Runbook' — both are required for attribution. Document investigation steps, the DQL queries that confirm the diagnosis, and the remediation commands. Link the runbook from the corresponding alert workflow so responders reach it from the notification. If the second table below lists notebooks, those are near-misses that only need renaming.`,
+      `Create a Dynatrace Notebook named '<${APP_ID_LABEL}> Runbook - <Topic>', for example 'CCL Runbook - High Error Rate'. The name must contain the ${APP_ID_LABEL} as a separate word (anywhere in the name) and the word 'Runbook' — both are required for attribution. Document investigation steps, the DQL queries that confirm the diagnosis, and the remediation commands. Link the runbook from the corresponding alert workflow so responders reach it from the notification. If the second table below lists notebooks, those are near-misses that only need renaming.`,
     chartType: "table",
     appFunction: {
       name: "getRunbookDetail",
@@ -1271,18 +1271,17 @@ fetch events, from:now()-30d
     level: "L4",
     levelColor: "#B23BE4",
     description:
-      `Detects SLO breaches and notifies teams before customer impact. Counts distinct SLO burn-rate alerts that fired for this application over the last 30 days, sourced from Davis CUSTOM_ALERT problems. Alert names follow the tenant convention '<${APP_ID_LABEL}> - SLO <name> for Availability or Performance Burn Rate is above <threshold>', so the owning app is the 3-character token before the first ' - '. The table lists one row per SLO, split by burn type (Availability vs Performance), with how many times it fired, how many of those problems are still active, and when it last fired — sorted by fire count so the noisiest SLO surfaces first. Click any row to open that SLO's most recent burn-rate problem in the Problems app. IMPORTANT CAVEAT: this measures burn-rate alerts that FIRED, not alert configurations that EXIST. A correctly configured burn-rate alert on a consistently healthy SLO produces no problems and will not appear here, so a fail can mean either 'no alert configured' or 'alert configured and never breached'. Alert definitions live in anomaly-detector settings objects, which DQL cannot read; resolving this distinction requires an app function against the settings API, the same way the Guardians and SLO Dashboards checks work.`,
+      `Detects SLO breaches and notifies teams before customer impact. Counts distinct SLO burn-rate alerts that fired for this application over the last 30 days, sourced from Davis CUSTOM_ALERT problems. Alert names follow the tenant convention '<${APP_ID_LABEL}> - SLO <name> for Availability or Performance Burn Rate is above <threshold>', so the owning app is the ${APP_ID_LABEL} found as a word in the alert name. The table lists one row per SLO, split by burn type (Availability vs Performance), with how many times it fired, how many of those problems are still active, and when it last fired — sorted by fire count so the noisiest SLO surfaces first. Click any row to open that SLO's most recent burn-rate problem in the Problems app. IMPORTANT CAVEAT: this measures burn-rate alerts that FIRED, not alert configurations that EXIST. A correctly configured burn-rate alert on a consistently healthy SLO produces no problems and will not appear here, so a fail can mean either 'no alert configured' or 'alert configured and never breached'. Alert definitions live in anomaly-detector settings objects, which DQL cannot read; resolving this distinction requires an app function against the settings API, the same way the Guardians and SLO Dashboards checks work.`,
     passLogic:
       `Pass: at least one distinct SLO burn-rate alert fired for this application in the last 30 days. Fail: none fired (see the caveat above — this may be a healthy app rather than an unconfigured one).`,
     guidance:
-      `Create a burn-rate alert for each critical SLO. In Dynatrace, add a metric event / anomaly detector on the SLO's error-budget burn rate and name it following the '<${APP_ID_LABEL}> - SLO <SLO name> for Availability or Performance Burn Rate is above <threshold>' convention — the leading 3-letter ${APP_ID_LABEL} token is what attributes the alert to this application. Route the resulting problem to the team via the '<${APP_ID_LABEL}> Production Dynatrace Alerts' workflow (see L3 ITSM Integration). Fast-burn (2% budget in 1h) and slow-burn (5% in 6h) thresholds are the standard pair.`,
+      `Create a burn-rate alert for each critical SLO. In Dynatrace, add a metric event / anomaly detector on the SLO's error-budget burn rate and name it following the '<${APP_ID_LABEL}> - SLO <SLO name> for Availability or Performance Burn Rate is above <threshold>' convention — the ${APP_ID_LABEL} as a word in the name is what attributes the alert to this application. Route the resulting problem to the team via the '<${APP_ID_LABEL}> Production Dynatrace Alerts' workflow (see L3 ITSM Integration). Fast-burn (2% budget in 1h) and slow-burn (5% in 6h) thresholds are the standard pair.`,
     chartType: "table",
     detailQuery: (appId: string) => `fetch dt.davis.problems, from:now()-30d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
 | filter event.category == "CUSTOM_ALERT"
 | filter contains(lower(event.name), "burn rate")
-| fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
-| filter appId == lower("${appId}")
+| filter in(lower("${appId}"), ${nameWordsExpr("event.name")})
 | fieldsAdd burnType = if(contains(event.name, "Performance Burn Rate"), "Performance", else: "Availability")
 | fieldsAdd rest = coalesce(splitString(event.name, " - SLO ")[1], event.name)
 | fieldsAdd slo = trim(splitString(splitString(rest, " for Availability Burn Rate")[0], " for Performance Burn Rate")[0])
@@ -1301,8 +1300,7 @@ fetch events, from:now()-30d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
 | filter event.category == "CUSTOM_ALERT"
 | filter contains(lower(event.name), "burn rate")
-| fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
-| filter appId == lower("${appId}")
+| filter in(lower("${appId}"), ${nameWordsExpr("event.name")})
 | fieldsAdd burnType = if(contains(event.name, "Performance Burn Rate"), "Performance", else: "Availability")
 | summarize alerts = count(), by:{timestamp = bin(timestamp, 1d), burnType}
 | sort timestamp asc`,
@@ -1315,8 +1313,8 @@ fetch dt.davis.problems, from:now()-30d
 | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
 | filter event.category == "CUSTOM_ALERT"
 | filter contains(lower(event.name), "burn rate")
-| fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
-| filter stringLength(appId) == 3
+${appIdFromNameWords("event.name", "appId", "burnWord")}
+| filter isNotNull(appId)
 | summarize
     burnAlerts = countDistinct(event.name),
     burnFired  = count(),
@@ -1527,16 +1525,16 @@ fetch events, from:now()-30d
     level: "L5",
     levelColor: "#E436FF",
     description:
-      "Checks whether a Dynatrace Automation Engine workflow exists for this application — evidenced by at least one workflow whose title starts with the app's 3-letter code that has executed in the last 30 days. FIXED (2026-08-30): previously counted any bizevent whose event.type merely contained the substring 'workflow', regardless of source — that matched near-universal noise (ServiceNow CMDB import events, other teams' cost/cloud-inventory reporting workflows, and even this app's own daily maturity-snapshot bizevent), so nearly every app in the tenant passed this check whether or not it had real automation. The corrected signal instead queries actual Automation Engine WORKFLOW_EXECUTION events and requires the workflow's title to start with this app's code — the same convention the L3 ITSM Integration check already relies on. The table lists each matching workflow with its execution/success count; click a row to open it in the Workflows app.",
+      "Checks whether a Dynatrace Automation Engine workflow exists for this application — evidenced by at least one workflow whose title contains the application's ID as a word that has executed in the last 30 days. FIXED (2026-08-30): previously counted any bizevent whose event.type merely contained the substring 'workflow', regardless of source — that matched near-universal noise (ServiceNow CMDB import events, other teams' cost/cloud-inventory reporting workflows, and even this app's own daily maturity-snapshot bizevent), so nearly every app in the tenant passed this check whether or not it had real automation. The corrected signal instead queries actual Automation Engine WORKFLOW_EXECUTION events and requires the workflow's title to start with this app's code — the same convention the L3 ITSM Integration check already relies on. The table lists each matching workflow with its execution/success count; click a row to open it in the Workflows app.",
     passLogic:
-      `Pass: at least one Automation Engine workflow whose title starts with this application's 3-letter code has executed in the last 30 days.`,
+      `Pass: at least one Automation Engine workflow whose title contains this application's ID as a word has executed in the last 30 days.`,
     guidance:
-      `Identify repetitive manual tasks by reviewing incident post-mortems and runbooks. Build a Dynatrace Automation workflow to automate them, and name it with this app's 3-letter code as the leading token (e.g. '<${APP_ID_LABEL}> — <task name>') so it's attributed to this application here.`,
+      `Identify repetitive manual tasks by reviewing incident post-mortems and runbooks. Build a Dynatrace Automation workflow to automate them, and include this application's ID as a word in its name (e.g. '<${APP_ID_LABEL}> — <task name>') so it's attributed to this application here.`,
     chartType: "table",
     detailQuery: (appId: string) => `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appIdFromWorkflowTitle("wfCode")}
+${appIdForWorkflowTitle(appId, "wfCode")}
 | filter wfCode == lower("${appId}")
 | summarize
     executions = countDistinct(\`dt.automation_engine.workflow_execution.id\`),
@@ -1551,7 +1549,7 @@ ${appIdFromWorkflowTitle("wfCode")}
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
 ${appIdFromWorkflowTitle("wfAppId")}
-| filter stringLength(wfAppId) == 3
+| filter isNotNull(wfAppId)
 | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`),
   by:{wfAppId}
 
@@ -1569,14 +1567,14 @@ ${appIdFromWorkflowTitle("wfAppId")}
     description:
       "Confirms that Dynatrace Automation workflows are actively running for this application. Uses the same signal as 'Repetitive Tasks Identified' — at least one Automation Engine workflow whose title starts with this app's code has executed in the last 30 days. FIXED (2026-08-30): see 'Repetitive Tasks Identified' — this check shared the same over-broad bizevents-based signal and has been corrected the same way.",
     passLogic:
-      `Pass: at least one Automation Engine workflow whose title starts with this application's 3-letter code has executed in the last 30 days (same signal as Repetitive Tasks Identified).`,
+      `Pass: at least one Automation Engine workflow whose title contains this application's ID as a word has executed in the last 30 days (same signal as Repetitive Tasks Identified).`,
     guidance:
-      "Build automation workflows for: alert noise suppression, auto-scaling triggers, incident auto-remediation, and post-incident reporting. Name the workflow with this app's 3-letter code as the leading token so it's attributed here. Use the Dynatrace Automation Workflow catalog for pre-built templates that integrate with Davis problems.",
+      "Build automation workflows for: alert noise suppression, auto-scaling triggers, incident auto-remediation, and post-incident reporting. Include this application's ID as a word in the workflow's name so it's attributed here. Use the Dynatrace Automation Workflow catalog for pre-built templates that integrate with Davis problems.",
     chartType: "bar",
     detailQuery: (appId: string) => `fetch dt.system.events, from:now()-30d
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-${appIdFromWorkflowTitle("wfCode")}
+${appIdForWorkflowTitle(appId, "wfCode")}
 | filter wfCode == lower("${appId}")
 | summarize count = countDistinct(\`dt.automation_engine.workflow_execution.id\`), by:{timestamp = bin(timestamp, 1d)}
 | sort timestamp asc`,
@@ -1584,7 +1582,7 @@ ${appIdFromWorkflowTitle("wfCode")}
 | filter event.provider == "AUTOMATION_ENGINE"
 | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
 ${appIdFromWorkflowTitle("wfAppId")}
-| filter stringLength(wfAppId) == 3
+| filter isNotNull(wfAppId)
 | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`),
   by:{wfAppId}
 

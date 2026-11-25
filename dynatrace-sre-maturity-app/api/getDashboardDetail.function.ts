@@ -1,6 +1,10 @@
 import { getEnvironmentId } from '@dynatrace-sdk/app-environment';
 import { usersAndGroupsClient } from '@dynatrace-sdk/client-iam';
 
+// The naming rule (same as the app's queries, see nameWordsExpr in ui/app/queries/maturityQueries.ts): a name belongs to an
+// application when the application's ID is one of its WORDS, ignoring case. Words are separated by whitespace and _ - : / . , ( ) [ ] |
+const nameWords = (name: string): string[] => name.toLowerCase().split(/[\s_\-:/.,()[\]|]+/).filter(Boolean);
+
 interface DocumentEntry {
   id: string;
   name: string;
@@ -44,13 +48,11 @@ export default async function (input: unknown = undefined) {
     pageKey = body.nextPageKey || null;
   } while (pageKey);
 
-  // Same naming convention as the lookup-table workflow: name starts with a
-  // 3-letter application ID token and contains "SLO" as a standalone uppercase token.
-  const tokenRe = /^[A-Za-z]{3}([^A-Za-z]|$)/;
+  // Naming rule: the name contains "SLO" as a standalone uppercase token and the application's ID as a word, anywhere.
   const sloRe = /(^|[^A-Z])SLO([^A-Z]|$)/;
   const matches = docs.filter((d) => {
     const name = d.name || '';
-    return sloRe.test(name) && tokenRe.test(name) && name.slice(0, 3).toLowerCase() === appId;
+    return sloRe.test(name) && nameWords(name).includes(appId);
   });
 
   // Resolve owner UUIDs -> display names in one batch call.

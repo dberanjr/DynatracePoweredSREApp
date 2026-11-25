@@ -78,7 +78,7 @@ export const LOOKUP_DEFS = {
   },
   slo: {
     label: "SLOs",
-    description: "One row per SLO. The application is the Application ID column when you map one, otherwise the first 3 characters of the SLO name.",
+    description: "One row per SLO. The application is the Application ID column when you map one, otherwise the first word of the SLO name that is an application ID.",
     defaultPath: `${LOOKUP_FOLDER}/slo`,
     fixedColumns: true,
     fields: {
@@ -283,7 +283,7 @@ export interface SreConfig {
   /** `load "<path>"` plus renames of the customer's columns to the app's names, per lookup table. */
   loads: Record<LookupKey, string>;
   paths: Record<LookupKey, string>;
-  /** True when the SLO table has an Application ID column (otherwise the ID is the first 3 characters of the SLO name). */
+  /** True when the SLO table has an Application ID column (otherwise the ID is the first word of the SLO name that is an application ID). */
   sloIdFromColumn: boolean;
   /** Chips for the application profile banners. */
   profileFields: ProfileField[];

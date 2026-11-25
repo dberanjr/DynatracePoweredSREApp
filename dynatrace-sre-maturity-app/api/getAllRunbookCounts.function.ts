@@ -1,3 +1,7 @@
+// The naming rule (same as the app's queries, see nameWordsExpr in ui/app/queries/maturityQueries.ts): a name belongs to an
+// application when the application's ID is one of its WORDS, ignoring case. Words are separated by whitespace and _ - : / . , ( ) [ ] |
+const nameWords = (name: string): string[] => name.toLowerCase().split(/[\s_\-:/.,()[\]|]+/).filter(Boolean);
+
 interface DocumentEntry {
   id: string;
   name: string;
@@ -23,18 +27,15 @@ export default async function (_input: unknown = undefined) {
     pageKey = body.nextPageKey || null;
   } while (pageKey);
 
-  // Same naming convention as getRunbookDetail: name starts with a 3-letter
-  // application ID token and contains the word "Runbook" (any case).
-  const tokenRe = /^[A-Za-z]{3}([^A-Za-z]|$)/;
+  // Same naming rule as getRunbookDetail: the name contains the word "Runbook" (any case) and names the application by its ID
+  // as a word. Every word of such a name is counted; the app only looks up the IDs it knows, so other words are harmless.
   const runbookRe = /runbook/i;
 
   const counts: Record<string, number> = {};
   for (const d of docs) {
     const name = d.name || '';
-    if (tokenRe.test(name) && runbookRe.test(name)) {
-      const appId = name.slice(0, 3).toLowerCase();
-      counts[appId] = (counts[appId] || 0) + 1;
-    }
+    if (!runbookRe.test(name)) continue;
+    for (const word of new Set(nameWords(name))) counts[word] = (counts[word] || 0) + 1;
   }
   return { counts };
 }

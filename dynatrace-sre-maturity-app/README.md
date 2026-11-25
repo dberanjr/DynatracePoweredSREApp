@@ -80,5 +80,6 @@ The header's **Demo** toggle (or `?demo=1` / `?demo=0`) replaces every Grail que
 data (`ui/app/demo/`), so the app can be shown without a tenant. Saving lookups is blocked. The Readiness and Coverage
 tabs have no sample data yet.
 
-Not covered by settings: the "first 3 characters of the name" convention in the SLO/runbook/dashboard logic, and the
-`workflow.import.servicenow.appci` bizevent fallback.
+**Naming rule.** Dashboards, runbooks, burn-rate alerts and workflow titles are attributed to an application by name: its
+ID must appear in the name as a whole word, anywhere, ignoring case (words are split on spaces and `_ - : / . , ( ) [ ] |`).
+Not covered by settings: the `workflow.import.servicenow.appci` bizevent fallback.

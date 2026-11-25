@@ -278,6 +278,16 @@ Save the Settings first (step 5): without `/lookups/dtsrepoweredapp/config` the 
 
 ## 7. Verify
 
+**The naming rule.** Dashboards, runbooks, burn-rate alerts and workflows carry no application tag, so they are attributed
+by name: a name belongs to an application when the application's **ID appears in it as a whole word, anywhere, ignoring
+case**. Words are separated by spaces and `_ - : / . , ( ) [ ] |`. So `CRM 47689 Runbook`, `Runbook - 47689` and
+`SN-Svc-Map-Loans (47689)` all name application 47689, while `47689123` does not. Only IDs that exist in the catalog
+count. In addition: a runbook is a notebook whose name contains `Runbook` (any case); an SLO dashboard is a dashboard whose
+name contains `SLO` as a standalone uppercase word; a burn-rate alert is a custom alert whose name contains `burn rate`;
+an SLO belongs to the application in its tag, or else the first word of its name that is a catalog ID. A workflow title
+can also resolve through the application name map (Lookups tab). Names that start with a 3-letter code, the original
+deployment's convention, still match.
+
 Run the snapshot workflow once from the Automations app, then check:
 
 **Business events were written to the snapshot bucket**
@@ -318,9 +328,10 @@ These are conventions in the app that settings do not cover yet:
 - **SLOs are handled.** The SLO workflow writes each SLO's application ID (its `<tag key>:<id>` tag, for any of the
   configured tag keys, falling back to the name up to its first separator). The app's SLO counts and the SLO detail modal
   use the same rule. There is nothing to configure.
-- The **dashboard, runbook, burn-rate alert and workflow-title** checks still assume the first 3 characters of the
-  name are the identifier (the `== 3` filters). NM has no such naming convention, so these checks score zero for NM
-  until a rule is agreed (for example a tag, or a different name pattern).
+- The **dashboard, runbook, burn-rate alert and workflow-title** checks attribute by name, not by tag. The rule is "the
+  application ID is a whole word anywhere in the name" (details in step 7). NM's workflow titles such as
+  `SN-Svc-Map-NMC-Loans (47689)` already follow it; its dashboards and notebooks mostly do not, so those checks stay
+  low until teams name them that way.
 - The `workflow.import.servicenow.appci` bizevent fallback is not configurable.
 - The picker query filters out `operational_status != "Retired"`, so a missing status column must be handled with a
   blank mapping (step 5), not left unmapped.

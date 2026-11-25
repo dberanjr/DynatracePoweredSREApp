@@ -9,7 +9,7 @@ import { SkeletonKeyframes } from "../components/SkeletonBar";
 import { useDqlWithCache } from "../hooks/useDqlWithCache";
 import { useLiveCheckOverride, LiveCheckOverride } from "../hooks/useLiveCheckOverride";
 import { LevelId, LevelRecord } from "../components/checkStatus";
-import { SLO_APP_ID_EXPR, appIdFromEntityTags, appIdFromProblemTags, hasTierLookup, appIdFromWorkflowTitle } from "../queries/maturityQueries";
+import { SLO_APP_ID_EXPR, appIdFromEntityTags, appIdFromProblemTags, hasTierLookup, appIdFromWorkflowTitle, appIdFromNameWords } from "../queries/maturityQueries";
 
 import { SNAPSHOT_BUCKET, APP_ID_FIELD, LOAD, APP_ID_LABEL, APP_ID_CLOUD_TAG } from "../settings/appSettings";
 interface Props {
@@ -488,8 +488,8 @@ data record(${APP_ID_FIELD} = lower("${appId}"))
     | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
     | filter event.category == "CUSTOM_ALERT"
     | filter contains(lower(event.name), "burn rate")
-    | fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
-    | filter stringLength(appId) == 3
+    ${appIdFromNameWords("event.name", "appId", "burnWord")}
+    | filter isNotNull(appId)
     | summarize burnAlerts = countDistinct(event.name), burnFired = count(), by:{appId}
   ], sourceField:${APP_ID_FIELD}, lookupField:appId, fields:{burnAlerts, burnFired}
 
@@ -614,7 +614,7 @@ data record(${APP_ID_FIELD} = lower("${appId}"))
     | filter event.provider == "AUTOMATION_ENGINE"
     | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
     ${appIdFromWorkflowTitle("wfAppId")}
-    | filter stringLength(wfAppId) == 3
+    | filter isNotNull(wfAppId)
     | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{wfAppId}
   ], sourceField:${APP_ID_FIELD}, lookupField:wfAppId, fields:{workflowCount}
 | fieldsRename workflows = workflowCount

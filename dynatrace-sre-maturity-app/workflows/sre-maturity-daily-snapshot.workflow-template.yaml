@@ -506,8 +506,16 @@ workflow:
               | filter isNull(dt.davis.is_duplicate) or not(dt.davis.is_duplicate)
               | filter event.category == "CUSTOM_ALERT"
               | filter contains(lower(event.name), "burn rate")
-              | fieldsAdd appId = lower(trim(splitString(event.name, " - ")[0]))
-              | filter stringLength(appId) == 3
+              | fieldsAdd burnWords = splitString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(lower(event.name), "_", " "), "-", " "), ":", " "), "/", " "), ".", " "), ",", " "), "(", " "), ")", " "), "[", " "), "]", " "), "|", " "), " ")
+          | expand burnWords
+          | lookup [
+              load "/lookups/dtsrepoweredapp/cmdb"
+              | fieldsAdd appId = lower(appId)
+              | fields appId
+            ], sourceField:burnWords, lookupField:appId, fields:{burnWordHit = appId}
+          | fieldsAdd appId = burnWordHit
+          | fieldsRemove burnWords, burnWordHit
+              | filter isNotNull(appId)
               | summarize burnAlerts = countDistinct(event.name), by:{appId}
             ], sourceField:appId, lookupField:appId, fields:{burnAlerts}
           | lookup [
@@ -561,15 +569,25 @@ workflow:
               fetch dt.system.events, from:now()-30d
               | filter event.provider == "AUTOMATION_ENGINE"
               | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION"
-              | fieldsAdd wfWord = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
+              | summarize wfRuns = count(), by:{\`dt.automation_engine.workflow.id\`, \`dt.automation_engine.workflow.title\`}
+          | fieldsAdd wfWord = lower(arrayFirst(splitString(\`dt.automation_engine.workflow.title\`, " ")))
           | fieldsAdd wfName = lower(arrayFirst(splitString(wfWord, "_")))
           | lookup [
               load "/lookups/dtsrepoweredapp/app_map"
               | fields app_name, appId
             ], sourceField:wfName, lookupField:app_name, fields:{wfMapped = appId}
-          | fieldsAdd appId = if(stringLength(wfWord) == 3, wfWord, else: lower(wfMapped))
-          | fieldsRemove wfWord, wfName, wfMapped
-              | filter stringLength(appId) == 3
+          | fieldsAdd wfWordss = splitString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(replaceString(lower(\`dt.automation_engine.workflow.title\`), "_", " "), "-", " "), ":", " "), "/", " "), ".", " "), ",", " "), "(", " "), ")", " "), "[", " "), "]", " "), "|", " "), " ")
+          | expand wfWordss
+          | lookup [
+              load "/lookups/dtsrepoweredapp/cmdb"
+              | fieldsAdd appId = lower(appId)
+              | fields appId
+            ], sourceField:wfWordss, lookupField:appId, fields:{wfWordsHit = appId}
+          | fieldsAdd wfHit = wfWordsHit
+          | fieldsRemove wfWordss, wfWordsHit
+          | fieldsAdd appId = coalesce(wfHit, lower(wfMapped))
+          | fieldsRemove wfWord, wfName, wfMapped, wfHit
+              | filter isNotNull(appId)
               | summarize workflowCount = countDistinct(\`dt.automation_engine.workflow.id\`), by:{appId}
             ]
           | summarize

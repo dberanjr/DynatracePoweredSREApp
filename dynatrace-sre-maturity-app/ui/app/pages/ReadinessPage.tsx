@@ -290,6 +290,97 @@ export const ReadinessPage = ({ appId }: Props) => {
   );
 };
 
+// ───────────────────────────── Run a query inline ─────────────────────────────
+
+const MAX_SHOWN_ROWS = 50;
+const cellText = (v: unknown): string =>
+  v === null || v === undefined ? "" : typeof v === "string" ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : JSON.stringify(v);
+
+/**
+ * Shows a readiness query and runs it on the page when asked: the same DQL the probe runs, with its result as a table
+ * underneath. The query is whatever the caller passes, so an application view passes the application-filtered one.
+ */
+function InlineQuery({ query }: { query: string }) {
+  const [run, setRun] = useState(0);
+  const [copied, setCopied] = useState(false);
+  // Another query (for example a different application) means a different result: forget the old one.
+  useEffect(() => setRun(0), [query]);
+  const active = run > 0;
+  const { data, error, isLoading } = useDql({ query: active ? `${query}\n// run ${run}` : SKIP_QUERY });
+  const records = (active && !isLoading && !error ? ((data?.records ?? []) as Array<Record<string, unknown>>) : []);
+  const columns = useMemo(() => {
+    const names: string[] = [];
+    for (const r of records.slice(0, MAX_SHOWN_ROWS)) for (const k of Object.keys(r)) if (!names.includes(k)) names.push(k);
+    return names;
+  }, [records]);
+  const grail = data?.metadata?.grail;
+
+  return (
+    <div>
+      <pre style={{ margin: "6px 0 8px", padding: 10, borderRadius: 6, background: "var(--panel, #F7F8FA)", border: "1px solid var(--line, #E3E6EB)", overflowX: "auto", fontSize: 11, color: INK.text }}>
+        {query}
+      </pre>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" style={buttonStyle(isLoading && active)} disabled={isLoading && active} onClick={() => setRun((n) => n + 1)}>
+          {!active ? "Run query" : isLoading ? "Running…" : "Run again"}
+        </button>
+        <button
+          type="button"
+          style={{ ...buttonStyle(false), background: "transparent", color: INK.text, border: "1px solid var(--line, #E3E6EB)" }}
+          onClick={() => {
+            void navigator.clipboard?.writeText(query).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            });
+          }}
+        >
+          {copied ? "Copied" : "Copy query"}
+        </button>
+        {active && !isLoading && !error && (
+          <span style={{ fontSize: 12, color: INK.muted }}>
+            {records.length} row{records.length === 1 ? "" : "s"}
+            {grail?.scannedBytes !== undefined ? `, scanned ${formatBytes(grail.scannedBytes)}` : ""}
+            {grail?.executionTimeMilliseconds !== undefined ? ` in ${(grail.executionTimeMilliseconds / 1000).toFixed(1)}s` : ""}
+          </span>
+        )}
+      </div>
+      {active && error && (
+        <div role="alert" style={{ marginTop: 8, fontSize: 12, color: INK.fail }}>
+          The query failed: {error.message}
+        </div>
+      )}
+      {active && !isLoading && !error && records.length === 0 && <div style={{ marginTop: 8, fontSize: 12, color: INK.muted }}>The query returned no rows.</div>}
+      {records.length > 0 && (
+        <div style={{ overflowX: "auto", marginTop: 8, maxHeight: 320, overflowY: "auto", border: "1px solid var(--line, #E3E6EB)", borderRadius: 6 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={tableHeadRowStyle}>
+                {columns.map((c) => (
+                  <th key={c} style={tableHeadCellStyle}>
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {records.slice(0, MAX_SHOWN_ROWS).map((r, i) => (
+                <tr key={i} style={{ borderTop: tableRowBorder }}>
+                  {columns.map((c) => (
+                    <td key={c} style={{ ...tableCellStyle, whiteSpace: "normal", maxWidth: 360, wordBreak: "break-word" }}>
+                      {cellText(r[c])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {records.length > MAX_SHOWN_ROWS && <div style={{ marginTop: 4, fontSize: 11, color: INK.muted }}>Showing the first {MAX_SHOWN_ROWS} of {records.length} rows.</div>}
+    </div>
+  );
+}
+
 // ───────────────────────────── This environment ─────────────────────────────
 
 function EnvironmentView({
@@ -456,12 +547,10 @@ function EnvironmentView({
                               </div>
                             </div>
                             {probe && (
-                              <details>
-                                <summary style={{ cursor: "pointer", color: INK.muted }}>The query</summary>
-                                <pre style={{ margin: "6px 0 0", padding: 10, borderRadius: 6, background: "var(--panel, #F7F8FA)", border: "1px solid var(--line, #E3E6EB)", overflowX: "auto", fontSize: 11, color: INK.text }}>
-                                  {probe.query}
-                                </pre>
-                              </details>
+                              <div>
+                                <div style={eyebrowStyle}>The query</div>
+                                <InlineQuery query={probe.query} />
+                              </div>
                             )}
                           </div>
                         </td>
@@ -534,6 +623,26 @@ function ApplicationView({
           <Tile label="Not measured" value={String(count("later") + count("unknown"))} sub={`${count("not-implemented")} checks not implemented`} />
         </div>
       )}
+
+      <div style={cardStyle}>
+        <div style={cardHeaderStyle}>
+          <span style={cardTitleStyle}>Queries for {code}</span>
+          <span style={cardMetaStyle}>filtered to this application; run any of them here</span>
+        </div>
+        <div style={cardBodyStyle}>
+          {APP_PROBES.map((p) => {
+            const names = INPUTS.filter((i) => p.produces.includes(i.id)).map((i) => i.name).join(", ");
+            return (
+              <details key={p.key} style={{ marginBottom: 6 }}>
+                <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 600, color: INK.text }}>
+                  {names || p.key} <span style={{ fontWeight: 400, color: INK.muted }}>({p.window})</span>
+                </summary>
+                <InlineQuery query={appQueryFor(p.key, appId)} />
+              </details>
+            );
+          })}
+        </div>
+      </div>
 
       {finished && (
         <div style={cardStyle}>

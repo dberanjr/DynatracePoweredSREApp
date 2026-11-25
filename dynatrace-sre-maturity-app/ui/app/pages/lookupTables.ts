@@ -83,7 +83,7 @@ const DEFAULT_TABLES: LookupTableConfig[] = [
     tabLabel: `${APP_ID_LABEL} map`,
     title: `${APP_ID_LABEL} Map — Application Tag to ${APP_ID_LABEL}`,
     description:
-      `Translates the application name in your tenant's Application tag to its 3-letter ${APP_ID_LABEL}, so entities, hosts and problems can be scored without an ${APP_ID_FIELD} tag. Enter the name WITHOUT its environment suffix: the tag Application:BillingPortal::CRT (or ::SPT, ::PRD) is matched by the name billingportal. Names are matched case-insensitively. Several names can share one ${APP_ID_LABEL}; a name can have only one.`,
+      `Translates the application name in your tenant's Application tag to its ${APP_ID_LABEL}, so entities, hosts and problems can be scored without an ${APP_ID_FIELD} tag. Enter the name WITHOUT its environment suffix: the tag Application:BillingPortal::CRT (or ::SPT, ::PRD) is matched by the name billingportal. Names are matched case-insensitively. Several names can share one ${APP_ID_LABEL}; a name can have only one.`,
     path: "/lookups/dtsrepoweredapp/app_map",
     backupPath: "/lookups/dtsrepoweredapp/app_map_backup",
     columns: [

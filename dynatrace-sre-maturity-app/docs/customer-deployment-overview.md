@@ -116,9 +116,10 @@ documentation, not against a live policy.]**
 2. Your application data as a lookup table, in any columns (one row per application: ID, name, ideally tier, owner,
    support group), plus which column holds what. The catalog workflow maps it to the app's fixed columns.
 3. Which CMDB column means "critical" and which values count as critical.
-4. SLO, dashboard and runbook naming: the app's SLO matching works by tag or by name prefix. Dashboard, runbook and
-   alert-name checks currently expect the first three characters of the name to be the application code.
-   **[We need sample names to see if a rule fits.]**
+4. SLO, dashboard, runbook, burn-rate alert and workflow naming: SLOs are matched by tag. Dashboards, runbooks, alerts and
+   workflows are matched by name: **the application ID must appear in the name as a separate word, anywhere in it**
+   (for example `CRM 47689 Runbook`, or a workflow titled `Loans sync (47689)`). Runbooks also need the word `Runbook`,
+   SLO dashboards the word `SLO` in capitals, burn-rate alerts the words `burn rate`.
 5. An initial critical-services seed list (or we start with an empty placeholder).
 6. The service user, group, and the person who will assign it to the workflows.
 7. **[Which Dynatrace environment(s), and whether production-only or a lower tenant first.]**

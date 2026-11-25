@@ -31,8 +31,8 @@ workflow:
       input:
         script: |
           // Refreshes the SLOs lookup (/lookups/dtsrepoweredapp/slo; one row per SLO name) from the Gen3 SLO platform API.
-          // Each SLO's application ID is its `<tagKey>:<id>` tag (any of the configured tag keys), falling back to the name up to its first separator when the SLO
-          // has no such tag (and the prefix is no longer than the configured longest ID). The key and length come from the run-time config.
+          // Each SLO's application ID is its `<tagKey>:<id>` tag (any of the configured tag keys), falling back to the first word of its name that is an
+          // application ID of the catalog when the SLO has no such tag. The keys come from the run-time config.
           // NOTE: the platform SLO API rejects page-size when page-key is set — first
           // page uses page-size, subsequent pages use page-key only (confirmed in getSloDetail.function.ts).
           import { queryExecutionClient } from '@dynatrace-sdk/client-query';
@@ -89,21 +89,41 @@ workflow:
           }
 
           let TAG_KEYS = [];
-          let ID_MAX = 0;
+          let CATALOG_IDS = new Set();
+
+          // The application IDs of the catalog (/lookups/dtsrepoweredapp/cmdb), lower case. A name only counts for an application that exists there.
+          async function loadCatalogIds() {
+            const started = await queryExecutionClient.queryExecute({
+              body: { query: 'load "/lookups/dtsrepoweredapp/cmdb" | fields appId | limit 50000', maxResultRecords: 50000, requestTimeoutMilliseconds: 55000 },
+            });
+            let records = started.result ? started.result.records || [] : null;
+            for (let i = 0; records === null && i < 100; i++) {
+              await new Promise((r) => setTimeout(r, 500));
+              const p = await queryExecutionClient.queryPoll({ requestToken: started.requestToken });
+              if (p.state === 'SUCCEEDED') records = (p.result && p.result.records) || [];
+              else if (p.state !== 'NOT_STARTED' && p.state !== 'RUNNING') throw new Error('Reading the catalog ended in state ' + p.state);
+            }
+            if (records === null) throw new Error('Reading the catalog timed out');
+            return new Set(records.map((r) => String(r.appId || '').trim().toLowerCase()).filter(Boolean));
+          }
+
+          // The naming rule (same as nameWordsExpr in ui/app/queries/maturityQueries.ts): a name belongs to an application when the
+          // application's ID is one of its WORDS, ignoring case. Words are separated by whitespace and _ - : / . , ( ) [ ] |
+          const nameWords = (name) => String(name || '').toLowerCase().split(/[\s_\-:/.,()[\]|]+/).filter(Boolean);
 
           function sloAppId(s) {
             for (const key of TAG_KEYS) {
               const tag = (s.tags || []).find((t) => t.toLowerCase().startsWith(key + ':'));
               if (tag) return tag.slice(key.length + 1).trim().toLowerCase();
             }
-            const m = /^([A-Za-z0-9]+)[^A-Za-z0-9]/.exec(s.name || '');
-            return m && m[1].length <= ID_MAX ? m[1].toLowerCase() : '';
+            // No tag: the first word of the name that is an application ID of the catalog.
+            return nameWords(s.name).find((w) => CATALOG_IDS.has(w)) || '';
           }
 
           export default async function () {
             const cfg = await loadAppConfig();
             TAG_KEYS = cfg.tagKeys.map((k) => k.toLowerCase());
-            ID_MAX = cfg.idMaxLength;
+            CATALOG_IDS = await loadCatalogIds();
             // 1. Page through all SLOs
             const slos = [];
             let pageKey = null;

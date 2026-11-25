@@ -1,6 +1,29 @@
 // Refreshes the SLO dashboards lookup (appId -> dashboardCount) from dashboard
-// documents whose name starts with a 3-letter application ID token and contains "SLO".
+// documents whose name contains "SLO" as a standalone uppercase token and names an application of the catalog by its ID, as a word.
+import { queryExecutionClient } from '@dynatrace-sdk/client-query';
+
+// The application IDs of the catalog (/lookups/dtsrepoweredapp/cmdb), lower case. A name only counts for an application that exists there.
+async function loadCatalogIds() {
+  const started = await queryExecutionClient.queryExecute({
+    body: { query: 'load "/lookups/dtsrepoweredapp/cmdb" | fields appId | limit 50000', maxResultRecords: 50000, requestTimeoutMilliseconds: 55000 },
+  });
+  let records = started.result ? started.result.records || [] : null;
+  for (let i = 0; records === null && i < 100; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const p = await queryExecutionClient.queryPoll({ requestToken: started.requestToken });
+    if (p.state === 'SUCCEEDED') records = (p.result && p.result.records) || [];
+    else if (p.state !== 'NOT_STARTED' && p.state !== 'RUNNING') throw new Error('Reading the catalog ended in state ' + p.state);
+  }
+  if (records === null) throw new Error('Reading the catalog timed out');
+  return new Set(records.map((r) => String(r.appId || '').trim().toLowerCase()).filter(Boolean));
+}
+
+// The naming rule (same as nameWordsExpr in ui/app/queries/maturityQueries.ts): a name belongs to an application when the
+// application's ID is one of its WORDS, ignoring case. Words are separated by whitespace and _ - : / . , ( ) [ ] |
+const nameWords = (name) => String(name || '').toLowerCase().split(/[\s_\-:/.,()[\]|]+/).filter(Boolean);
+
 export default async function () {
+  const catalogIds = await loadCatalogIds();
   // 1. Page through all dashboard documents
   const docs = [];
   let pageKey = null;
@@ -16,17 +39,16 @@ export default async function () {
     pageKey = body.nextPageKey || null;
   } while (pageKey);
 
-  // 2. Keep dashboards starting with a 3-letter token that also contain "SLO"
-  //    as a standalone uppercase token (allows SLOs / SLO's, rejects SLOW / OSLO / Slow).
-  const tokenRe = /^[A-Za-z]{3}([^A-Za-z]|$)/;
+  // 2. Keep dashboards that contain "SLO" as a standalone uppercase token (allows SLOs / SLO's, rejects SLOW / OSLO / Slow)
+  //    and count each catalog application whose ID is a word of the name.
   const sloRe = /(^|[^A-Z])SLO([^A-Z]|$)/;
   const counts = {};
   for (const d of docs) {
     const name = d.name || '';
     if (!sloRe.test(name)) continue;
-    if (!tokenRe.test(name)) continue;
-    const appId = name.slice(0, 3).toLowerCase();
-    counts[appId] = (counts[appId] || 0) + 1;
+    for (const appId of new Set(nameWords(name))) {
+      if (catalogIds.has(appId)) counts[appId] = (counts[appId] || 0) + 1;
+    }
   }
 
   // 3. Build CSV (header skipped on upload via skippedRecords:1)
@@ -42,7 +64,7 @@ export default async function () {
   const meta = {
     filePath: '__PATH__',
     displayName: 'SLO dashboards by application ID',
-    description: 'Count of dashboards per application whose name starts with a 3-letter application token and contains "SLO"',
+    description: 'Count of dashboards per application whose name contains "SLO" and the application ID as a word',
     lookupField: 'appId',
     parsePattern: "LD:appId ',' LD:dashboardCount",
     skippedRecords: 1,
