@@ -91,6 +91,20 @@ What you tell it, as constants at the top of the script (or in the settings JSON
 
 The same workflow serves every customer; only these values differ. It never modifies your source table.
 
+**Changing the ID column (or any of these values) later, without our scripts.** The values are plain constants at the top
+of the workflow's script, so you can change them yourself in the Dynatrace UI:
+
+1. Open **Workflows**, then **DT-SRE APP: Build /lookups/dtsrepoweredapp/cmdb (application catalog from your AppId source table)**.
+2. Select its single task, **Input**, and edit the constant. For example, to take the application ID from a different column,
+   change the first line of `SOURCE_COLUMNS` from `"appId": "utan"` to `"appId": "app_number"` (the left side stays `appId`;
+   the right side is the column name in *your* table).
+3. Save, then **Run**. It rebuilds `cmdb` and `config`, and stops with an error, leaving the old catalog in place, if the
+   new setting would keep no rows.
+4. Re-run the other DT-SRE APP workflows that read the catalog (critical_services, and the starter seed if you use it).
+
+Check first that the column you choose has no blanks or duplicates, and that its values are what your entities carry in the
+application ID tag. The app's own Settings page cannot change this: it holds only the tag key and display labels.
+
 ### 2.3 Create the name map
 
 The map has two columns: the application name from your `Application` tag and the identifier. NM generated it from the
