@@ -107,6 +107,17 @@ are `__none__`:
 
 Replace them with real data later (see step 8).
 
+**Seed table format.** `entity_severity` has one row per critical service, with columns `appId`, `entity_name` (the exact
+Dynatrace service name), `severity` (`high`, `medium`, `low`) and `business_impact`. **A Grail lookup keeps one row per
+lookup-field value**, so when you create it yourself (for example with `dtctl create lookup`) add a fifth column,
+`row_key` = `appId|entity_name` in lower case, and use it as the lookup field; with `appId` as the key only one service per
+application would survive. Saving the table from the app's Lookups tab adds `row_key` for you.
+
+**Starter seed.** If the customer has no list yet, a starter can be derived from the data: for each top-tier application, its
+services that are called by a real-user application, or are web entry points that no other service calls. Mark it clearly
+as a starter and replace it with the customer's real list. On NM this gave 42 services across 16 of 65 top-tier
+applications, and 38 resolved to entity IDs on the first run.
+
 ### 2.5 Check for known data problems
 
 - Identifiers that appear as entity tags but not in the CMDB. NM had about 335 of these; they are invisible in

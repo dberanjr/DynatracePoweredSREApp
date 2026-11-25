@@ -29,6 +29,9 @@ interface TableDef {
   appIdColumn: string;
   lowercase: string[]; // columns normalised to lower case (consumers compare them lower-cased)
   keyColumns: string[]; // together unique within the table
+  // Grail keeps ONE row per lookup-field value. When the rows are unique only by several columns together, a derived
+  // column holds their combination and is the lookup field. It is written to the file but is not an editable column.
+  derivedKey?: string;
   // Optional extra rule for a free-text column, e.g. text the matching queries can never match.
   reject?: { column: string; pattern: RegExp; message: string };
 }
@@ -65,7 +68,8 @@ const TABLES: Record<string, TableDef> = {
     backupPath: '/lookups/dtsrepoweredapp/entity_severity_backup',
     displayName: 'Entity severity (critical services seed)',
     description: 'Services/endpoints considered critical per application. Seed for the critical services workflow. Maintained from the Lookups tab of the SRE maturity app.',
-    lookupField: 'appId',
+    lookupField: 'row_key',
+    derivedKey: 'row_key',
     columns: ['appId', 'entity_name', 'severity', 'business_impact'],
     required: ['appId', 'entity_name', 'severity'],
     appIdColumn: 'appId',
@@ -133,8 +137,13 @@ function validate(t: TableDef, input: unknown): Row[] {
   return rows;
 }
 
+// The columns as written to the file: the editable ones, plus the derived lookup key when the table has one.
+const fileColumns = (t: TableDef) => (t.derivedKey ? [...t.columns, t.derivedKey] : t.columns);
+const derivedValue = (t: TableDef, r: Row) => t.keyColumns.map((c) => r[c].toLowerCase()).join('|');
+
 const toContent = (t: TableDef, rows: Row[]) =>
-  t.columns.join(DELIM) + '\n' + rows.map((r) => t.columns.map((c) => r[c] || EMPTY).join(DELIM)).join('\n') + '\n';
+  fileColumns(t).join(DELIM) + '\n' +
+  rows.map((r) => fileColumns(t).map((c) => (c === t.derivedKey ? derivedValue(t, r) : r[c]) || EMPTY).join(DELIM)).join('\n') + '\n';
 
 async function upload(t: TableDef, filePath: string, displayName: string, description: string, rows: Row[]) {
   const meta = {
@@ -142,7 +151,7 @@ async function upload(t: TableDef, filePath: string, displayName: string, descri
     displayName,
     description,
     lookupField: t.lookupField,
-    parsePattern: t.columns.map((c) => `LD:${c}`).join(` '${DELIM}' `),
+    parsePattern: fileColumns(t).map((c) => `LD:${c}`).join(` '${DELIM}' `),
     skippedRecords: 1,
     autoFlatten: true,
     timezone: 'UTC',
